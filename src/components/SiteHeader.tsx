@@ -53,6 +53,12 @@ export default async function SiteHeader({
         <div className="flex items-center gap-2">
           {user ? (
             <>
+              <Link
+                href={`/${lang}/projeler`}
+                className="rounded-full px-3 py-1.5 text-sm font-semibold text-accent transition hover:bg-accent-soft"
+              >
+                {dict.nav.projects}
+              </Link>
               <span
                 title={dict.auth.loggedInAs}
                 className="hidden max-w-[160px] truncate text-sm font-medium text-muted sm:block"

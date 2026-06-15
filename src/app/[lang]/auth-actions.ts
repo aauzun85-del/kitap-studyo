@@ -9,6 +9,15 @@ import { createClient } from "@/lib/supabase/server";
 
 export type AuthState = { error?: string; notice?: string };
 
+// Açık-yönlendirme (open redirect) güvenliği: yalnız aynı dilin alt yolu kabul.
+function safeNext(lang: string, next: string): string {
+  const home = `/${lang}`;
+  if (!next) return home;
+  if (next.startsWith("//") || next.includes("://") || next.includes("\\")) return home;
+  if (!next.startsWith(`/${lang}/`)) return home;
+  return next;
+}
+
 function localize(lang: string, key: string): string {
   const tr: Record<string, string> = {
     invalid: "E-posta veya şifre hatalı.",
@@ -51,13 +60,14 @@ export async function signInAction(
 ): Promise<AuthState> {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+  const next = safeNext(lang, String(formData.get("next") ?? ""));
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return { error: mapSupabaseError(lang, error.message) };
 
   revalidatePath(`/${lang}`, "layout");
-  redirect(`/${lang}`); // throws (NEXT_REDIRECT) — try/catch DIŞINDA olmalı
+  redirect(next); // throws (NEXT_REDIRECT) — try/catch DIŞINDA olmalı
 }
 
 export async function signUpAction(
@@ -69,6 +79,7 @@ export async function signUpAction(
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("confirm") ?? "");
   const name = String(formData.get("name") ?? "").trim();
+  const next = safeNext(lang, String(formData.get("next") ?? ""));
 
   if (password !== confirm) return { error: localize(lang, "mismatch") };
   if (password.length < 6) return { error: localize(lang, "weak") };
@@ -86,7 +97,7 @@ export async function signUpAction(
   if (!data.session) return { notice: localize(lang, "inbox") };
 
   revalidatePath(`/${lang}`, "layout");
-  redirect(`/${lang}`);
+  redirect(next);
 }
 
 export async function signOutAction(lang: string) {

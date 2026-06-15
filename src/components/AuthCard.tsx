@@ -55,10 +55,12 @@ export default function AuthCard({
   mode,
   lang,
   dict,
+  next,
 }: {
   mode: Mode;
   lang: Locale;
   dict: Dictionary;
+  next?: string;
 }) {
   const t = dict.auth;
   const isSignup = mode === "signup";
@@ -93,6 +95,7 @@ export default function AuthCard({
         </p>
 
         <form action={formAction} className="mt-6 flex flex-col gap-4">
+          {next && <input type="hidden" name="next" value={next} />}
           {isSignup && (
             <Field
               id="name"

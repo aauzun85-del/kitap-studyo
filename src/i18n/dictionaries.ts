@@ -345,6 +345,9 @@ type CoverStudioCopy = {
   selSubtitle: string;
   selLogo: string;
   selRule: string;
+  selFrame: string;
+  selEmblem: string;
+  selPanel: string;
   selSpine: string;
   selBarcode: string;
   selCover: string;
@@ -790,10 +793,27 @@ export type Dictionary = {
     publish: string;
     audiobook: string;
     promo: string;
+    projects: string;
     login: string;
     signup: string;
   };
   auth: AuthCopy;
+  projelerStudio: {
+    heading: string;
+    subtitle: string;
+    newProject: string;
+    open: string;
+    rename: string;
+    renamePrompt: string;
+    delete: string;
+    deleteConfirm: string;
+    empty: string;
+    emptyHint: string;
+    importLocal: string;
+    untitled: string;
+    loadError: string;
+    creating: string;
+  };
   home: {
     badge: string;
     title: string;
@@ -833,8 +853,25 @@ const tr: Dictionary = {
     publish: "E-kitap",
     audiobook: "Sesli Kitap",
     promo: "Tanıtım",
+    projects: "Projelerim",
     login: "Giriş yap",
     signup: "Kayıt ol",
+  },
+  projelerStudio: {
+    heading: "Projelerim",
+    subtitle: "Kayıtlı kitap projelerin. Aç, yeniden adlandır veya yenisini oluştur.",
+    newProject: "Yeni proje",
+    open: "Aç",
+    rename: "Yeniden adlandır",
+    renamePrompt: "Proje adı:",
+    delete: "Sil",
+    deleteConfirm: "Bu proje kalıcı olarak silinsin mi?",
+    empty: "Henüz proje yok.",
+    emptyHint: "İlk kitap projeni oluşturmak için “Yeni proje”ye bas.",
+    importLocal: "Bu cihazdaki tasarımı proje olarak içe aktar",
+    untitled: "Adsız proje",
+    loadError: "Projeler yüklenemedi. Sayfayı yenileyip tekrar dene.",
+    creating: "Oluşturuluyor…",
   },
   auth: {
     loginTitle: "Tekrar hoş geldin",
@@ -1314,6 +1351,9 @@ const tr: Dictionary = {
     selSubtitle: "Alt başlık",
     selLogo: "Logo",
     selRule: "Çizgi",
+    selFrame: "Çerçeve",
+    selEmblem: "Amblem",
+    selPanel: "Panel",
     selSpine: "Sırt yazısı",
     selBarcode: "Barkod",
     selCover: "Kapak görseli",
@@ -1825,8 +1865,25 @@ const en: Dictionary = {
     publish: "E-book",
     audiobook: "Audiobook",
     promo: "Promotion",
+    projects: "My Projects",
     login: "Log in",
     signup: "Sign up",
+  },
+  projelerStudio: {
+    heading: "My Projects",
+    subtitle: "Your saved book projects. Open, rename, or create a new one.",
+    newProject: "New project",
+    open: "Open",
+    rename: "Rename",
+    renamePrompt: "Project name:",
+    delete: "Delete",
+    deleteConfirm: "Permanently delete this project?",
+    empty: "No projects yet.",
+    emptyHint: "Press “New project” to create your first book project.",
+    importLocal: "Import the design on this device as a project",
+    untitled: "Untitled project",
+    loadError: "Couldn't load projects. Refresh and try again.",
+    creating: "Creating…",
   },
   auth: {
     loginTitle: "Welcome back",
@@ -2306,6 +2363,9 @@ const en: Dictionary = {
     selSubtitle: "Subtitle",
     selLogo: "Logo",
     selRule: "Rule line",
+    selFrame: "Frame",
+    selEmblem: "Emblem",
+    selPanel: "Panel",
     selSpine: "Spine text",
     selBarcode: "Barcode",
     selCover: "Cover image",

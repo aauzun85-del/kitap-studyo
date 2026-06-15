@@ -73,6 +73,10 @@ import {
   clearCoverDraft,
   type CoverDraft,
 } from "@/lib/cover/coverDraft";
+import { saveProjectCover } from "@/lib/projects/data";
+import { resolveDraftImages } from "@/lib/projects/storage";
+import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
+import type { ProjectEnvelope } from "@/lib/projects/types";
 import {
   loadUserImages,
   saveUserImages,
@@ -118,8 +122,20 @@ type PanelId =
   | "layers"
   | "library";
 
-export default function CoverStudio({ lang, dict }: { lang: Locale; dict: Dictionary }) {
+export default function CoverStudio({
+  lang,
+  dict,
+  initialProject,
+}: {
+  lang: Locale;
+  dict: Dictionary;
+  initialProject?: { id: string; data: ProjectEnvelope };
+}) {
   const t = dict.coverStudio;
+  // Bulut projesi modu: ?project=<id> ile açıldıysa kayıt/yükleme buluta gider.
+  // Yoksa (anonim/yerel) mevcut IndexedDB davranışı aynen korunur.
+  const projectId = initialProject?.id ?? null;
+  const lastThumbRef = useRef(0);
 
   // İçerik
   const [title, setTitle] = useState("");
@@ -821,6 +837,34 @@ export default function CoverStudio({ lang, dict }: { lang: Locale; dict: Dictio
   // açılır; ondan SONRA otomatik kayıt başlar (yoksa boş state'i kaydederdik).
   useEffect(() => {
     let alive = true;
+
+    // BULUT MODU: ?project ile açıldıysa IndexedDB'ye DOKUNMA (anonim yerel taslak
+    // korunur). Projenin kapağını uygula; meta başlık/yazar kapağın üstüne yazılır
+    // (tek doğru kaynak meta). Görsel YOLLARI imzalı URL'e çözülür (render için).
+    if (projectId && initialProject) {
+      const env = initialProject.data;
+      const reconciled: CoverDraft = {
+        ...env.cover,
+        title: env.meta.title || env.cover.title || "",
+        author: env.meta.author || env.cover.author || "",
+        subtitle: env.meta.subtitle ?? env.cover.subtitle,
+        isbn: env.meta.isbn ?? env.cover.isbn,
+      };
+      resolveDraftImages(createBrowserSupabase(), reconciled)
+        .then((d) => {
+          if (alive) applyDraft(d);
+        })
+        .catch(() => {
+          if (alive) applyDraft(reconciled);
+        })
+        .finally(() => {
+          if (alive) hydratedRef.current = true;
+        });
+      return () => {
+        alive = false;
+      };
+    }
+
     // ESCAPE HATCH: ?reset=1 ile açılırsa taslağı temizle, geri yükleme yapma,
     // URL'i sadeleştir. (Bozuk bir taslak boot-loop'a sokarsa kurtarma yolu.)
     let forceReset = false;
@@ -877,7 +921,7 @@ export default function CoverStudio({ lang, dict }: { lang: Locale; dict: Dictio
     return () => {
       alive = false;
     };
-  }, [applyDraft]);
+  }, [applyDraft, projectId, initialProject]);
 
   // --- Değişiklikleri otomatik kaydet (debounce) ---
   // hydratedRef açılana kadar (ilk yükleme) kayıt yapma. Her değişiklikten
@@ -945,7 +989,20 @@ export default function CoverStudio({ lang, dict }: { lang: Locale; dict: Dictio
     setDraftStatus("saving");
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      void saveCoverDraft(draft).then(() => setDraftStatus("saved"));
+      if (projectId) {
+        // Buluta kaydet. Küçük resmi her ~4 sn'de bir, düşük DPI ile üret (ucuz).
+        let thumb: string | undefined;
+        const now = Date.now();
+        if (now - lastThumbRef.current > 4000) {
+          thumb = canvasRef.current?.getPrintDataUrl(36) ?? undefined;
+          lastThumbRef.current = now;
+        }
+        void saveProjectCover(projectId, draft, thumb)
+          .then(() => setDraftStatus("saved"))
+          .catch(() => setDraftStatus("saved"));
+      } else {
+        void saveCoverDraft(draft).then(() => setDraftStatus("saved"));
+      }
     }, 600);
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -989,6 +1046,7 @@ export default function CoverStudio({ lang, dict }: { lang: Locale; dict: Dictio
     selectedAngle,
     textStyles,
     objects,
+    projectId,
   ]);
 
   // --- Sekme kapanırken/gizlenirken bekleyen kaydı hemen yaz ---
@@ -999,7 +1057,10 @@ export default function CoverStudio({ lang, dict }: { lang: Locale; dict: Dictio
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
       }
-      if (latestDraftRef.current) void saveCoverDraft(latestDraftRef.current);
+      if (latestDraftRef.current) {
+        if (projectId) void saveProjectCover(projectId, latestDraftRef.current);
+        else void saveCoverDraft(latestDraftRef.current);
+      }
     };
     window.addEventListener("pagehide", flush);
     document.addEventListener("visibilitychange", flush);
@@ -1007,7 +1068,7 @@ export default function CoverStudio({ lang, dict }: { lang: Locale; dict: Dictio
       window.removeEventListener("pagehide", flush);
       document.removeEventListener("visibilitychange", flush);
     };
-  }, []);
+  }, [projectId]);
 
   // "Yeni tasarım": kayıtlı taslağı sil + tüm alanları varsayılana döndür.
   const startNewDesign = () => {
@@ -3747,6 +3808,9 @@ function selectedName(
     selSubtitle: string;
     selLogo: string;
     selRule: string;
+    selFrame: string;
+    selEmblem: string;
+    selPanel: string;
     selSpine: string;
     selBarcode: string;
     selCover: string;
@@ -3802,6 +3866,9 @@ function selectedName(
     subtitle: t.selSubtitle,
     logo: t.selLogo,
     rule: t.selRule,
+    frame: t.selFrame,
+    emblem: t.selEmblem,
+    panel: t.selPanel,
     spineText: t.selSpine,
     barcode: t.selBarcode,
     cover: t.selCover,

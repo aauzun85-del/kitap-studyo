@@ -114,7 +114,10 @@ const EDITABLE_IDS = new Set([
   "author",
   "subtitle",
   "logo",
-  "rule", // başlık altı çizgi
+  "rule", // başlık altı çizgi / nokta ayraç
+  "frame", // şablon çerçevesi
+  "emblem", // şablon amblemi
+  "panel", // başlık arkası okuma paneli
   "spineText", // sırt yazısı
   "barcode", // arka kapak barkodu (grup)
   "cover", // kapak görseli

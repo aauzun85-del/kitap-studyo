@@ -179,7 +179,9 @@ function accentRule(ctx: TemplateCtx, cxMm: number, yMm: number, color: string) 
   canvas.add(new fabric.Group([hit, line], ruleOpts));
 }
 
-function frame(
+// Tek bir çerçevenin 4 kenar çizgisini DÖNDÜRÜR (eklemez). Çağıran dış+iç
+// çerçeveyi tek "frame" grubunda toplayabilsin diye.
+function frameLines(
   ctx: TemplateCtx,
   xMm: number,
   yMm: number,
@@ -187,15 +189,17 @@ function frame(
   hMm: number,
   color: string,
   strokeMm = 0.5,
-) {
-  const { fabric, canvas, px } = ctx;
+): object[] {
+  const { fabric, px } = ctx;
   const sw = Math.max(px(strokeMm), 1);
-  const opts = { stroke: color, strokeWidth: sw, selectable: false, evented: false };
+  const o = { stroke: color, strokeWidth: sw };
   const x = px(xMm), y = px(yMm), w = px(wMm), h = px(hMm);
-  canvas.add(new fabric.Line([x, y, x + w, y], opts));
-  canvas.add(new fabric.Line([x, y + h, x + w, y + h], opts));
-  canvas.add(new fabric.Line([x, y, x, y + h], opts));
-  canvas.add(new fabric.Line([x + w, y, x + w, y + h], opts));
+  return [
+    new fabric.Line([x, y, x + w, y], o),
+    new fabric.Line([x, y + h, x + w, y + h], o),
+    new fabric.Line([x, y, x, y + h], o),
+    new fabric.Line([x + w, y, x + w, y + h], o),
+  ];
 }
 
 // Arka kapak için gerçekçi barkod yer tutucusu.
@@ -284,29 +288,36 @@ export type TemplateRecipe = {
   panel?: boolean; // başlığın arkasına yarı saydam panel (görsel üstü okunurluk)
 };
 
+// Süs nesnesini "rule"/"frame"/... kimliğiyle ekler → Katman panelinde görünür,
+// göz ikonuyla gizlenip kaldırılabilir (kullanıcı istemediği süsü silebilir).
+function addDecor(ctx: TemplateCtx, parts: object[], editId: string) {
+  const { fabric, canvas } = ctx;
+  // editId, Group seçenek tipinde tanımlı değil → ayrı const ile excess-property
+  // kontrolünü atlatırız (accentRule ile aynı desen).
+  const opts = { editId, selectable: false, evented: false };
+  canvas.add(new fabric.Group(parts as never[], opts));
+}
+
 // İki ince paralel çizgi (klasik ayraç).
 function doubleRule(ctx: TemplateCtx, cxMm: number, yMm: number, color: string) {
-  const { fabric, canvas, px } = ctx;
+  const { fabric, px } = ctx;
   const half = px(11);
   const g = Math.max(px(0.9), 2);
   const mk = (yy: number) =>
     new fabric.Line([px(cxMm) - half, yy, px(cxMm) + half, yy], {
       stroke: color,
       strokeWidth: Math.max(px(0.5), 1),
-      selectable: false,
-      evented: false,
     });
-  canvas.add(mk(px(yMm) - g));
-  canvas.add(mk(px(yMm) + g));
+  addDecor(ctx, [mk(px(yMm) - g), mk(px(yMm) + g)], "rule");
 }
 
 // Üç küçük nokta ayraç.
 function dotsDivider(ctx: TemplateCtx, cxMm: number, yMm: number, color: string) {
-  const { fabric, canvas, px } = ctx;
+  const { fabric, px } = ctx;
   const r = Math.max(px(0.7), 1.5);
   const gap = px(3);
-  for (const dx of [-gap, 0, gap]) {
-    canvas.add(
+  const parts = [-gap, 0, gap].map(
+    (dx) =>
       new fabric.Circle({
         left: px(cxMm) + dx,
         top: px(yMm),
@@ -314,11 +325,9 @@ function dotsDivider(ctx: TemplateCtx, cxMm: number, yMm: number, color: string)
         fill: color,
         originX: "center",
         originY: "center",
-        selectable: false,
-        evented: false,
       }),
-    );
-  }
+  );
+  addDecor(ctx, parts, "rule");
 }
 
 // Güneş/amblem motifi: ince halka + ışınlar (mistik/klasik kapaklar için).
@@ -357,16 +366,16 @@ function emblem(ctx: TemplateCtx, cxMm: number, yMm: number, color: string) {
       ),
     );
   }
-  canvas.add(
-    new fabric.Group(parts as never[], {
-      left: px(cxMm),
-      top: px(yMm),
-      originX: "center",
-      originY: "center",
-      selectable: false,
-      evented: false,
-    }),
-  );
+  const opts = {
+    left: px(cxMm),
+    top: px(yMm),
+    originX: "center" as const,
+    originY: "center" as const,
+    editId: "emblem",
+    selectable: false,
+    evented: false,
+  };
+  canvas.add(new fabric.Group(parts as never[], opts));
 }
 
 // Başlığın arkasına yarı saydam koyu panel (görsel üstünde okunurluk).
@@ -381,6 +390,7 @@ function titlePanel(ctx: TemplateCtx, yTopMm: number, hMm: number) {
       fill: "rgba(15,18,28,0.5)",
       rx: px(2),
       ry: px(2),
+      editId: "panel",
       selectable: false,
       evented: false,
     }),
@@ -411,8 +421,16 @@ function drawTitleBlock(ctx: TemplateCtx, r: TemplateRecipe) {
   const gap = d.bookHeight * 0.018;
 
   if (r.frame) {
-    frame(ctx, d.frontSafeLeft, d.topSafe, d.frontSafeRight - d.frontSafeLeft, d.bottomSafe - d.topSafe, colors.accent, 0.5);
-    frame(ctx, d.frontSafeLeft + 2, d.topSafe + 2, d.frontSafeRight - d.frontSafeLeft - 4, d.bottomSafe - d.topSafe - 4, colors.accent, 0.3);
+    const fw = d.frontSafeRight - d.frontSafeLeft;
+    const fh = d.bottomSafe - d.topSafe;
+    addDecor(
+      ctx,
+      [
+        ...frameLines(ctx, d.frontSafeLeft, d.topSafe, fw, fh, colors.accent, 0.5),
+        ...frameLines(ctx, d.frontSafeLeft + 2, d.topSafe + 2, fw - 4, fh - 4, colors.accent, 0.3),
+      ],
+      "frame",
+    );
   }
   if (r.emblem) {
     emblem(ctx, align === "left" ? leftMm + 8 : d.frontCenter, y, colors.accent);

@@ -1,0 +1,134 @@
+// Çoklu proje ("Projelerim") veri tipleri.
+//
+// Bir proje, Supabase'teki `projects` tablosunda bir satırdır. Tüm kitap içeriği
+// `data` (jsonb) içinde bir "envelope" olarak durur. Şema sürümlüdür: schema=2
+// bütün-kitap envelope'u (meta + manuscript + modül ayarları + kapak). Eski/eksik
+// veriler migrateEnvelope() ile sürüme yükseltilir.
+
+import type { CoverDraft } from "@/lib/cover/coverDraft";
+
+export const PROJECT_SCHEMA = 2 as const;
+
+export type ModuleKey =
+  | "cover"
+  | "layout"
+  | "editor"
+  | "ekitap"
+  | "audiobook"
+  | "promo";
+
+// Tüm modüllerin paylaştığı kitap kimliği (tek doğru kaynak).
+export type ProjectMeta = {
+  title: string;
+  author: string;
+  subtitle?: string;
+  isbn?: string;
+  bio?: string;
+};
+
+// Paylaşılan kitap gövdesi (düz metin — editör/e-kitap/sesli doğrudan kullanır).
+export type ProjectManuscript = {
+  text: string;
+  updatedBy?: ModuleKey;
+  updatedAt?: string;
+};
+
+// Modüllerin kendi ayarları (Aşama 2'de doldurulur; hepsi opsiyonel).
+export type ProjectModules = {
+  layout?: unknown;
+  editor?: unknown;
+  ekitap?: unknown;
+  audiobook?: unknown;
+  promo?: unknown;
+};
+
+export type ProjectEnvelope = {
+  schema: 2;
+  meta: ProjectMeta;
+  manuscript: ProjectManuscript;
+  modules: ProjectModules;
+  cover: CoverDraft;
+};
+
+// Tablodan dönen ham satır.
+export type ProjectRow = {
+  id: string;
+  user_id: string;
+  title: string;
+  author: string;
+  thumb_path: string | null;
+  data: ProjectEnvelope;
+  created_at: string;
+  updated_at: string;
+};
+
+// Liste görünümü için hafif tip.
+export type ProjectListItem = {
+  id: string;
+  title: string;
+  author: string;
+  thumb_path: string | null;
+  updated_at: string;
+};
+
+const EMPTY_COVER: CoverDraft = { v: 1 };
+
+export function emptyEnvelope(): ProjectEnvelope {
+  return {
+    schema: PROJECT_SCHEMA,
+    meta: { title: "", author: "" },
+    manuscript: { text: "" },
+    modules: {},
+    cover: EMPTY_COVER,
+  };
+}
+
+/**
+ * Ham jsonb'yi geçerli bir schema-2 envelope'a yükseltir. Boş satır, eski
+ * kapak-only ({schema:1, cover}) ya da doğrudan CoverDraft kaydı gelse de
+ * veri kaybı olmadan normalleştirir; meta kapaktan tohumlanır.
+ */
+export function migrateEnvelope(data: unknown): ProjectEnvelope {
+  const base = emptyEnvelope();
+  if (!data || typeof data !== "object") return base;
+  const d = data as Record<string, unknown>;
+
+  // Zaten schema-2 ise alanları güvenle birleştir.
+  if (d.schema === 2) {
+    const meta = (d.meta as ProjectMeta) ?? base.meta;
+    const manuscript = (d.manuscript as ProjectManuscript) ?? base.manuscript;
+    const modules = (d.modules as ProjectModules) ?? {};
+    const cover = (d.cover as CoverDraft) ?? base.cover;
+    return {
+      schema: 2,
+      meta: { title: meta.title ?? "", author: meta.author ?? "", subtitle: meta.subtitle, isbn: meta.isbn, bio: meta.bio },
+      manuscript: { text: manuscript.text ?? "", updatedBy: manuscript.updatedBy, updatedAt: manuscript.updatedAt },
+      modules,
+      cover,
+    };
+  }
+
+  // Eski: { schema:1, cover } veya doğrudan bir CoverDraft.
+  const cover: CoverDraft =
+    (d.cover as CoverDraft) ?? (("v" in d ? (d as unknown as CoverDraft) : base.cover));
+  return {
+    schema: PROJECT_SCHEMA,
+    meta: {
+      title: cover.title ?? "",
+      author: cover.author ?? "",
+      subtitle: cover.subtitle,
+      isbn: cover.isbn,
+    },
+    manuscript: { text: "" },
+    modules: {},
+    cover,
+  };
+}
+
+/** meta'yı kapaktan üretir (liste sütunları title/author için). */
+export function deriveListFields(env: ProjectEnvelope): { title: string; author: string } {
+  return {
+    title: env.meta.title || env.cover.title || "",
+    author: env.meta.author || env.cover.author || "",
+  };
+}
