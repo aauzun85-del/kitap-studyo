@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config";
 
 // @supabase/ssr'ın "middleware" oturum-tazeleme deseni — bu uygulamanın 'proxy'
 // kuralına göre adlandırıldı. Her istekte auth çerezini tazeler ve HEM çözülmüş
@@ -9,11 +10,8 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    {
-      cookies: {
+  const supabase = createServerClient(SUPABASE_URL, SUPABASE_KEY, {
+    cookies: {
         getAll() {
           return request.cookies.getAll();
         },

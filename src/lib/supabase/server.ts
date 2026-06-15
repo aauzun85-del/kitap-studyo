@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config";
 
 // Sunucu tarafı Supabase istemcisi: Server Component, Server Action ve Route
 // Handler'larda kullanılır. Bu Next.js sürümünde cookies() ASENKRONDUR (await),
@@ -9,10 +10,7 @@ import { cookies } from "next/headers";
 export async function createClient() {
   const cookieStore = await cookies();
 
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    {
+  return createServerClient(SUPABASE_URL, SUPABASE_KEY, {
       cookies: {
         getAll() {
           return cookieStore.getAll();
