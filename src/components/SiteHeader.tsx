@@ -1,16 +1,22 @@
 import Link from "next/link";
 import Image from "next/image";
 import LanguageSwitcher from "./LanguageSwitcher";
+import { createClient } from "@/lib/supabase/server";
+import { signOutAction } from "@/app/[lang]/auth-actions";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 
-export default function SiteHeader({
+export default async function SiteHeader({
   lang,
   dict,
 }: {
   lang: Locale;
   dict: Dictionary;
 }) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const links = [
     { href: `/${lang}`, label: dict.nav.home },
     { href: `/${lang}/kapak`, label: dict.nav.cover },
@@ -45,22 +51,45 @@ export default function SiteHeader({
           ))}
         </nav>
         <div className="flex items-center gap-2">
-          <Link
-            href={`/${lang}/giris`}
-            className="hidden text-sm font-medium text-muted transition hover:text-foreground sm:block"
-          >
-            {dict.nav.login}
-          </Link>
-          <Link
-            href={`/${lang}/kayit`}
-            className="rounded-full px-5 py-2 text-sm font-bold text-white shadow-md transition hover:-translate-y-0.5 hover:opacity-90 hover:shadow-lg"
-            style={{
-              background: "linear-gradient(135deg, var(--color-accent) 0%, #f5a623 100%)",
-              boxShadow: "0 2px 10px color-mix(in srgb, var(--color-accent) 35%, transparent)",
-            }}
-          >
-            {dict.nav.signup}
-          </Link>
+          {user ? (
+            <>
+              <span
+                title={dict.auth.loggedInAs}
+                className="hidden max-w-[160px] truncate text-sm font-medium text-muted sm:block"
+              >
+                {user.email}
+              </span>
+              <form action={signOutAction.bind(null, lang)}>
+                <button
+                  type="submit"
+                  className="rounded-full border border-border px-4 py-1.5 text-sm font-semibold text-muted transition hover:border-foreground/30 hover:text-foreground"
+                >
+                  {dict.auth.signOut}
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <Link
+                href={`/${lang}/giris`}
+                className="hidden text-sm font-medium text-muted transition hover:text-foreground sm:block"
+              >
+                {dict.nav.login}
+              </Link>
+              <Link
+                href={`/${lang}/kayit`}
+                className="rounded-full px-5 py-2 text-sm font-bold text-white shadow-md transition hover:-translate-y-0.5 hover:opacity-90 hover:shadow-lg"
+                style={{
+                  background:
+                    "linear-gradient(135deg, var(--color-accent) 0%, #f5a623 100%)",
+                  boxShadow:
+                    "0 2px 10px color-mix(in srgb, var(--color-accent) 35%, transparent)",
+                }}
+              >
+                {dict.nav.signup}
+              </Link>
+            </>
+          )}
           <LanguageSwitcher current={lang} />
         </div>
       </div>

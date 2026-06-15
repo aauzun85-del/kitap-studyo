@@ -33,6 +33,8 @@ type AuthCopy = {
   signupLink: string;
   terms: string;
   notConnected: string;
+  signOut: string;
+  loggedInAs: string;
 };
 
 type CoverStudioCopy = {
@@ -859,6 +861,8 @@ const tr: Dictionary = {
     terms: "Devam ederek Kullanım Koşulları ve Gizlilik Politikası'nı kabul etmiş olursun.",
     notConnected:
       "Üyelik sistemi henüz bağlı değil — bu ekran şimdilik yalnızca önizleme. Gerçek giriş bir sonraki adımda aktif olacak.",
+    signOut: "Çıkış yap",
+    loggedInAs: "Hesap",
   },
   home: {
     badge: "Tek pakette kitap hazırlığı",
@@ -1849,6 +1853,8 @@ const en: Dictionary = {
     terms: "By continuing, you agree to the Terms of Service and Privacy Policy.",
     notConnected:
       "The membership system isn't connected yet — this screen is a preview for now. Real sign-in activates in the next step.",
+    signOut: "Sign out",
+    loggedInAs: "Account",
   },
   home: {
     badge: "Book preparation in one package",

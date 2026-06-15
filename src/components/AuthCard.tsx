@@ -1,9 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import Logo from "./Logo";
 import { EnvelopeIcon, LockIcon, UserIcon } from "./PhosphorIcons";
+import {
+  signInAction,
+  signUpAction,
+  type AuthState,
+} from "@/app/[lang]/auth-actions";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 
@@ -15,12 +20,14 @@ function Field({
   type,
   placeholder,
   icon,
+  autoComplete = "off",
 }: {
   id: string;
   label: string;
   type: string;
   placeholder: string;
   icon: React.ReactNode;
+  autoComplete?: string;
 }) {
   return (
     <label htmlFor={id} className="block">
@@ -36,7 +43,7 @@ function Field({
           name={id}
           type={type}
           placeholder={placeholder}
-          autoComplete="off"
+          autoComplete={autoComplete}
           className="w-full rounded-lg border border-border bg-surface py-2.5 pl-10 pr-3 text-sm outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
         />
       </span>
@@ -54,9 +61,19 @@ export default function AuthCard({
   dict: Dictionary;
 }) {
   const t = dict.auth;
-  const [submitted, setSubmitted] = useState(false);
-
   const isSignup = mode === "signup";
+
+  // Server action'ı dile bağla; useActionState onu (prevState, formData) ile çağırır.
+  const baseAction = isSignup ? signUpAction : signInAction;
+  const action = baseAction.bind(null, lang);
+  const [state, formAction, pending] = useActionState<AuthState, FormData>(
+    action,
+    {},
+  );
+
+  // Google girişi şimdilik kapalı (kod /lib/supabase/client.ts + /auth/callback ile
+  // hazır; Supabase panelinde Google sağlayıcısı ayarlanınca açılır).
+  const [googleNote, setGoogleNote] = useState(false);
 
   return (
     <div className="mx-auto flex max-w-md flex-col px-4 py-16">
@@ -75,19 +92,14 @@ export default function AuthCard({
           {isSignup ? t.signupSubtitle : t.loginSubtitle}
         </p>
 
-        <form
-          className="mt-6 flex flex-col gap-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setSubmitted(true);
-          }}
-        >
+        <form action={formAction} className="mt-6 flex flex-col gap-4">
           {isSignup && (
             <Field
               id="name"
               label={t.nameLabel}
               type="text"
               placeholder={t.namePlaceholder}
+              autoComplete="name"
               icon={<UserIcon className="h-4 w-4" />}
             />
           )}
@@ -96,6 +108,7 @@ export default function AuthCard({
             label={t.emailLabel}
             type="email"
             placeholder={t.emailPlaceholder}
+            autoComplete="email"
             icon={<EnvelopeIcon className="h-4 w-4" />}
           />
           <Field
@@ -103,6 +116,7 @@ export default function AuthCard({
             label={t.passwordLabel}
             type="password"
             placeholder={t.passwordPlaceholder}
+            autoComplete={isSignup ? "new-password" : "current-password"}
             icon={<LockIcon className="h-4 w-4" />}
           />
           {isSignup && (
@@ -111,6 +125,7 @@ export default function AuthCard({
               label={t.confirmLabel}
               type="password"
               placeholder={t.confirmPlaceholder}
+              autoComplete="new-password"
               icon={<LockIcon className="h-4 w-4" />}
             />
           )}
@@ -125,14 +140,20 @@ export default function AuthCard({
 
           <button
             type="submit"
-            className="mt-1 rounded-lg bg-accent py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+            disabled={pending}
+            className="mt-1 rounded-lg bg-accent py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
           >
-            {isSignup ? t.signupCta : t.loginCta}
+            {pending ? "…" : isSignup ? t.signupCta : t.loginCta}
           </button>
 
-          {submitted && (
-            <p className="rounded-lg border border-dashed border-border bg-accent-soft/50 p-3 text-center text-xs text-muted">
-              {t.notConnected}
+          {state.error && (
+            <p className="rounded-lg border border-red-300 bg-red-50 p-3 text-center text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+              {state.error}
+            </p>
+          )}
+          {state.notice && (
+            <p className="rounded-lg border border-green-300 bg-green-50 p-3 text-center text-sm text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300">
+              {state.notice}
             </p>
           )}
         </form>
@@ -143,9 +164,15 @@ export default function AuthCard({
           <span className="h-px flex-1 bg-border" />
         </div>
 
+        {/* OPTIONAL: Google girişi. Açmak için: import { createClient } from
+            "@/lib/supabase/client"; ve onClick'i şununla değiştir:
+              const supabase = createClient();
+              await supabase.auth.signInWithOAuth({ provider: "google",
+                options: { redirectTo: `${location.origin}/auth/callback?next=/${lang}` } });
+            Ayrıca Supabase panelinde Google sağlayıcısını yapılandır. */}
         <button
           type="button"
-          onClick={() => setSubmitted(true)}
+          onClick={() => setGoogleNote(true)}
           className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface py-2.5 text-sm font-semibold transition hover:border-foreground/30"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
@@ -168,6 +195,13 @@ export default function AuthCard({
           </svg>
           {t.googleCta}
         </button>
+        {googleNote && (
+          <p className="mt-3 text-center text-xs text-muted">
+            {lang === "tr"
+              ? "Google ile giriş çok yakında. Şimdilik e-posta ile devam et."
+              : "Google sign-in is coming soon. For now, continue with email."}
+          </p>
+        )}
 
         <p className="mt-6 text-center text-sm text-muted">
           {isSignup ? t.haveAccount : t.noAccount}{" "}
