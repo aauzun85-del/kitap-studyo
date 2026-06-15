@@ -1,0 +1,226 @@
+{
+  "version": "1.0",
+  "derived_from": "gold-translation-lab / sucveceza_isbank_v3_3",
+  "validated": "kör yarış B 10 – A 3 (7 tur, hakem=usta çeviri)",
+  "consume_note": "Yazar/editör modülünde: rules.filter(r => r.scope !== \"translation\"). Öneriler ZORLAMA değil, gerekçeli ipucu olarak gösterilmeli (severity: hint<suggest<warn). \"texture_calibration\" bir meta-çarpandır: sade pasajlarda önerileri kıs.",
+  "scopes": {
+    "author": "özgün yazıya da uygulanır",
+    "translation": "yalnız çeviri (kaynak gerekir)",
+    "both": "her ikisi (yazar için yeniden çerçevelenmiş)"
+  },
+  "rules": [
+    {
+      "id": "natural_turkish",
+      "title": "Doğal Türkçe / akıcılık",
+      "category": "fluency",
+      "scope": "author",
+      "severity": "suggest",
+      "rule": "Cümle Türkçe yazılmış gibi akmalı; akışı bozan ara cümleler özetlenir ya da düşürülür.",
+      "trigger_hint": "Devrik olmayan ama \"çeviri kokan\" diziliş; araya sıkışmış uzun yan cümlecik; yabancı söz dizimi izi.",
+      "author_suggestion": "Bu cümle biraz \"çeviri tadında\" duruyor; daha doğal bir Türkçe akışla yeniden kurmayı deneyebilirsin.",
+      "example": {
+        "before": "Onun, sabahları erken kalkması olan alışkanlığı vardı.",
+        "after": "Sabahları erken kalkmaya alışkındı."
+      },
+      "calibration": "Yazarın bilinçli üslubuysa dokunma."
+    },
+    {
+      "id": "sentence_split",
+      "title": "Uzun cümleyi böl",
+      "category": "sentence_structure",
+      "scope": "author",
+      "severity": "suggest",
+      "rule": "Aşırı uzun cümleler okuma ritmine göre kısa parçalara bölünür.",
+      "trigger_hint": "Yaklaşık 35-40+ kelimelik ya da 3+ bağlaçlı (\"ve/ki/ama\") tek cümle.",
+      "author_suggestion": "Uzun cümle. İki-üç kısa cümleye bölmek okumayı kolaylaştırır.",
+      "example": {
+        "before": "… diye düşündü ve kalktı ve pencereye gitti ve dışarı baktı ve…",
+        "after": "… diye düşündü. Kalkıp pencereye gitti. Dışarı baktı."
+      },
+      "calibration": "Bilinçli \"akış/soluksuzluk\" etkisi yaratılıyorsa koru."
+    },
+    {
+      "id": "concrete_word",
+      "title": "Somut sözcük seç",
+      "category": "diction",
+      "scope": "author",
+      "severity": "suggest",
+      "rule": "Soyut/nötr sözcük yerine somut, anlam yüklü, gözde canlanan karşılık.",
+      "trigger_hint": "Soyut isimler (güçsüzlük, durum, şey, olgu), zayıf fiiller (yapmak, olmak, etmek).",
+      "author_suggestion": "Soyut bir ifade. Okurun gözünde canlanacak somut bir sözcük daha etkili olabilir.",
+      "example": {
+        "before": "Yüzünde bir güçsüzlük vardı.",
+        "after": "Yüzü kireç gibiydi."
+      },
+      "calibration": "Soyut kavram kasıtlıysa (felsefi pasaj) zorlama."
+    },
+    {
+      "id": "diction_dose",
+      "title": "Diksiyon dozu (süse kaçma)",
+      "category": "diction",
+      "scope": "author",
+      "severity": "suggest",
+      "rule": "Yalın/sık kullanılan sözcük dururken gereksiz \"edebî\" eşanlamlıya kaçma.",
+      "trigger_hint": "Nadir/ağdalı eşanlamlılar: ardında→arkasında, kader→uğursuz, ürkek→korkulu, ağır ağır→yavaşça, vb.",
+      "author_suggestion": "Daha yalın bir karşılık (\"{plain}\") metni zorlamadan akıtır; süslü sözcük metne değil kendine hizmet ediyor olabilir.",
+      "example": {
+        "before": "Kapının ardında ürkek bir gölge ağır ağır ilerledi.",
+        "after": "Kapının arkasında korkulu bir gölge yavaşça ilerledi."
+      },
+      "calibration": "Kaynak/anlatı bilinçli olarak ağdalıysa serbest bırak. Yarış testinde A bu kuralla 3 tur kazandı."
+    },
+    {
+      "id": "tense_consistency",
+      "title": "Zaman/kip tutarlılığı",
+      "category": "grammar",
+      "scope": "author",
+      "severity": "warn",
+      "rule": "Anlatı boyunca tutarlı geçmiş zaman; mişli (-mış) ve dili (-di) geçmiş gereksiz yere karışmamalı.",
+      "trigger_hint": "Aynı paragrafta -di / -mış geçmiş zaman kayması.",
+      "author_suggestion": "Anlatı zamanı kaymış görünüyor; paragraf boyunca aynı geçmiş zamanı korumayı düşün.",
+      "example": {
+        "before": "Kapıyı açtı. İçeri girmiş, etrafa bakındı.",
+        "after": "Kapıyı açtı. İçeri girdi, etrafa bakındı."
+      },
+      "calibration": "Bilinçli kip geçişi (anı/rüya) varsa istisna."
+    },
+    {
+      "id": "dialogue_tag",
+      "title": "Doğal diyalog / konuşma etiketi",
+      "category": "dialogue",
+      "scope": "author",
+      "severity": "suggest",
+      "rule": "Konuşma etiketi (\"…dedi\") çoğu kez replikten önce/ayrı cümlede daha doğal durur; söyleyiş fiilleri sahnenin tonuna uyar.",
+      "trigger_hint": "Replik sonuna iliştirilmiş uzun ulaçlı etiket; tekrarlayan nötr \"dedi\".",
+      "author_suggestion": "Diyalog etiketini repliğin önüne almak veya söyleyiş fiilini sahneye göre seçmek diyaloğu canlandırır.",
+      "example": {
+        "before": "— Gel, dedi adam sertçe kapıyı işaret ederek.",
+        "after": "Adam kapıyı işaret etti: — Gel."
+      },
+      "calibration": "Aşırıya kaçma; her \"dedi\"yi değiştirmek de yorar."
+    },
+    {
+      "id": "cut_redundancy",
+      "title": "Sadeleştirme / tekrarı kıs",
+      "category": "concision",
+      "scope": "author",
+      "severity": "suggest",
+      "rule": "Israrlı pekiştirme tekrarları ve akışı bozan gereksiz öğeler sadeleştirilir.",
+      "trigger_hint": "Arka arkaya eşanlamlı sıfatlar; gereksiz pekiştireçler (çok çok, asla ama asla); dolgu cümleler.",
+      "author_suggestion": "Burada bir sadeleştirme metni güçlendirebilir; tekrar/dolgu kırpılabilir.",
+      "example": {
+        "before": "Çok ama çok korkunç, dehşetli, ürkütücü bir sesti.",
+        "after": "Ürkütücü bir sesti."
+      },
+      "calibration": "Tekrar bilinçli bir ritim/vurgu aracıysa KORU (bu, en sık yanlış-pozitiftir)."
+    },
+    {
+      "id": "restructure",
+      "title": "Cümle yapısını yeniden kur",
+      "category": "sentence_structure",
+      "scope": "author",
+      "severity": "hint",
+      "rule": "Vurgu için devrik yapı; olumsuz/dolaylı kalıplar gerektiğinde olumlu ya da isim cümlesine çevrilir.",
+      "trigger_hint": "Ağır olumsuz zincirler (\"değildi … olmayan …\"); vurgunun yanlış yere düştüğü düz diziliş.",
+      "author_suggestion": "Cümleyi yeniden dizmek (devrik veya olumlu kurmak) vurguyu güçlendirebilir.",
+      "example": {
+        "before": "Mutlu olmadığı söylenemez değildi.",
+        "after": "Mutluydu."
+      },
+      "calibration": "Belirsizlik kasıtlıysa dokunma."
+    },
+    {
+      "id": "clarify_referent",
+      "title": "Belirsiz gönderimi netleştir",
+      "category": "clarity",
+      "scope": "both",
+      "severity": "warn",
+      "rule": "Hangi kişiyi/şeyi işaret ettiği belirsiz adıl/gönderim, okur kafa karışıklığına yol açarsa açıkça yazılır.",
+      "trigger_hint": "Aynı cümlede birden çok özneyken \"o / onu / bu\"; uzaktaki bir ada gönderen adıl.",
+      "author_suggestion": "\"{pronoun}\" kimi/neyi kastediyor belirsiz olabilir; adı açıkça yazmak netlik kazandırır.",
+      "example": {
+        "before": "Ali, Veli'ye baktı; onu sevmiyordu.",
+        "after": "Ali, Veli'ye baktı; Veli'yi sevmiyordu."
+      },
+      "calibration": "Belirsizlik kasıtlı bir gerilim aracıysa istisna. (Çeviride: \"açımlama\" kuralının yazar karşılığı.)"
+    },
+    {
+      "id": "address_consistency",
+      "title": "Hitap (sen/siz) tutarlılığı",
+      "category": "register",
+      "scope": "both",
+      "severity": "warn",
+      "rule": "Bir karakterin bir başkasına hitabı (resmî \"siz\" ↔ samimi \"sen\") eser boyunca tutarlı kalmalı; sebepsiz kaymamalı.",
+      "trigger_hint": "Aynı iki karakter arasında diyalogda sen/siz kayması.",
+      "author_suggestion": "Bu karakterler arasında hitap \"sen/siz\" arasında kaymış görünüyor; ilişki değişmediyse tutarlı tutmayı düşün.",
+      "example": {
+        "before": "— Gelir misiniz? … — Neredesin sen?",
+        "after": "— Gelir misin? … — Neredesin sen?"
+      },
+      "calibration": "Hitap kayması bilinçli (yakınlaşma/uzaklaşma) ise koru. (Çeviride: \"nezaket koruma\".)"
+    },
+    {
+      "id": "punctuation_liveliness",
+      "title": "Noktalama canlılığı",
+      "category": "punctuation",
+      "scope": "author",
+      "severity": "hint",
+      "rule": "Üç nokta, kısa çizgi, ünlem konuşmanın/duygunun canlılığını yansıtacak biçimde ayarlanır.",
+      "trigger_hint": "Diyalogda eksik kısa çizgi; duraksamanın gerektiği yerde nokta; ünlem enflasyonu.",
+      "author_suggestion": "Noktalama, buradaki tonu/duraksamayı daha iyi yansıtacak şekilde ayarlanabilir.",
+      "calibration": "Ünlem/üç nokta enflasyonundan da kaçın."
+    },
+    {
+      "id": "accessible_concept",
+      "title": "Soyut kavramı günlükleştir",
+      "category": "clarity",
+      "scope": "author",
+      "severity": "hint",
+      "rule": "Ağır soyut/teknik kavram, bağlam elveriyorsa daha günlük bir ifadeyle yeniden çerçevelenir.",
+      "trigger_hint": "Anlatı/diyalog içinde ağır soyut terim yığını (irade, tezahür, mahiyet…).",
+      "author_suggestion": "Bu kavram daha günlük bir ifadeyle verilirse okur kopmadan takip edebilir.",
+      "calibration": "Akademik/felsefi metinde kasıtlıysa dokunma."
+    },
+    {
+      "id": "emotion_calibration",
+      "title": "Duygu/vurgu somutlaştır",
+      "category": "diction",
+      "scope": "author",
+      "severity": "hint",
+      "rule": "Nötr fiil/sıfat, sahnenin duygusal yüküne göre somut bir karşılıkla güçlendirilebilir.",
+      "trigger_hint": "Yoğun duygulu sahnede nötr fiiller (söyledi, gitti, baktı).",
+      "author_suggestion": "Sahnenin duygusu güçlü; nötr bir fiil yerine tonu taşıyan bir karşılık düşünülebilir.",
+      "example": {
+        "before": "Korkudan \"hayır\" dedi.",
+        "after": "Korkudan haykırdı: — Hayır!"
+      },
+      "calibration": "Sade/içsel sahnede zorlama (doku-ayarına bak)."
+    },
+    {
+      "id": "idiom_localization",
+      "title": "Deyim yerelleştirme",
+      "category": "idiom",
+      "scope": "translation",
+      "severity": "suggest",
+      "rule": "Kaynak deyim, anlamı tutan yerleşik bir Türk deyimiyle karşılanır; kelimesi kelimesine bırakılmaz.",
+      "trigger_hint": "(Yalnız çeviride) kaynaktaki deyimin birebir çevrilmiş, Türkçede tuhaf duran hâli.",
+      "author_suggestion": "(Yalnız çeviri modülünde geçerli — özgün yazıya önerilmez.)",
+      "example": {
+        "before": "из кожи лез → derisinden çıkıyordu",
+        "after": "anamdan emdiğim süt burnumdan geldi"
+      },
+      "calibration": "Özgün Türkçe yazıda KAYNAK olmadığı için uygulanmaz."
+    },
+    {
+      "id": "texture_calibration",
+      "title": "Doku-duyarlı ayar (META kural)",
+      "category": "meta",
+      "scope": "both",
+      "severity": "meta",
+      "rule": "Diğer kuralların DOZUNU metnin dokusuna göre ayarla: renkli/diyalog pasajlarda cesur, sade/içsel anlatımda hafif uygula. Yarış testinde bu kalibrasyon eksikliği kayba yol açtı.",
+      "trigger_hint": "Pasaj türünü kabaca sınıfla: diyalog/betim/renkli mi, yoksa düşünsel/sade iç-ses mi.",
+      "author_suggestion": "(Motor için yönerge: sade pasajlarda üslup önerilerini kıs, dayatma; yazarın sesine saygı göster.)",
+      "calibration": "Bu kuralın kendisi bir çarpan; tek başına öneri üretmez, diğerlerinin agresifliğini düşürür."
+    }
+  ]
+}

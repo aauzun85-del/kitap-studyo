@@ -1,26 +1,168 @@
 @import "tailwindcss";
+/* fonts: yerel Source Serif 4 + Vollkorn (PDF ile metrik eşitliği) */
+
+/* Arno Pro — yalnızca yerel/kişisel kullanım (bkz. .gitignore). Dosyalar yoksa
+   tarayıcı sessizce serif yedeğine düşer; mizanpaj yine de çalışır. */
+@font-face {
+  font-family: "Arno Pro";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Arno-Regular.otf") format("opentype");
+}
+@font-face {
+  font-family: "Arno Pro";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/Arno-SemiBold.otf") format("opentype");
+}
+@font-face {
+  font-family: "Arno Pro";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/Arno-Bold.otf") format("opentype");
+}
+@font-face {
+  font-family: "Arno Pro";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Arno-Italic.otf") format("opentype");
+}
+
+/* Source Serif 4 & Vollkorn — YEREL dosyalardan (Google Fonts'tan DEĞİL).
+   Neden: PDF dışa-aktarma bu /fonts/*.ttf dosyalarını gömer. Google Fonts'un
+   variable sürümü ~%4 daha dar; sayfalama (canvas) onu, PDF ise yerel dosyayı
+   kullanınca metin sağ marjı aşıyordu (folyo/marka hizası bozuluyordu). Aynı
+   dosyaları kullanınca canvas + önizleme + PDF metrikleri birebir tutar (WYSIWYG).
+   Bu aileler bu yüzden layout.tsx'teki Google Fonts <link>'inden çıkarıldı. */
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/SourceSerif4-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/SourceSerif4-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/SourceSerif4-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/SourceSerif4-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/SourceSerif4-BoldItalic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Vollkorn";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Vollkorn-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Vollkorn";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/Vollkorn-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Vollkorn";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Vollkorn-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Vollkorn";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/Vollkorn-BoldItalic.ttf") format("truetype");
+}
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f5f1;
+  --surface: #ffffff;
+  --foreground: #343330;
+  --muted: #656461;
+  --border: #e6e0d5;
+  --accent: #e05620;       /* Biraz daha canlı turuncu */
+  --accent-soft: #fde8da;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --font-sans: var(--font-manrope);
+  --font-mono: var(--font-plex-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #26241f;
+    --surface: #343330;
+    --foreground: #f7f5f1;
+    --muted: #bcadaf;
+    --border: #45433d;
+    --accent: #ff8e51;
+    --accent-soft: #3a2c22;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* Smooth page transitions */
+* {
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Scroll-fade-in utility ── */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.55s ease both;
+}
+
+/* ── Subtle grid texture on hero backgrounds ── */
+.hero-grid {
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: center;
+  opacity: 0.35;
 }

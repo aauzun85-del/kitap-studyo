@@ -36,6 +36,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Arno Pro (Adobe lisanslı — dağıtılamaz). Yalnızca yerel/kişisel kullanım için
+# public/fonts'a konur; depoya ve yayınlanan sürüme GİRMEMELİ. Yoksa pdf.ts
+# otomatik olarak ücretsiz Source Serif 4'e düşer.
+/public/fonts/Arno-*.otf
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

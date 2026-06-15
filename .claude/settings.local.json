@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(git commit *)",
+      "Bash(node_modules/.bin/tsc *)",
+      "Bash(node_modules/.bin/eslint *)",
+      "Edit(src/**)"
+    ],
+    "deny": [
+      "Bash(git push *)"
+    ]
+  }
+}
