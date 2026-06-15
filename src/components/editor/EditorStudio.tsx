@@ -5,6 +5,8 @@ import type { Dispatch, SetStateAction } from "react";
 import Link from "next/link";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
+import type { ProjectEnvelope } from "@/lib/projects/types";
+import { useManuscriptSync } from "@/lib/projects/useSync";
 import { docxToText } from "@/lib/editor/docxText";
 import { textToDocx, suggestDocxName } from "@/lib/editor/textToDocx";
 import { applyEditsToDocx, type DocxEdit } from "@/lib/editor/docxEdit";
@@ -664,10 +666,21 @@ function StructureView({
   );
 }
 
-export default function EditorStudio({ lang, dict }: { lang: Locale; dict: Dictionary }) {
+export default function EditorStudio({
+  lang,
+  dict,
+  initialProject,
+}: {
+  lang: Locale;
+  dict: Dictionary;
+  initialProject?: { id: string; data: ProjectEnvelope };
+}) {
   const t = dict.editorStudio;
+  const projectId = initialProject?.id ?? null;
 
-  const [raw, setRaw] = useState("");
+  // Editör yalnız paylaşılan kitap METNİNİ tutar (başlık/yazar yok).
+  const [raw, setRaw] = useState(initialProject?.data.manuscript.text ?? "");
+  useManuscriptSync(projectId, raw, "editor");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);

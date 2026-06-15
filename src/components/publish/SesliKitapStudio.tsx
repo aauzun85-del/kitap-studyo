@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
+import type { ProjectEnvelope } from "@/lib/projects/types";
+import { useMetaSync, useManuscriptSync } from "@/lib/projects/useSync";
 import { docxToText } from "@/lib/editor/docxText";
 import { splitChapters } from "@/lib/publish/chapters";
 import { suggestFilename } from "@/lib/publish/epub";
@@ -33,21 +35,29 @@ type AudioVoice = "ai" | "own";
 export default function SesliKitapStudio({
   lang,
   dict,
+  initialProject,
 }: {
   lang: Locale;
   dict: Dictionary;
+  initialProject?: { id: string; data: ProjectEnvelope };
 }) {
   const t = dict.publishStudio;
+  const projectId = initialProject?.id ?? null;
+  const seed = initialProject?.data;
 
-  const [raw, setRaw] = useState("");
+  const [raw, setRaw] = useState(seed?.manuscript.text ?? "");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [importInfo, setImportInfo] = useState<string | null>(null);
   const [importError, setImportError] = useState(false);
 
-  const [bookTitle, setBookTitle] = useState("");
+  const [bookTitle, setBookTitle] = useState(seed?.meta.title ?? "");
   const [voice, setVoice] = useState<AudioVoice>("ai");
+
+  // Bulut projesi: başlık + metni projeye yaz (sesli kitapta yazar alanı yok).
+  useMetaSync(projectId, { title: bookTitle });
+  useManuscriptSync(projectId, raw, "audiobook");
 
   // Sesli kitap (yapay zekâ sesi) durumu.
   // Ses motoru: MiniMax (Türkçe seslere uygun) | ElevenLabs v3 (çok doğal). İkisi

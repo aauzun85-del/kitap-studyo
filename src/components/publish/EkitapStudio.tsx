@@ -4,6 +4,8 @@ import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
+import type { ProjectEnvelope } from "@/lib/projects/types";
+import { useMetaSync, useManuscriptSync } from "@/lib/projects/useSync";
 import { docxToText } from "@/lib/editor/docxText";
 import { splitChapters } from "@/lib/publish/chapters";
 import { buildEpubBlob, suggestFilename } from "@/lib/publish/epub";
@@ -34,21 +36,29 @@ type EbookFormat = "epub" | "kindle" | "pdf";
 export default function EkitapStudio({
   lang,
   dict,
+  initialProject,
 }: {
   lang: Locale;
   dict: Dictionary;
+  initialProject?: { id: string; data: ProjectEnvelope };
 }) {
   const t = dict.publishStudio;
+  const projectId = initialProject?.id ?? null;
+  const seed = initialProject?.data;
 
-  const [raw, setRaw] = useState("");
+  const [raw, setRaw] = useState(seed?.manuscript.text ?? "");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [importInfo, setImportInfo] = useState<string | null>(null);
   const [importError, setImportError] = useState(false);
 
-  const [bookTitle, setBookTitle] = useState("");
-  const [bookAuthor, setBookAuthor] = useState("");
+  const [bookTitle, setBookTitle] = useState(seed?.meta.title ?? "");
+  const [bookAuthor, setBookAuthor] = useState(seed?.meta.author ?? "");
+
+  // Bulut projesi: başlık/yazar + metni projeye yaz.
+  useMetaSync(projectId, { title: bookTitle, author: bookAuthor });
+  useManuscriptSync(projectId, raw, "ekitap");
 
   // Kapak görseli: dosyanın kendisi + önizleme için nesne URL'i.
   const coverInputRef = useRef<HTMLInputElement>(null);

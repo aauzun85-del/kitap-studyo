@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
+import type { ProjectEnvelope } from "@/lib/projects/types";
+import { useMetaSync, useManuscriptSync } from "@/lib/projects/useSync";
 import {
   INTERIOR_SIZES,
   MARGIN_PRESETS,
@@ -88,19 +90,34 @@ function ptToPx(pt: number, dpi: number): number {
   return (pt / 72) * dpi;
 }
 
-export default function LayoutStudio({ lang, dict }: { lang: Locale; dict: Dictionary }) {
+export default function LayoutStudio({
+  lang,
+  dict,
+  initialProject,
+}: {
+  lang: Locale;
+  dict: Dictionary;
+  initialProject?: { id: string; data: ProjectEnvelope };
+}) {
   const t = dict.layoutStudio;
+  // Bulut projesi: state proje verisinden tohumlanır; proje yoksa anonim (boş).
+  const projectId = initialProject?.id ?? null;
+  const seed = initialProject?.data;
 
   const [panel, setPanel] = useState<PanelId>("book");
 
   // Kitap bilgileri.
-  const [title, setTitle] = useState("");
-  const [author, setAuthor] = useState("");
-  const [bio, setBio] = useState("");
+  const [title, setTitle] = useState(seed?.meta.title ?? "");
+  const [author, setAuthor] = useState(seed?.meta.author ?? "");
+  const [bio, setBio] = useState(seed?.meta.bio ?? "");
 
   // Gövde metni (elle yazılan markdown) ve Word'den içe aktarılan bloklar.
   const [sourceMode, setSourceMode] = useState<SourceMode>("manual");
-  const [raw, setRaw] = useState("");
+  const [raw, setRaw] = useState(seed?.manuscript.text ?? "");
+
+  // Bulut projesi aktifse: başlık/yazar/bio + metni projeye debounce ile yaz.
+  useMetaSync(projectId, { title, author, bio });
+  useManuscriptSync(projectId, raw, "layout");
   const [importedBlocks, setImportedBlocks] = useState<Block[] | null>(null);
   const [importInfo, setImportInfo] = useState<string | null>(null);
   const [docxMode, setDocxMode] = useState<DocxMode>("kdy");

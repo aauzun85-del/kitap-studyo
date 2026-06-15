@@ -2,9 +2,10 @@ import { notFound, redirect } from "next/navigation";
 import { isLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
 import { createClient } from "@/lib/supabase/server";
+import { loadInitialProject } from "@/lib/projects/server";
 import EkitapStudio from "@/components/publish/EkitapStudio";
 
-export default async function EkitapPage({ params }: PageProps<"/[lang]/ekitap">) {
+export default async function EkitapPage({ params, searchParams }: PageProps<"/[lang]/ekitap">) {
   const { lang } = await params;
   if (!isLocale(lang)) notFound();
 
@@ -15,5 +16,15 @@ export default async function EkitapPage({ params }: PageProps<"/[lang]/ekitap">
   if (!user) redirect(`/${lang}/giris`);
 
   const dict = getDictionary(lang);
-  return <EkitapStudio lang={lang} dict={dict} />;
+  const sp = await searchParams;
+  const initialProject = await loadInitialProject(supabase, sp.project);
+
+  return (
+    <EkitapStudio
+      key={initialProject?.id ?? "anon"}
+      lang={lang}
+      dict={dict}
+      initialProject={initialProject}
+    />
+  );
 }

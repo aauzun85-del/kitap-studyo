@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
+import type { ProjectEnvelope } from "@/lib/projects/types";
+import { useMetaSync } from "@/lib/projects/useSync";
 import {
   MegaphoneIcon,
   BookIcon,
@@ -37,14 +39,18 @@ const SAMPLE = {
 export default function TanitimStudio({
   lang,
   dict,
+  initialProject,
 }: {
   lang: Locale;
   dict: Dictionary;
+  initialProject?: { id: string; data: ProjectEnvelope };
 }) {
   const t = dict.tanitimStudio;
+  const projectId = initialProject?.id ?? null;
+  const seed = initialProject?.data;
 
-  const [title, setTitle] = useState("");
-  const [author, setAuthor] = useState("");
+  const [title, setTitle] = useState(seed?.meta.title ?? "");
+  const [author, setAuthor] = useState(seed?.meta.author ?? "");
   const [genre, setGenre] = useState("");
   const [audience, setAudience] = useState("");
   const [summary, setSummary] = useState("");
@@ -68,9 +74,16 @@ export default function TanitimStudio({
   const [imageError, setImageError] = useState<string | null>(null);
   const [image, setImage] = useState<string | null>(null);
 
+  // Bulut projesi: paylaşılan başlık/yazarı projeye yaz (tanıtım formu alanları
+  // genre/audience/summary/tone Aşama 2'de eklenecek).
+  useMetaSync(projectId, { title, author });
+
   function loadSample() {
-    setTitle(SAMPLE.title);
-    setAuthor(SAMPLE.author);
+    // Proje aktifken paylaşılan başlık/yazarı ÖRNEK veriyle EZME (gerçek kitabı bozardı).
+    if (!projectId) {
+      setTitle(SAMPLE.title);
+      setAuthor(SAMPLE.author);
+    }
     setGenre(SAMPLE.genre);
     setAudience(SAMPLE.audience);
     setSummary(SAMPLE.summary);
@@ -79,8 +92,10 @@ export default function TanitimStudio({
   }
 
   function clearAll() {
-    setTitle("");
-    setAuthor("");
+    if (!projectId) {
+      setTitle("");
+      setAuthor("");
+    }
     setGenre("");
     setAudience("");
     setSummary("");

@@ -6,6 +6,7 @@ import { isLocale, locales } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
 import SiteHeader from "@/components/SiteHeader";
 import SiteChrome from "@/components/SiteChrome";
+import ProjectBar from "@/components/ProjectBar";
 
 const manrope = Manrope({
   variable: "--font-manrope",
@@ -62,6 +63,7 @@ export default async function LangLayout({
       </head>
       <body className="min-h-full flex flex-col">
         <SiteChrome
+          projectBar={<ProjectBar lang={lang} labels={dict.nav} />}
           header={<SiteHeader lang={lang} dict={dict} />}
           footer={
             <footer className="border-t border-border bg-surface">

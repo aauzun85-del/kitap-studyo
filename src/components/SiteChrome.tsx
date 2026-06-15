@@ -23,10 +23,12 @@ const FULLSCREEN_SEGMENTS = new Set([
 export default function SiteChrome({
   header,
   footer,
+  projectBar,
   children,
 }: {
   header: ReactNode;
   footer: ReactNode;
+  projectBar: ReactNode;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -36,6 +38,9 @@ export default function SiteChrome({
 
   return (
     <>
+      {/* Proje açıkken modül-geçiş çubuğu (kendi içinde gizlenir); tam ekran
+          araçlarda da görünür, böylece proje korunarak modüller arasında gezinilir. */}
+      {projectBar}
       {!fullscreen && header}
       <main className="flex-1">{children}</main>
       {!fullscreen && footer}
