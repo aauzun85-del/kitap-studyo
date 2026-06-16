@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import LanguageSwitcher from "./LanguageSwitcher";
 import { createClient } from "@/lib/supabase/server";
+import { isAdminEmail } from "@/lib/admin";
 import { signOutAction } from "@/app/[lang]/auth-actions";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
@@ -59,6 +60,14 @@ export default async function SiteHeader({
               >
                 {dict.nav.projects}
               </Link>
+              {isAdminEmail(user.email) && (
+                <Link
+                  href={`/${lang}/admin`}
+                  className="hidden rounded-full px-3 py-1.5 text-sm font-semibold text-muted transition hover:text-foreground sm:block"
+                >
+                  {lang === "tr" ? "Yönetim" : "Admin"}
+                </Link>
+              )}
               <span
                 title={dict.auth.loggedInAs}
                 className="hidden max-w-[160px] truncate text-sm font-medium text-muted sm:block"

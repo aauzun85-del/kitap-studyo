@@ -4,7 +4,7 @@ import { locales, defaultLocale } from "@/i18n/config";
 import { updateSession } from "@/lib/supabase/proxy";
 
 // Giriş yapılmadan kullanılamayan araç sayfaları (ilk yol parçası).
-const PROTECTED = new Set(["kapak", "mizanpaj", "editor", "ekitap", "sesli-kitap", "projeler"]);
+const PROTECTED = new Set(["kapak", "mizanpaj", "editor", "ekitap", "sesli-kitap", "projeler", "admin"]);
 
 function getLocale(request: NextRequest): string {
   const accept = request.headers.get("accept-language");
