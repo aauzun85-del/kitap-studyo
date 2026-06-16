@@ -7,6 +7,7 @@ import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
 import { useManuscriptSync } from "@/lib/projects/useSync";
+import { chunkText } from "@/lib/editor/chunk";
 import { docxToText } from "@/lib/editor/docxText";
 import { textToDocx, suggestDocxName } from "@/lib/editor/textToDocx";
 import { applyEditsToDocx, type DocxEdit } from "@/lib/editor/docxEdit";
@@ -64,6 +65,19 @@ type Suggestion = {
   wordCount?: number;
   severity?: Severity;
 };
+
+// Parçalı kontrolde aynı öneri birden çok parçada çıkabilir; tekilleştir.
+function dedupeSuggestions(list: Suggestion[]): Suggestion[] {
+  const seen = new Set<string>();
+  const out: Suggestion[] = [];
+  for (const s of list) {
+    const key = `${s.kind}|${s.category}|${s.original}|${s.suggestion}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+  }
+  return out;
+}
 
 // Claude'dan gelen ham yazım/dilbilgisi önerisi (henüz kind eklenmemiş).
 type AiSuggestion = {
@@ -698,6 +712,8 @@ export default function EditorStudio({
   const [reviewing, setReviewing] = useState(false);
   const [risking, setRisking] = useState(false);
   const [genreLoading, setGenreLoading] = useState(false);
+  // Uzun metinler otomatik parçalanır; ilerleme (parça/toplam) burada tutulur.
+  const [checkProgress, setCheckProgress] = useState<{ done: number; total: number } | null>(null);
   const [genre, setGenre] = useState<Genre>("fiction");
   const [deep, setDeep] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
@@ -894,6 +910,60 @@ export default function EditorStudio({
     }
   }
 
+  // Uzun metni parçalara böler, her parçayı endpoint'e gönderir (sınırlı
+  // eşzamanlılık) ve dönen dizileri birleştirir. Parçalar sunucu sınırının
+  // (15000) altında kaldığından "too-long" hiç tetiklenmez → kullanıcı için
+  // karakter sınırı pratikte kalkar. Öneriler alıntı-bazlı olduğu için birleştirme
+  // basittir (üst üste binme yok).
+  const CHUNK_SIZE = 12000;
+  const CONCURRENCY = 3;
+
+  async function runChunked<T>(
+    endpoint: string,
+    extract: (data: unknown) => T[] | undefined,
+    extraBody?: Record<string, unknown>,
+  ): Promise<{ items: T[]; error: string | null }> {
+    const chunks = chunkText(raw, CHUNK_SIZE);
+    const total = chunks.length;
+    setCheckProgress(total > 1 ? { done: 0, total } : null);
+    let done = 0;
+    const items: T[] = [];
+    let firstError: string | null = null;
+
+    for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+      const batch = chunks.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(async (chunk): Promise<{ ok: T[] } | { err: string }> => {
+          try {
+            const res = await fetch(endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: chunk, lang, mode: deep ? "deep" : "fast", ...extraBody }),
+            });
+            if (!res.ok) {
+              const d = (await res.json().catch(() => ({}))) as { error?: string; max?: number };
+              return { err: mapError(d.error, d.max) };
+            }
+            const d = (await res.json()) as unknown;
+            return { ok: extract(d) ?? [] };
+          } catch {
+            return { err: t.errorGeneric };
+          } finally {
+            done += 1;
+            if (total > 1) setCheckProgress({ done, total });
+          }
+        }),
+      );
+      for (const r of results) {
+        if ("ok" in r) items.push(...r.ok);
+        else if (!firstError) firstError = r.err;
+      }
+    }
+    setCheckProgress(null);
+    // Hiç sonuç yoksa ve hata varsa hatayı bildir; bazı parçalar başardıysa göster.
+    return { items, error: items.length === 0 ? firstError : null };
+  }
+
   async function handleCheck() {
     setChecking(true);
     setCheckError(null);
@@ -902,30 +972,22 @@ export default function EditorStudio({
     setStructure(null);
     setPrep(false);
     try {
-      const res = await fetch("/api/editor-check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: raw, lang, mode: deep ? "deep" : "fast" }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as {
-          error?: string;
-          max?: number;
-        };
-        setCheckError(mapError(data.error, data.max));
+      const { items, error } = await runChunked<AiSuggestion>(
+        "/api/editor-check",
+        (d) => (d as { suggestions?: AiSuggestion[] }).suggestions,
+      );
+      if (error && items.length === 0) {
+        setCheckError(error);
         return;
       }
-      const data = (await res.json()) as { suggestions?: AiSuggestion[] };
-      const fixes: Suggestion[] = (data.suggestions ?? []).map((s) => ({
-        ...s,
-        kind: "fix",
-      }));
-      setSuggestions([...fixes, ...findLongSentences(raw)]);
+      const fixes: Suggestion[] = items.map((s) => ({ ...s, kind: "fix" }));
+      setSuggestions(dedupeSuggestions([...fixes, ...findLongSentences(raw)]));
       setCheckedText(raw);
     } catch {
       setCheckError(t.errorGeneric);
     } finally {
       setChecking(false);
+      setCheckProgress(null);
     }
   }
 
@@ -939,21 +1001,15 @@ export default function EditorStudio({
     setStructure(null);
     setPrep(false);
     try {
-      const res = await fetch("/api/editor-review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: raw, lang, mode: deep ? "deep" : "fast" }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as {
-          error?: string;
-          max?: number;
-        };
-        setCheckError(mapError(data.error, data.max));
+      const { items, error } = await runChunked<ReviewNote>(
+        "/api/editor-review",
+        (d) => (d as { notes?: ReviewNote[] }).notes,
+      );
+      if (error && items.length === 0) {
+        setCheckError(error);
         return;
       }
-      const data = (await res.json()) as { notes?: ReviewNote[] };
-      const notes: Suggestion[] = (data.notes ?? []).map((n) => ({
+      const notes: Suggestion[] = items.map((n) => ({
         kind: "notice",
         original: n.excerpt,
         suggestion: n.suggestion,
@@ -961,12 +1017,13 @@ export default function EditorStudio({
         explanation: n.issue,
         severity: n.severity,
       }));
-      setSuggestions(notes);
+      setSuggestions(dedupeSuggestions(notes));
       setCheckedText(raw);
     } catch {
       setCheckError(t.errorGeneric);
     } finally {
       setReviewing(false);
+      setCheckProgress(null);
     }
   }
 
@@ -980,33 +1037,28 @@ export default function EditorStudio({
     setStructure(null);
     setPrep(false);
     try {
-      const res = await fetch("/api/editor-risk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: raw, lang, mode: deep ? "deep" : "fast" }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as {
-          error?: string;
-          max?: number;
-        };
-        setCheckError(mapError(data.error, data.max));
+      const { items, error } = await runChunked<RiskNote>(
+        "/api/editor-risk",
+        (d) => (d as { notes?: RiskNote[] }).notes,
+      );
+      if (error && items.length === 0) {
+        setCheckError(error);
         return;
       }
-      const data = (await res.json()) as { notes?: RiskNote[] };
-      const notes: Suggestion[] = (data.notes ?? []).map((n) => ({
+      const notes: Suggestion[] = items.map((n) => ({
         kind: "notice",
         original: n.excerpt,
         suggestion: n.suggestion,
         category: n.category,
         explanation: n.issue,
       }));
-      setSuggestions(notes);
+      setSuggestions(dedupeSuggestions(notes));
       setCheckedText(raw);
     } catch {
       setCheckError(t.errorGeneric);
     } finally {
       setRisking(false);
+      setCheckProgress(null);
     }
   }
 
@@ -1020,38 +1072,29 @@ export default function EditorStudio({
     setStructure(null);
     setPrep(false);
     try {
-      const res = await fetch("/api/editor-genre", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: raw,
-          lang,
-          mode: deep ? "deep" : "fast",
-          genre,
-        }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as {
-          error?: string;
-          max?: number;
-        };
-        setCheckError(mapError(data.error, data.max));
+      const { items, error } = await runChunked<GenreNote>(
+        "/api/editor-genre",
+        (d) => (d as { notes?: GenreNote[] }).notes,
+        { genre },
+      );
+      if (error && items.length === 0) {
+        setCheckError(error);
         return;
       }
-      const data = (await res.json()) as { notes?: GenreNote[] };
-      const notes: Suggestion[] = (data.notes ?? []).map((n) => ({
+      const notes: Suggestion[] = items.map((n) => ({
         kind: "notice",
         original: n.excerpt,
         suggestion: n.suggestion,
         category: n.category,
         explanation: n.issue,
       }));
-      setSuggestions(notes);
+      setSuggestions(dedupeSuggestions(notes));
       setCheckedText(raw);
     } catch {
       setCheckError(t.errorGeneric);
     } finally {
       setGenreLoading(false);
+      setCheckProgress(null);
     }
   }
 
@@ -1439,6 +1482,9 @@ export default function EditorStudio({
                     : reviewing
                       ? t.reviewing
                       : t.checking}
+                {checkProgress && checkProgress.total > 1
+                  ? ` ${checkProgress.done}/${checkProgress.total}`
+                  : ""}
               </div>
             </div>
           ) : suggestions === null ? (
