@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { isLocale } from "@/i18n/config";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/supabase/user";
 import { createAdminClient, hasServiceKey } from "@/lib/supabase/admin";
 import { isAdminEmail } from "@/lib/admin";
 
@@ -11,10 +11,7 @@ export default async function AdminPage({ params }: PageProps<"/[lang]/admin">) 
   if (!isLocale(lang)) notFound();
 
   // 1) Giriş zorunlu.
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   if (!user) redirect(`/${lang}/giris?next=/${lang}/admin`);
 
   // 2) Yalnız admin. Değilse sayfanın varlığını bile belli etme (404).

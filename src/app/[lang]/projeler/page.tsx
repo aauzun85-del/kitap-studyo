@@ -1,17 +1,14 @@
 import { notFound, redirect } from "next/navigation";
 import { isLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/supabase/user";
 import ProjelerList from "@/components/projects/ProjelerList";
 
 export default async function ProjelerPage({ params }: PageProps<"/[lang]/projeler">) {
   const { lang } = await params;
   if (!isLocale(lang)) notFound();
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   if (!user) redirect(`/${lang}/giris`);
 
   const dict = getDictionary(lang);

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import LanguageSwitcher from "./LanguageSwitcher";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/supabase/user";
 import { isAdminEmail } from "@/lib/admin";
 import { signOutAction } from "@/app/[lang]/auth-actions";
 import type { Locale } from "@/i18n/config";
@@ -14,10 +14,7 @@ export default async function SiteHeader({
   lang: Locale;
   dict: Dictionary;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   const links = [
     { href: `/${lang}`, label: dict.nav.home },
     { href: `/${lang}/kapak`, label: dict.nav.cover },

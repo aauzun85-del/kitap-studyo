@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { isLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/supabase/user";
 import { loadInitialProject } from "@/lib/projects/server";
 import TanitimStudio from "@/components/promo/TanitimStudio";
 
@@ -15,11 +16,9 @@ export default async function TanitimPage({ params, searchParams }: PageProps<"/
   const sp = await searchParams;
   let initialProject;
   if (sp.project) {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCurrentUser();
     if (user) {
+      const supabase = await createClient();
       initialProject = await loadInitialProject(supabase, sp.project);
     }
   }
