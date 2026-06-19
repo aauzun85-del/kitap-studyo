@@ -205,6 +205,7 @@ export default function AppShell({
   signOut,
   active,
   context,
+  fitContent,
   children,
 }: {
   lang: Locale;
@@ -212,6 +213,9 @@ export default function AppShell({
   signOut?: () => Promise<void>;
   active?: "home" | "books" | string;
   context?: AppShellContext;
+  /** true: içerik alanı tam yüksekliği doldurur ve KAYDIRMAZ (tuval araçları:
+   *  kapak/mizanpaj kendi iç düzenini yönetir). false/yok: dikey kaydırma. */
+  fitContent?: boolean;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -697,8 +701,10 @@ export default function AppShell({
           </div>
         )}
 
-        {/* scroll area */}
-        <div style={{ flex: 1, overflow: "auto" }}>{children}</div>
+        {/* içerik alanı: kaydırmalı (form modülleri) veya tam-yükseklik kaydırmasız (tuval araçları) */}
+        <div style={fitContent ? { flex: 1, minHeight: 0, overflow: "hidden" } : { flex: 1, overflow: "auto" }}>
+          {children}
+        </div>
       </div>
     </div>
   );

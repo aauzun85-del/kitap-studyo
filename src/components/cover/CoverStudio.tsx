@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import {
@@ -1512,24 +1511,7 @@ export default function CoverStudio({
   ];
 
   return (
-    <div className="mx-auto flex h-[100dvh] w-full max-w-[1600px] flex-col overflow-hidden px-4 pb-2 pt-2">
-      {/* Üst satır tek sıra: geri bağlantısı + başlık + etiket → dikey yer
-          kazanılır, tuval büyür (Canva gibi ferah). */}
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <Link
-          href={`/${lang}`}
-          className="text-sm font-medium text-muted transition hover:text-foreground"
-        >
-          ←
-        </Link>
-        <h1 className="font-sans text-xl font-extrabold tracking-tight">
-          {dict.modules.cover.title}
-        </h1>
-        <span className="font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-accent">
-          {dict.modules.cover.tagline}
-        </span>
-      </div>
-
+    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col overflow-hidden px-4 pb-2 pt-2">
       {draftRestored && (
         <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-emerald-500/40 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
           <span>{t.draftRestored}</span>

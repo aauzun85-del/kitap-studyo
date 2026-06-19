@@ -12,15 +12,20 @@ import type { ReactNode } from "react";
  * Not: `header` ve `footer` SUNUCUDA çizilip buraya prop olarak geçer →
  * sözlük istemci paketine sızmaz, yalnız "göster/gizle" kararı istemcide.
  */
-const FULLSCREEN_SEGMENTS = new Set([
-  "kapak",
-  "mizanpaj",
-]);
+// Eski "tam ekran ama AppShell'siz" araçlar kalmadı — hepsi AppShell'e taşındı.
+const FULLSCREEN_SEGMENTS = new Set<string>([]);
 
 // Yeni AppShell çatısını kendi içinde çizen sayfalar: pazarlama header/footer'ı
 // VE eski ince proje çubuğunu gizle (AppShell sol menüsü ikisinin de yerini alır).
-// Modüller AppShell'e taşındıkça FULLSCREEN_SEGMENTS'ten buraya geçecek.
-const APPSHELL_SEGMENTS = new Set(["projeler", "tanitim", "ekitap", "editor", "sesli-kitap"]);
+const APPSHELL_SEGMENTS = new Set([
+  "projeler",
+  "tanitim",
+  "ekitap",
+  "editor",
+  "sesli-kitap",
+  "kapak",
+  "mizanpaj",
+]);
 
 export default function SiteChrome({
   header,

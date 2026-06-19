@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
@@ -509,22 +508,9 @@ export default function LayoutStudio({
   const isEmpty = blocks.length === 0 && !title.trim();
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[1400px] flex-col gap-4 px-4 py-6 lg:flex-row">
+    <div className="mx-auto flex min-h-full w-full max-w-[1400px] flex-col gap-4 px-4 py-6 lg:flex-row">
       <aside className="w-full shrink-0 lg:w-[380px]">
-        <Link
-          href={`/${lang}`}
-          className="text-sm font-medium text-muted transition hover:text-foreground"
-        >
-          ← {dict.common.back}
-        </Link>
-        <div className="mt-4">
-          <span className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-accent">
-            {t.tagline}
-          </span>
-          <h1 className="mt-1 font-sans text-3xl font-extrabold tracking-tight">{t.title}</h1>
-        </div>
-
-        <div className="mt-5 grid grid-cols-4 gap-1 rounded-xl border border-border bg-surface p-1">
+        <div className="grid grid-cols-4 gap-1 rounded-xl border border-border bg-surface p-1">
           {navItems.map(({ id, label, Icon }) => (
             <button
               key={id}
@@ -655,7 +641,7 @@ export default function LayoutStudio({
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background lg:sticky lg:top-6 lg:h-[calc(100vh-7rem)]">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background lg:sticky lg:top-4 lg:h-[calc(100dvh-12rem)]">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div className="flex items-baseline gap-2">
             <span className="font-mono text-xs font-medium uppercase tracking-[0.15em] text-muted">

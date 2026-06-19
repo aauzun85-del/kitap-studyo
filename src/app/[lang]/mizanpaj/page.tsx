@@ -4,6 +4,9 @@ import { getDictionary } from "@/i18n/dictionaries";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/user";
 import { loadInitialProject } from "@/lib/projects/server";
+import { toShellUser } from "@/lib/app/identity";
+import { signOutAction } from "@/app/[lang]/auth-actions";
+import AppShell, { type AppShellContext } from "@/components/app/AppShell";
 import LayoutStudio from "@/components/layout/LayoutStudio";
 
 export default async function LayoutPage({ params, searchParams }: PageProps<"/[lang]/mizanpaj">) {
@@ -14,16 +17,35 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/[
   if (!user) redirect(`/${lang}/giris`);
 
   const dict = getDictionary(lang);
+  const isTr = lang === "tr";
   const sp = await searchParams;
   const supabase = await createClient();
   const initialProject = await loadInitialProject(supabase, sp.project);
 
+  const meta = initialProject?.data.meta;
+  const context: AppShellContext = {
+    backHref: `/${lang}/projeler`,
+    backLabel: isTr ? "Kitaplarım" : "My Books",
+    title: meta?.title?.trim() || (isTr ? "Mizanpaj çalışması" : "Layout draft"),
+    meta: meta?.author?.trim() || undefined,
+    moduleLabel: isTr ? "Mizanpaj modülü" : "Layout module",
+    savedLabel: initialProject ? (isTr ? "Otomatik kaydedilir" : "Auto-saved") : undefined,
+  };
+
   return (
-    <LayoutStudio
-      key={initialProject?.id ?? "anon"}
+    <AppShell
       lang={lang}
-      dict={dict}
-      initialProject={initialProject}
-    />
+      user={toShellUser(user)}
+      signOut={signOutAction.bind(null, lang)}
+      active="mizanpaj"
+      context={context}
+    >
+      <LayoutStudio
+        key={initialProject?.id ?? "anon"}
+        lang={lang}
+        dict={dict}
+        initialProject={initialProject}
+      />
+    </AppShell>
   );
 }
