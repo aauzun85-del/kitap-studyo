@@ -103,13 +103,14 @@
 }
 
 :root {
-  --background: #f7f5f1;
+  /* tipostudio indigo marka paleti (AppShell ile birebir) */
+  --background: #f5f6fa;
   --surface: #ffffff;
-  --foreground: #343330;
-  --muted: #656461;
-  --border: #e6e0d5;
-  --accent: #e05620;       /* Biraz daha canlı turuncu */
-  --accent-soft: #fde8da;
+  --foreground: #1d2333;
+  --muted: #6b7280;
+  --border: #e9eaf3;
+  --accent: #4f46e5;       /* indigo */
+  --accent-soft: #eef0fd;
 }
 
 @theme inline {
@@ -120,19 +121,19 @@
   --color-border: var(--border);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
-  --font-sans: var(--font-manrope);
+  --font-sans: "Plus Jakarta Sans", var(--font-manrope), system-ui, sans-serif;
   --font-mono: var(--font-plex-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #26241f;
-    --surface: #343330;
-    --foreground: #f7f5f1;
-    --muted: #bcadaf;
-    --border: #45433d;
-    --accent: #ff8e51;
-    --accent-soft: #3a2c22;
+    --background: #14161f;
+    --surface: #1b1e2b;
+    --foreground: #f3f4fb;
+    --muted: #9aa1b8;
+    --border: #2a2e3f;
+    --accent: #818cf8;       /* dark için açık indigo */
+    --accent-soft: #25244a;
   }
 }
 

@@ -259,7 +259,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                   href={`/${lang}/editor`}
                   className="inline-flex items-center gap-2 rounded-full px-7 py-3.5 text-sm font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:opacity-90"
                   style={{
-                    background: "linear-gradient(135deg, var(--color-accent) 0%, #f5a623 100%)",
+                    background: "linear-gradient(135deg, var(--color-accent) 0%, #7c3aed 100%)",
                     boxShadow: "0 4px 20px color-mix(in srgb, var(--color-accent) 35%, transparent)",
                   }}
                 >
@@ -377,7 +377,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                     <div
                       className="flex flex-1 flex-col items-center justify-center gap-1.5 p-2"
                       style={{
-                        background: "linear-gradient(145deg, var(--color-accent), #e8a020)",
+                        background: "linear-gradient(145deg, var(--color-accent), #7c3aed)",
                       }}
                     >
                       <div className="h-1 w-16 rounded bg-white/50" />
@@ -552,7 +552,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                     style={
                       isAccent
                         ? {
-                            background: `linear-gradient(135deg, var(--color-accent) 0%, #f5a623 100%)`,
+                            background: `linear-gradient(135deg, var(--color-accent) 0%, #7c3aed 100%)`,
                             color: "#fff",
                             boxShadow: `0 3px 14px color-mix(in srgb, var(--color-accent) 35%, transparent)`,
                           }
@@ -631,7 +631,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
               href={`/${lang}/kayit`}
               className="inline-flex items-center gap-2 rounded-full px-8 py-4 text-sm font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:opacity-90"
               style={{
-                background: "linear-gradient(135deg, var(--color-accent) 0%, #f5a623 100%)",
+                background: "linear-gradient(135deg, var(--color-accent) 0%, #7c3aed 100%)",
                 boxShadow: "0 6px 24px color-mix(in srgb, var(--color-accent) 40%, transparent)",
               }}
             >

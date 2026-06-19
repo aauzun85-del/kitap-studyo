@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import LanguageSwitcher from "./LanguageSwitcher";
 import { getCurrentUser } from "@/lib/supabase/user";
 import { isAdminEmail } from "@/lib/admin";
@@ -28,15 +27,13 @@ export default async function SiteHeader({
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-        <Link href={`/${lang}`} className="flex items-center gap-2">
-          <Image
-            src="/icon.png"
-            alt=""
-            width={72}
-            height={72}
-            priority
-            className="h-9 w-9 mix-blend-multiply dark:mix-blend-normal"
-          />
+        <Link href={`/${lang}`} className="flex items-center gap-2.5">
+          <span
+            className="flex h-9 w-9 items-center justify-center rounded-[10px] text-lg font-extrabold text-white"
+            style={{ background: "linear-gradient(135deg, var(--color-accent), #7c3aed)" }}
+          >
+            t
+          </span>
           <span className="font-sans text-xl font-extrabold lowercase tracking-tight">
             {dict.brand}
           </span>
@@ -93,7 +90,7 @@ export default async function SiteHeader({
                 className="rounded-full px-5 py-2 text-sm font-bold text-white shadow-md transition hover:-translate-y-0.5 hover:opacity-90 hover:shadow-lg"
                 style={{
                   background:
-                    "linear-gradient(135deg, var(--color-accent) 0%, #f5a623 100%)",
+                    "linear-gradient(135deg, var(--color-accent) 0%, #7c3aed 100%)",
                   boxShadow:
                     "0 2px 10px color-mix(in srgb, var(--color-accent) 35%, transparent)",
                 }}
