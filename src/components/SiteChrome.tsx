@@ -15,10 +15,12 @@ import type { ReactNode } from "react";
 const FULLSCREEN_SEGMENTS = new Set([
   "kapak",
   "mizanpaj",
-  "editor",
-  "ekitap",
-  "sesli-kitap",
 ]);
+
+// Yeni AppShell çatısını kendi içinde çizen sayfalar: pazarlama header/footer'ı
+// VE eski ince proje çubuğunu gizle (AppShell sol menüsü ikisinin de yerini alır).
+// Modüller AppShell'e taşındıkça FULLSCREEN_SEGMENTS'ten buraya geçecek.
+const APPSHELL_SEGMENTS = new Set(["projeler", "tanitim", "ekitap", "editor", "sesli-kitap"]);
 
 export default function SiteChrome({
   header,
@@ -34,13 +36,14 @@ export default function SiteChrome({
   const pathname = usePathname();
   // Yol: "/tr/kapak" → parçalar ["", "tr", "kapak"]; 2. parça = modül adı.
   const segment = pathname.split("/")[2] ?? "";
-  const fullscreen = FULLSCREEN_SEGMENTS.has(segment);
+  const appShell = APPSHELL_SEGMENTS.has(segment);
+  const fullscreen = appShell || FULLSCREEN_SEGMENTS.has(segment);
 
   return (
     <>
       {/* Proje açıkken modül-geçiş çubuğu (kendi içinde gizlenir); tam ekran
-          araçlarda da görünür, böylece proje korunarak modüller arasında gezinilir. */}
-      {projectBar}
+          araçlarda da görünür. AppShell sayfalarında çizilmez (sol menü yerini alır). */}
+      {!appShell && projectBar}
       {!fullscreen && header}
       <main className="flex-1">{children}</main>
       {!fullscreen && footer}

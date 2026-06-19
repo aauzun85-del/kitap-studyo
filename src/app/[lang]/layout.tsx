@@ -58,7 +58,7 @@ export default async function LangLayout({
             daha dar variable sürümü sayfalama/PDF metrik uyuşmazlığına yol açıyordu. */}
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Montserrat:wght@400;600;700&family=Poppins:wght@400;600;700&family=Oswald:wght@400;600;700&family=Playfair+Display:wght@400;600;700&family=Lora:wght@400;600;700&family=Merriweather:wght@400;700&family=EB+Garamond:wght@400;600;700&family=Cormorant+Garamond:wght@400;600;700&family=Libre+Baskerville:wght@400;700&family=Bebas+Neue&family=Abril+Fatface&family=Cinzel:wght@400;600;700&family=Dancing+Script:wght@400;600;700&family=Great+Vibes&family=IBM+Plex+Mono:wght@400;600&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;600;800&family=Montserrat:wght@400;600;700&family=Poppins:wght@400;600;700&family=Oswald:wght@400;600;700&family=Playfair+Display:wght@400;600;700&family=Lora:wght@400;600;700&family=Merriweather:wght@400;700&family=EB+Garamond:wght@400;600;700&family=Cormorant+Garamond:wght@400;600;700&family=Libre+Baskerville:wght@400;700&family=Bebas+Neue&family=Abril+Fatface&family=Cinzel:wght@400;600;700&family=Dancing+Script:wght@400;600;700&family=Great+Vibes&family=IBM+Plex+Mono:wght@400;600&display=swap"
         />
       </head>
       <body className="min-h-full flex flex-col">

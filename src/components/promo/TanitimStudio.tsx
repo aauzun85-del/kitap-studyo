@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
@@ -221,23 +220,10 @@ export default function TanitimStudio({
   }
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[1400px] flex-col gap-4 px-4 py-6 lg:flex-row">
+    <div className="mx-auto flex min-h-full w-full max-w-[1400px] flex-col gap-4 px-4 py-6 lg:flex-row">
       <aside className="w-full shrink-0 lg:w-[380px]">
-        <Link
-          href={`/${lang}`}
-          className="text-sm font-medium text-muted transition hover:text-foreground"
-        >
-          ← {dict.common.back}
-        </Link>
-        <div className="mt-4">
-          <span className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-accent">
-            {t.tagline}
-          </span>
-          <h1 className="mt-1 font-sans text-3xl font-extrabold tracking-tight">{t.title}</h1>
-        </div>
-
         {/* Kitap bilgileri */}
-        <div className="mt-5 rounded-xl border border-border bg-surface p-4">
+        <div className="rounded-xl border border-border bg-surface p-4">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <BookIcon className="h-5 w-5 text-accent" />
             {t.infoHeading}
@@ -397,7 +383,7 @@ export default function TanitimStudio({
       </aside>
 
       {/* Önizleme */}
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background lg:sticky lg:top-6 lg:h-[calc(100vh-7rem)]">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background lg:sticky lg:top-4 lg:h-[calc(100dvh-12rem)]">
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
           <span className="font-mono text-xs font-medium uppercase tracking-[0.15em] text-muted">
             {t.previewHeading}
