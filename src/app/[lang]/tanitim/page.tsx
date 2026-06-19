@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/user";
 import { loadInitialProject } from "@/lib/projects/server";
 import { toShellUser } from "@/lib/app/identity";
+import { getSidebarCollapsed } from "@/lib/app/prefs";
 import { signOutAction } from "@/app/[lang]/auth-actions";
 import AppShell, { type AppShellContext } from "@/components/app/AppShell";
 import TanitimStudio from "@/components/promo/TanitimStudio";
@@ -26,6 +27,7 @@ export default async function TanitimPage({ params, searchParams }: PageProps<"/
   }
 
   const shellUser = toShellUser(user);
+  const collapsed = await getSidebarCollapsed();
   const meta = initialProject?.data.meta;
   const context: AppShellContext = {
     backHref: user ? `/${lang}/projeler` : `/${lang}`,
@@ -45,6 +47,7 @@ export default async function TanitimPage({ params, searchParams }: PageProps<"/
       signOut={user ? signOutAction.bind(null, lang) : undefined}
       active="tanitim"
       context={context}
+      defaultCollapsed={collapsed}
     >
       <TanitimStudio
         key={initialProject?.id ?? "anon"}

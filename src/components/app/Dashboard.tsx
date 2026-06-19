@@ -104,12 +104,14 @@ export default function Dashboard({
   user,
   signOut,
   previewItems,
+  defaultCollapsed,
 }: {
   lang: Locale;
   user: ShellUser;
   signOut: () => Promise<void>;
   /** Yalnız görsel doğrulama içindir; verildiğinde Supabase'e gidilmez. */
   previewItems?: ProjectListItem[];
+  defaultCollapsed?: boolean;
 }) {
   const t = COPY[lang];
   const router = useRouter();
@@ -190,7 +192,7 @@ export default function Dashboard({
   }
 
   return (
-    <AppShell lang={lang} user={user} signOut={signOut} active="home">
+    <AppShell lang={lang} user={user} signOut={signOut} active="home" defaultCollapsed={defaultCollapsed}>
       <div style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 34px 60px" }}>
         {/* ── başlık ── */}
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>

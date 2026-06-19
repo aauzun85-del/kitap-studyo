@@ -58,6 +58,7 @@ const ICON_PATHS: Record<string, ReactNode> = {
   arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
   arrowLeft: <path d="M19 12H5M11 18l-6-6 6-6" />,
   check: <path d="M4 12l5 5L20 6" />,
+  panel: (<><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>),
   logout: (<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></>),
   globe: (<><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" /></>),
 };
@@ -171,6 +172,8 @@ const COPY = {
     signOut: "Çıkış yap",
     signIn: "Giriş yap",
     langLabel: "Dil",
+    collapse: "Menüyü daralt",
+    expand: "Menüyü genişlet",
   },
   en: {
     home: "Home",
@@ -183,6 +186,8 @@ const COPY = {
     signOut: "Sign out",
     signIn: "Sign in",
     langLabel: "Language",
+    collapse: "Collapse menu",
+    expand: "Expand menu",
   },
 } as const;
 
@@ -206,6 +211,7 @@ export default function AppShell({
   active,
   context,
   fitContent,
+  defaultCollapsed,
   children,
 }: {
   lang: Locale;
@@ -216,6 +222,9 @@ export default function AppShell({
   /** true: içerik alanı tam yüksekliği doldurur ve KAYDIRMAZ (tuval araçları:
    *  kapak/mizanpaj kendi iç düzenini yönetir). false/yok: dikey kaydırma. */
   fitContent?: boolean;
+  /** Kenar çubuğunun başlangıç (daraltılmış) durumu — sunucuda çerezden okunur,
+   *  böylece sayfalar arası geçişte titreme olmaz. */
+  defaultCollapsed?: boolean;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -223,6 +232,16 @@ export default function AppShell({
   const t = COPY[lang];
   const other: Locale = lang === "tr" ? "en" : "tr";
   const [menuOpen, setMenuOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(!!defaultCollapsed);
+
+  function toggleCollapsed() {
+    setCollapsed((v) => {
+      const next = !v;
+      // Çerez: bir sonraki sunucu render'ı doğru genişlikle gelsin (titreme yok).
+      document.cookie = `sb_collapsed=${next ? "1" : "0"}; path=/; max-age=31536000; samesite=lax`;
+      return next;
+    });
+  }
 
   // Aktif menü öğesi: dışarıdan "active" verilirse onu, yoksa rotadan çıkar.
   const isHome = active === "home" || (!active && (seg === "" || seg === "projeler"));
@@ -239,22 +258,26 @@ export default function AppShell({
     <Link
       key={key}
       href={href}
+      title={collapsed ? label : undefined}
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 12,
-        padding: "11px 12px",
+        justifyContent: collapsed ? "center" : "flex-start",
+        gap: collapsed ? 0 : 12,
+        padding: collapsed ? "11px 0" : "11px 12px",
         borderRadius: 11,
         cursor: "pointer",
         fontSize: 14.5,
         fontWeight: 600,
         textDecoration: "none",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
         color: on ? "var(--sb-afg)" : "var(--sb-fg)",
         background: on ? "var(--sb-abg)" : "transparent",
       }}
     >
       <Icon name={icon} />
-      {label}
+      {!collapsed && label}
     </Link>
   );
 
@@ -275,25 +298,28 @@ export default function AppShell({
       {/* ===================== SIDEBAR ===================== */}
       <aside
         style={{
-          width: 250,
+          width: collapsed ? 72 : 250,
           flex: "none",
           height: "100%",
           display: "flex",
           flexDirection: "column",
           background: "var(--sb-bg)",
           borderRight: "1px solid var(--sb-bd)",
-          padding: "18px 14px",
+          padding: collapsed ? "18px 12px" : "18px 14px",
           gap: 3,
+          transition: "width .18s ease",
         }}
       >
         <Link
           href={`/${lang}/projeler`}
-          style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px 18px", textDecoration: "none" }}
+          title="tipostudio"
+          style={{ display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "flex-start", gap: 10, padding: "6px 8px 18px", textDecoration: "none" }}
         >
           <div
             style={{
               width: 34,
               height: 34,
+              flex: "none",
               borderRadius: 10,
               background: "linear-gradient(135deg,var(--pri),#7c3aed)",
               display: "flex",
@@ -306,17 +332,23 @@ export default function AppShell({
           >
             t
           </div>
-          <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-.3px", color: "var(--sb-logo)" }}>
-            tipostudio
-          </div>
+          {!collapsed && (
+            <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-.3px", color: "var(--sb-logo)" }}>
+              tipostudio
+            </div>
+          )}
         </Link>
 
         {navRow("home", `/${lang}/projeler`, "home", t.home, isHome)}
         {navRow("books", `/${lang}/projeler`, "books", t.myBooks, isBooks)}
 
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "1.2px", color: "var(--sb-muted)", padding: "18px 12px 7px" }}>
-          {t.modules}
-        </div>
+        {collapsed ? (
+          <div style={{ height: 1, background: "var(--sb-bd)", margin: "12px 8px 9px" }} />
+        ) : (
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "1.2px", color: "var(--sb-muted)", padding: "18px 12px 7px" }}>
+            {t.modules}
+          </div>
+        )}
 
         {MODULES.map((m) => navRow(m.seg, `/${lang}/${m.seg}`, m.icon, m.label[lang], moduleActive(m.seg)))}
 
@@ -325,24 +357,7 @@ export default function AppShell({
         {user?.isAdmin && navRow("admin", `/${lang}/admin`, "gear", t.admin, seg === "admin")}
 
         {/* dil değiştirici */}
-        <Link
-          href={`/${other}/projeler`}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: "11px 12px",
-            borderRadius: 11,
-            cursor: "pointer",
-            fontSize: 14.5,
-            fontWeight: 600,
-            textDecoration: "none",
-            color: "var(--sb-fg)",
-          }}
-        >
-          <Icon name="globe" />
-          {t.langLabel}: {other.toUpperCase()}
-        </Link>
+        {navRow("lang", `/${other}/projeler`, "globe", `${t.langLabel}: ${other.toUpperCase()}`, false)}
 
         {/* kullanıcı kartı + çıkış (giriş yapılmışsa) / giriş bağlantısı (anonim) */}
         {user ? (
@@ -350,14 +365,18 @@ export default function AppShell({
             style={{
               display: "flex",
               alignItems: "center",
+              justifyContent: collapsed ? "center" : "flex-start",
               gap: 11,
-              padding: "10px 8px",
               marginTop: 6,
               borderTop: "1px solid var(--sb-bd)",
               paddingTop: 14,
+              paddingBottom: collapsed ? 4 : 10,
+              paddingLeft: collapsed ? 0 : 8,
+              paddingRight: collapsed ? 0 : 8,
             }}
           >
             <div
+              title={collapsed ? user.name : undefined}
               style={{
                 width: 36,
                 height: 36,
@@ -374,49 +393,57 @@ export default function AppShell({
             >
               {user.initials}
             </div>
-            <div style={{ lineHeight: 1.2, minWidth: 0, flex: 1 }}>
-              <div
-                style={{ fontSize: 13.5, fontWeight: 700, color: "var(--sb-logo)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                title={user.email}
-              >
-                {user.name}
-              </div>
-              <div style={{ fontSize: 12, color: "var(--sb-muted)" }}>{t.plan}</div>
-            </div>
-            {signOut && (
-              <form action={signOut}>
-                <button
-                  type="submit"
-                  title={t.signOut}
-                  style={{
-                    width: 30,
-                    height: 30,
-                    border: "none",
-                    borderRadius: 8,
-                    background: "transparent",
-                    color: "var(--sb-muted)",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Icon name="logout" size={17} />
-                </button>
-              </form>
+            {!collapsed && (
+              <>
+                <div style={{ lineHeight: 1.2, minWidth: 0, flex: 1 }}>
+                  <div
+                    style={{ fontSize: 13.5, fontWeight: 700, color: "var(--sb-logo)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                    title={user.email}
+                  >
+                    {user.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--sb-muted)" }}>{t.plan}</div>
+                </div>
+                {signOut && (
+                  <form action={signOut}>
+                    <button
+                      type="submit"
+                      title={t.signOut}
+                      style={{
+                        width: 30,
+                        height: 30,
+                        border: "none",
+                        borderRadius: 8,
+                        background: "transparent",
+                        color: "var(--sb-muted)",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Icon name="logout" size={17} />
+                    </button>
+                  </form>
+                )}
+              </>
             )}
           </div>
         ) : (
           <Link
             href={`/${lang}/giris`}
+            title={collapsed ? t.signIn : undefined}
             style={{
               display: "flex",
               alignItems: "center",
+              justifyContent: collapsed ? "center" : "flex-start",
               gap: 10,
-              padding: "12px",
               marginTop: 6,
               borderTop: "1px solid var(--sb-bd)",
               paddingTop: 14,
+              paddingBottom: 12,
+              paddingLeft: collapsed ? 0 : 12,
+              paddingRight: collapsed ? 0 : 12,
               textDecoration: "none",
               color: "var(--pri)",
               fontSize: 14,
@@ -424,7 +451,7 @@ export default function AppShell({
             }}
           >
             <Icon name="logout" size={18} />
-            {t.signIn}
+            {!collapsed && t.signIn}
           </Link>
         )}
       </aside>
@@ -444,6 +471,26 @@ export default function AppShell({
             borderBottom: "1px solid #e9eaf3",
           }}
         >
+          <button
+            onClick={toggleCollapsed}
+            title={collapsed ? t.expand : t.collapse}
+            aria-label={collapsed ? t.expand : t.collapse}
+            style={{
+              width: 40,
+              height: 40,
+              flex: "none",
+              border: "1px solid #e9eaf3",
+              borderRadius: 11,
+              background: "#fff",
+              color: "#4b5365",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Icon name="panel" size={19} />
+          </button>
           <div
             style={{
               display: "flex",

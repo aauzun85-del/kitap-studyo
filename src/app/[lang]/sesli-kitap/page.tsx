@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/user";
 import { loadInitialProject } from "@/lib/projects/server";
 import { toShellUser } from "@/lib/app/identity";
+import { getSidebarCollapsed } from "@/lib/app/prefs";
 import { signOutAction } from "@/app/[lang]/auth-actions";
 import AppShell, { type AppShellContext } from "@/components/app/AppShell";
 import SesliKitapStudio from "@/components/publish/SesliKitapStudio";
@@ -21,6 +22,7 @@ export default async function SesliKitapPage({ params, searchParams }: PageProps
   const sp = await searchParams;
   const supabase = await createClient();
   const initialProject = await loadInitialProject(supabase, sp.project);
+  const collapsed = await getSidebarCollapsed();
 
   const meta = initialProject?.data.meta;
   const context: AppShellContext = {
@@ -39,6 +41,7 @@ export default async function SesliKitapPage({ params, searchParams }: PageProps
       signOut={signOutAction.bind(null, lang)}
       active="sesli-kitap"
       context={context}
+      defaultCollapsed={collapsed}
     >
       <SesliKitapStudio
         key={initialProject?.id ?? "anon"}
