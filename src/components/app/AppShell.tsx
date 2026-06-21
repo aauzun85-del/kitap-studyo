@@ -541,25 +541,6 @@ export default function AppShell({
           >
             <Icon name="panel" size={19} />
           </button>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 9,
-              width: 340,
-              maxWidth: "34vw",
-              height: 40,
-              padding: "0 14px",
-              background: "#f5f6fa",
-              border: "1px solid #eceef5",
-              borderRadius: 11,
-              color: "#9aa1b1",
-              fontSize: 14,
-            }}
-          >
-            <Icon name="search" size={18} sw={1.9} />
-            {t.search}
-          </div>
           <div style={{ flex: 1 }} />
           <div
             style={{
