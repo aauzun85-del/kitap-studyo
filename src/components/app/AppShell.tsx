@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { Locale } from "@/i18n/config";
@@ -232,15 +232,40 @@ export default function AppShell({
   const t = COPY[lang];
   const other: Locale = lang === "tr" ? "en" : "tr";
   const [menuOpen, setMenuOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(!!defaultCollapsed);
+  // Masaüstü "ince şerit" tercihi (çerezde saklanır).
+  const [railCollapsed, setRailCollapsed] = useState(!!defaultCollapsed);
+  // Mobil çekmece açık mı (üzerine kayan menü).
+  const [mobileOpen, setMobileOpen] = useState(false);
+  // Dar ekran mı? (mobilde menü çekmeceye döner; ince-şerit tercihi yok sayılır)
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  // Render'da kullanılan EFEKTİF daralma: mobilde çekmece tam genişlik/etiketli olsun.
+  const collapsed = railCollapsed && !isMobile;
 
   function toggleCollapsed() {
-    setCollapsed((v) => {
+    setRailCollapsed((v) => {
       const next = !v;
       // Çerez: bir sonraki sunucu render'ı doğru genişlikle gelsin (titreme yok).
       document.cookie = `sb_collapsed=${next ? "1" : "0"}; path=/; max-age=31536000; samesite=lax`;
       return next;
     });
+  }
+
+  // Üst bardaki düğme: mobilde çekmeceyi aç/kapat, masaüstünde şeridi daralt/genişlet.
+  function onToggleSidebar() {
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+      setMobileOpen((o) => !o);
+    } else {
+      toggleCollapsed();
+    }
   }
 
   // Aktif menü öğesi: dışarıdan "active" verilirse onu, yoksa rotadan çıkar.
@@ -259,6 +284,7 @@ export default function AppShell({
       key={key}
       href={href}
       title={collapsed ? label : undefined}
+      onClick={() => setMobileOpen(false)}
       style={{
         display: "flex",
         alignItems: "center",
@@ -295,8 +321,32 @@ export default function AppShell({
         overflow: "hidden",
       }}
     >
+      {/* Mobil: menü üzerine kayan çekmece olur; içeriği sıkıştırmaz. Masaüstünde
+          normal akışta (250px / daraltılınca 72px). */}
+      <style>{`
+        .tipo-aside { position: relative; }
+        .tipo-backdrop { display: none; }
+        @media (max-width: 1023px) {
+          .tipo-aside {
+            position: fixed; left: 0; top: 0; bottom: 0; z-index: 60;
+            transform: translateX(-100%); transition: transform .22s ease;
+            box-shadow: 6px 0 30px rgba(20,24,40,.16);
+          }
+          .tipo-aside[data-open="true"] { transform: translateX(0); }
+          .tipo-backdrop[data-open="true"] { display: block; }
+        }
+      `}</style>
+      <div
+        className="tipo-backdrop"
+        data-open={mobileOpen}
+        onClick={() => setMobileOpen(false)}
+        style={{ position: "fixed", inset: 0, background: "rgba(20,24,40,.45)", zIndex: 55 }}
+      />
+
       {/* ===================== SIDEBAR ===================== */}
       <aside
+        className="tipo-aside"
+        data-open={mobileOpen}
         style={{
           width: collapsed ? 72 : 250,
           flex: "none",
@@ -472,7 +522,7 @@ export default function AppShell({
           }}
         >
           <button
-            onClick={toggleCollapsed}
+            onClick={onToggleSidebar}
             title={collapsed ? t.expand : t.collapse}
             aria-label={collapsed ? t.expand : t.collapse}
             style={{
