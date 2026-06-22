@@ -82,102 +82,130 @@ const GUIDE: Record<Step, { tr: { title: string; lines: string[] }; en: { title:
   },
 };
 
-const STORAGE_KEY = "tipo_guide_min"; // "1" → kullanıcı rehberi küçülttü
-
 export default function WizardGuide({ lang, step }: { lang: Locale; step: Step }) {
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const seenKey = `tipo_guide_seen_${step}`;
 
-  // İlk yüklemede: kullanıcı daha önce küçültmediyse açık başla.
+  // Her adıma İLK girişte rehber ortada (karartılı) açılır; daha önce görüldüyse
+  // küçük düğme olarak durur.
   useEffect(() => {
-    const min = typeof window !== "undefined" && window.localStorage.getItem(STORAGE_KEY) === "1";
-    setOpen(!min);
+    const seen = typeof window !== "undefined" && window.localStorage.getItem(seenKey) === "1";
+    setOpen(!seen);
     setReady(true);
-  }, []);
+  }, [seenKey]);
 
   const c = GUIDE[step][lang];
 
-  function close() {
+  function dismiss() {
     setOpen(false);
     try {
-      window.localStorage.setItem(STORAGE_KEY, "1");
-    } catch {}
-  }
-  function reopen() {
-    setOpen(true);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, "0");
+      window.localStorage.setItem(seenKey, "1");
     } catch {}
   }
 
   if (!ready) return null;
 
   return (
-    <div style={{ position: "fixed", right: 22, bottom: 22, zIndex: 70, fontFamily: "'Plus Jakarta Sans',system-ui,sans-serif" }}>
+    <>
+      <style>{`
+        @keyframes tipoGuideIn { from { opacity: 0; transform: translateY(-12px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes tipoGuidePulse { 0%,100% { box-shadow: 0 10px 26px rgba(79,70,229,.34); } 50% { box-shadow: 0 10px 30px rgba(79,70,229,.34), 0 0 0 8px rgba(79,70,229,.16); } }
+      `}</style>
+
       {open ? (
         <div
+          onClick={dismiss}
           style={{
-            width: 320,
-            maxWidth: "calc(100vw - 44px)",
-            background: "#fff",
-            border: "1px solid #e9eaf3",
-            borderRadius: 16,
-            boxShadow: "0 18px 50px rgba(20,24,40,.22)",
-            overflow: "hidden",
+            position: "fixed",
+            inset: 0,
+            zIndex: 75,
+            background: "rgba(20,24,40,.38)",
+            backdropFilter: "blur(1.5px)",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "center",
+            paddingTop: "min(22vh, 200px)",
+            fontFamily: "'Plus Jakarta Sans',system-ui,sans-serif",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", background: "linear-gradient(120deg,#4f46e5,#7c3aed)", color: "#fff" }}>
-            <span style={{ width: 30, height: 30, flex: "none", borderRadius: 9, background: "rgba(255,255,255,.18)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Icon name="ai" size={17} style={{ color: "#fff" }} />
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".5px", opacity: 0.85 }}>
-                {lang === "tr" ? "REHBER" : "GUIDE"}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 460,
+              maxWidth: "calc(100vw - 40px)",
+              background: "#fff",
+              borderRadius: 18,
+              boxShadow: "0 30px 70px rgba(20,24,40,.34)",
+              overflow: "hidden",
+              animation: "tipoGuideIn .22s ease both",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "18px 20px", background: "linear-gradient(120deg,#4f46e5,#7c3aed)", color: "#fff" }}>
+              <span style={{ width: 38, height: 38, flex: "none", borderRadius: 11, background: "rgba(255,255,255,.18)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Icon name="ai" size={21} style={{ color: "#fff" }} />
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".6px", opacity: 0.85 }}>
+                  {lang === "tr" ? "REHBER" : "GUIDE"}
+                </div>
+                <div style={{ fontSize: 17, fontWeight: 800 }}>{c.title}</div>
               </div>
-              <div style={{ fontSize: 14.5, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.title}</div>
+              <button
+                onClick={dismiss}
+                aria-label={lang === "tr" ? "Kapat" : "Close"}
+                style={{ width: 30, height: 30, flex: "none", border: "none", borderRadius: 9, background: "rgba(255,255,255,.18)", color: "#fff", cursor: "pointer", fontSize: 18, lineHeight: 1 }}
+              >
+                ×
+              </button>
             </div>
-            <button
-              onClick={close}
-              aria-label={lang === "tr" ? "Kapat" : "Close"}
-              style={{ width: 26, height: 26, flex: "none", border: "none", borderRadius: 8, background: "rgba(255,255,255,.18)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, lineHeight: 1 }}
-            >
-              ×
-            </button>
+            <ul style={{ listStyle: "none", margin: 0, padding: "18px 20px 6px", display: "flex", flexDirection: "column", gap: 14 }}>
+              {c.lines.map((line, i) => (
+                <li key={i} style={{ display: "flex", gap: 12, fontSize: 14.5, lineHeight: 1.5, color: "#3a4154" }}>
+                  <span style={{ width: 24, height: 24, flex: "none", borderRadius: "50%", background: "var(--pri-soft,#eef0fd)", color: "var(--pri,#4f46e5)", fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {i + 1}
+                  </span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+            <div style={{ padding: "10px 20px 20px", display: "flex", justifyContent: "flex-end" }}>
+              <button
+                onClick={dismiss}
+                style={{ padding: "11px 22px", border: "none", borderRadius: 11, background: "var(--pri,#4f46e5)", color: "#fff", fontFamily: "inherit", fontSize: 14.5, fontWeight: 700, cursor: "pointer", boxShadow: "0 6px 16px rgba(79,70,229,.28)" }}
+              >
+                {lang === "tr" ? "Anladım, başlayalım" : "Got it, let's go"}
+              </button>
+            </div>
           </div>
-          <ul style={{ listStyle: "none", margin: 0, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 11 }}>
-            {c.lines.map((line, i) => (
-              <li key={i} style={{ display: "flex", gap: 10, fontSize: 13.5, lineHeight: 1.5, color: "#3a4154" }}>
-                <span style={{ width: 20, height: 20, flex: "none", borderRadius: "50%", background: "var(--pri-soft,#eef0fd)", color: "var(--pri,#4f46e5)", fontSize: 11.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {i + 1}
-                </span>
-                <span>{line}</span>
-              </li>
-            ))}
-          </ul>
         </div>
       ) : (
         <button
-          onClick={reopen}
+          onClick={() => setOpen(true)}
           style={{
+            position: "fixed",
+            right: 22,
+            bottom: 22,
+            zIndex: 70,
             display: "inline-flex",
             alignItems: "center",
             gap: 8,
-            padding: "11px 16px",
+            padding: "11px 17px",
             border: "none",
             borderRadius: 99,
             background: "linear-gradient(120deg,#4f46e5,#7c3aed)",
             color: "#fff",
-            fontFamily: "inherit",
+            fontFamily: "'Plus Jakarta Sans',system-ui,sans-serif",
             fontSize: 13.5,
             fontWeight: 700,
             cursor: "pointer",
-            boxShadow: "0 10px 26px rgba(79,70,229,.34)",
+            animation: "tipoGuidePulse 2.4s ease-in-out infinite",
           }}
         >
           <Icon name="ai" size={16} style={{ color: "#fff" }} />
           {lang === "tr" ? "Rehber" : "Guide"}
         </button>
       )}
-    </div>
+    </>
   );
 }
