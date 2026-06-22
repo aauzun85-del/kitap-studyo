@@ -271,6 +271,9 @@ type CoverStudioCopy = {
   logoPosLabel: string;
   logoPosTop: string;
   logoPosBottom: string;
+  kdyLogoLabel: string;
+  kdyLogoWhite: string;
+  kdyLogoBlack: string;
   showGuides: string;
   setupHeading: string;
   sizeLabel: string;
@@ -1276,6 +1279,9 @@ const tr: Dictionary = {
     logoPosLabel: "Logo konumu",
     logoPosTop: "Üst",
     logoPosBottom: "Alt",
+    kdyLogoLabel: "KDY logosu (tek tık)",
+    kdyLogoWhite: "Beyaz",
+    kdyLogoBlack: "Siyah",
     showGuides: "Baskı kılavuzlarını göster",
     setupHeading: "Kitap ayarları",
     sizeLabel: "Kitap boyutu",
@@ -2288,6 +2294,9 @@ const en: Dictionary = {
     logoPosLabel: "Logo position",
     logoPosTop: "Top",
     logoPosBottom: "Bottom",
+    kdyLogoLabel: "KDY logo (one tap)",
+    kdyLogoWhite: "White",
+    kdyLogoBlack: "Black",
     showGuides: "Show print guides",
     setupHeading: "Book settings",
     sizeLabel: "Book size",

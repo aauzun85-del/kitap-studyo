@@ -1506,18 +1506,68 @@ export default function CoverStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wizardAuto, title, coverImage]);
 
-  // ── KDY profili: ön kapağa KDY logosunu otomatik yerleştir ──
-  // KDY/KDY Akademi kitaplarında, henüz logo yoksa, KDY logo kılavuzuna göre
-  // ön kapağa (alt-orta, 20mm genişlik) markayı koyar. Kullanıcı değiştirebilir.
+  // ── KDY logosu ──
+  // Akademi profilinde Akademi logosu, diğer her durumda KDY marka logosu.
+  const kdyLogoBase = initialProject?.data.meta.platform === "akademi" ? "akademi" : "wordmark";
+  // KDY logo SETİNİ (ön + arka + sırt) KDY kılavuzuna göre yerleştirir. Hem
+  // otomatik (KDY profili) hem de panelde tek-tık "KDY logosu" butonları bunu
+  // çağırır → eski/profilsiz kitaplar dahil HER kitapta çalışır.
+  const applyKdyLogo = (variant: "white" | "black") => {
+    // 1) ÖN KAPAK — mevcut logoImage yolu (yatayda ortalı, alt güvenli çizgi).
+    setLogoImage(`/kdy/${kdyLogoBase}-${variant}.png`);
+    setLogoSize(Math.round((20 / spread.bookWidth) * 1000) / 10); // ≈20mm genişlik
+    setLogoPos("bottom");
+
+    // 2) ARKA KAPAK + SIRT — taşınabilir "image" nesneleri olarak. Görsel nesnenin
+    //    taban genişliği min(bookWidth*0.45, 60)mm; istenen genişliğe ulaşmak için
+    //    scale = istenenGenişlik / tabanGenişlik. Konum nesnenin MERKEZİDİR.
+    const baseWmm = Math.min(spread.bookWidth * 0.45, 60);
+    const WORDMARK_ASPECT = 2.21; // KDY marka logosu en/boy
+    const DICON_ASPECT = 0.79; // D-İkon en/boy
+    const newObjs: CustomObject[] = [];
+    const newPos: Record<string, ObjTransform> = {};
+    const place = (src: string, wMm: number, aspect: number, cxMm: number) => {
+      objCounter.current += 1;
+      const id = `obj-${objCounter.current}`;
+      newObjs.push({ id, type: "image", src, fill: colors.ink });
+      const hMm = wMm / aspect;
+      const scale = wMm / baseWmm;
+      newPos[id] = {
+        leftMm: cxMm,
+        topMm: spread.bottomSafe - hMm / 2, // alt kenar = alt güvenli çizgi
+        scaleX: scale,
+        scaleY: scale,
+      };
+    };
+
+    // Arka kapak: KDY marka logosu, güvenli alanın SOL-ALTINA, 20mm.
+    place(`/kdy/wordmark-${variant}.png`, 20, WORDMARK_ASPECT, spread.backSafeLeft + 10);
+
+    // Sırt: <6mm → logo YOK; 6–22mm → D-İkon (5–18mm); >22mm → KDY logosu (20mm).
+    // Sırtta yatayda ortalı, alt güvenli çizgide, dik (döndürülmez).
+    if (spread.spine >= 22) {
+      place(`/kdy/wordmark-${variant}.png`, 20, WORDMARK_ASPECT, spread.spineCenter);
+    } else if (spread.spine >= 6) {
+      const wMm = Math.min(Math.max(spread.spine - 2, 5), 18);
+      place(`/kdy/dicon-${variant}.png`, wMm, DICON_ASPECT, spread.spineCenter);
+    }
+
+    // Önceki KDY logo nesnelerini temizle (renk değişince kopya birikmesin), yenile.
+    setObjects((prev) => [
+      ...prev.filter((o) => !(o.type === "image" && o.src?.includes("/kdy/"))),
+      ...newObjs,
+    ]);
+    setPositions((prev) => ({ ...prev, ...newPos }));
+  };
+
+  // KDY/KDY Akademi profilli kitaplarda, henüz logo yoksa markayı otomatik koy.
   const kdyLogoFiredRef = useRef(false);
   useEffect(() => {
     const platform = initialProject?.data.meta.platform;
     if (platform !== "kdy" && platform !== "akademi") return;
     if (kdyLogoFiredRef.current || logoImage) return;
     kdyLogoFiredRef.current = true;
-    setLogoImage(platform === "akademi" ? "/kdy/akademi-white.png" : "/kdy/wordmark-white.png");
-    setLogoSize(Math.round((20 / spread.bookWidth) * 1000) / 10); // ≈20mm genişlik
-    setLogoPos("bottom");
+    applyKdyLogo("white");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialProject, logoImage]);
 
@@ -2373,6 +2423,41 @@ export default function CoverStudio({
                     {t.removeCta}
                   </button>
                 )}
+              </div>
+            </Field>
+
+            {/* Tek tık KDY logosu: alt-ortaya, güvenli çizgiye, ~20mm. Her kitapta
+                çalışır; kapağın altı koyuysa Beyaz, açıksa Siyah seç. */}
+            <Field label={t.kdyLogoLabel}>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => applyKdyLogo("white")}
+                  title={t.kdyLogoWhite}
+                  className="flex h-11 items-center justify-center rounded-lg border border-[var(--border)] bg-neutral-800 transition hover:opacity-90"
+                  style={{
+                    backgroundImage: `url(/kdy/${kdyLogoBase}-white.png)`,
+                    backgroundSize: "auto 44%",
+                    backgroundPosition: "center",
+                    backgroundRepeat: "no-repeat",
+                  }}
+                >
+                  <span className="sr-only">{t.kdyLogoWhite}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyKdyLogo("black")}
+                  title={t.kdyLogoBlack}
+                  className="flex h-11 items-center justify-center rounded-lg border border-[var(--border)] bg-white transition hover:opacity-90"
+                  style={{
+                    backgroundImage: `url(/kdy/${kdyLogoBase}-black.png)`,
+                    backgroundSize: "auto 44%",
+                    backgroundPosition: "center",
+                    backgroundRepeat: "no-repeat",
+                  }}
+                >
+                  <span className="sr-only">{t.kdyLogoBlack}</span>
+                </button>
               </div>
             </Field>
 

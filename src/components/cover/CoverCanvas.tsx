@@ -673,8 +673,16 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
 
       const template = getTemplate(templateId);
       const barcodeUrl = generateBarcodeDataUrl(content.isbn);
+      // Ön kapakta alt-logo (KDY markası vb.) varsa, altında bir bant ayır →
+      // şablonun alt-hizalı yazar adı bu kadar yukarı kayar, logoyla çakışmaz.
+      // Logo yüksekliği yüklenmeden bilinmediğinden geniş marka logosu (~2,2
+      // en/boy) varsayımı + boşlukla tahmin edilir.
+      const hasBottomLogo = !!images.logo && images.logoPos === "bottom";
+      const bottomReserveMm = hasBottomLogo
+        ? (spread.bookWidth * (images.logoSize / 100)) / 2.2 + spread.bookHeight * 0.025
+        : 0;
       // colors bir an için boş gelirse (canlı güncelleme sırasında) şablonun kendi paletine düş.
-      const ctx = { fabric, canvas, px, d: spread, content, barcodeUrl, colors: colors ?? template.palette };
+      const ctx = { fabric, canvas, px, d: spread, content, barcodeUrl, colors: colors ?? template.palette, bottomReserveMm };
 
       // 1) Zemin rengi (editId "background"). Katman panelinden gizlenmişse görünmez yap.
       template.base(ctx);
@@ -848,10 +856,14 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
         if (disposed || !fabricCanvasRef.current) return;
         const targetWmm = spread.bookWidth * (images.logoSize / 100);
         const lscale = px(targetWmm) / (logo.width ?? 1);
+        // Logonun yüksekliğini (mm) en/boy oranından bul; güvenli çizgiye HİZALA:
+        // alt logo → alt kenarı alt güvenli çizgide, üst logo → üst kenarı üst
+        // güvenli çizgide (KDY kılavuzu: "alt güvenli alan çizgisine hizalanır").
+        const logoHmm = targetWmm * ((logo.height ?? 1) / (logo.width ?? 1));
         const yMm =
           images.logoPos === "top"
-            ? spread.topSafe + spread.bookHeight * 0.08
-            : spread.topTrim + spread.bookHeight * 0.8;
+            ? spread.topSafe + logoHmm / 2
+            : spread.bottomSafe - logoHmm / 2;
         logo.set({
           originX: "center",
           originY: "center",

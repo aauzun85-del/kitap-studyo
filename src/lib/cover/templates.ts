@@ -29,6 +29,10 @@ export type TemplateCtx = {
   barcodeUrl: string | null;
   // Etkin renkler: kullanıcı seçimi yoksa şablonun kendi paleti.
   colors: CoverColors;
+  // Ön kapağın altında bir logo (örn. KDY markası) varsa, bu kadar mm'lik bir
+  // bant logoya AYRILIR → alt-hizalı yazar adı bu kadar yukarı kayar, logoyla
+  // üst üste binmez. Logo yoksa 0.
+  bottomReserveMm?: number;
 };
 
 export type CoverTemplate = {
@@ -497,7 +501,11 @@ function drawTitleBlock(ctx: TemplateCtx, r: TemplateRecipe) {
     if (pos === "bottom") {
       centeredText(ctx, content.author, { ...a, top: y + gap * 2.5 });
     } else {
-      centeredTextBottom(ctx, content.author, { ...a, bottom: d.bottomSafe });
+      // Alt logo varsa yazarı onun üstüne al (bottomReserveMm kadar yukarı).
+      centeredTextBottom(ctx, content.author, {
+        ...a,
+        bottom: d.bottomSafe - (ctx.bottomReserveMm ?? 0),
+      });
     }
   }
 }
