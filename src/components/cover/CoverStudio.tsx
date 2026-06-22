@@ -363,6 +363,37 @@ export default function CoverStudio({
       fontSizeMm: 8,
       fontId: DEFAULT_COVER_FONT,
     });
+  // Sihirbaz: AI'nın yazdığı arka kapak yazısını ARKA KAPAĞA (sol bölge merkezi)
+  // düzenlenebilir bir metin nesnesi olarak ekler — okuma paneli + otomatik kontrast
+  // ile okunur. Kullanıcı sonra seçip değiştirebilir, taşıyabilir veya silebilir.
+  const addBackCoverBlurb = (blurb: string) => {
+    const text = blurb.trim();
+    if (!text) return;
+    objCounter.current += 1;
+    const id = `obj-${objCounter.current}`;
+    setObjects((prev) => [
+      ...prev,
+      {
+        id,
+        type: "text",
+        text,
+        fill: colors.ink,
+        fontSizeMm: 4.2,
+        fontId: DEFAULT_COVER_FONT,
+        align: "left",
+        lineHeightMul: 1.32,
+        autoColor: true,
+        panel: true,
+      },
+    ]);
+    setPositions((prev) => ({
+      ...prev,
+      [id]: {
+        leftMm: spread.backCenter,
+        topMm: spread.topSafe + (spread.bottomSafe - spread.topSafe) * 0.4,
+      },
+    }));
+  };
   // Seçili metin nesnesini büyüt/küçült (0,5 mm adımlarla, 3–40 mm arası).
   const bumpFontSize = (id: string, delta: number, current?: number) => {
     const next = Math.min(40, Math.max(3, (current ?? 8) + delta));
@@ -1437,6 +1468,7 @@ export default function CoverStudio({
       const summary = (initialProject?.data.manuscript.text ?? "").slice(0, 1500);
       let desc = "";
       let styleId = aiStyle;
+      let blurb = "";
       setCoverGenMsg(lang === "tr" ? "Kitap asistanı kapak fikrini yazıyor…" : "The book assistant is sketching your cover…");
       try {
         const res = await fetch("/api/cover-prompt", {
@@ -1445,9 +1477,14 @@ export default function CoverStudio({
           body: JSON.stringify({ title, author, genre, summary, lang }),
         });
         if (res.ok) {
-          const data = (await res.json()) as { artDirection?: string; suggestedStyle?: string };
+          const data = (await res.json()) as {
+            artDirection?: string;
+            suggestedStyle?: string;
+            backCover?: string;
+          };
           if (data.artDirection) desc = data.artDirection;
           if (data.suggestedStyle) styleId = data.suggestedStyle;
+          if (data.backCover) blurb = data.backCover;
         }
       } catch {
         // asistan başarısız olsa da yine de stil presetiyle bir kapak üretelim
@@ -1458,6 +1495,8 @@ export default function CoverStudio({
       setAiScope("wrap");
       setCoverGenMsg(lang === "tr" ? "Kapak görseli üretiliyor… (~30 sn)" : "Generating cover artwork… (~30s)");
       await generateAiCover({ styleId, desc, model: "flux", scope: "wrap", embedText: false });
+      // Arka kapak yazısını arka kapağa düzenlenebilir metin olarak ekle.
+      if (blurb) addBackCoverBlurb(blurb);
       setCoverGenMsg(null);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps

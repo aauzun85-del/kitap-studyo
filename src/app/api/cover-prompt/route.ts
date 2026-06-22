@@ -37,6 +37,13 @@ const Schema = z.object({
       "The best matching cover style preset id for this book: literary, thriller, fantasy, " +
         "romance, children, minimal, nonfiction, or vintage.",
     ),
+  backCover: z
+    .string()
+    .describe(
+      "A short back-cover blurb (2-4 sentences) IN THE BOOK'S OWN LANGUAGE (Turkish if the " +
+        "book is Turkish): evocative and curiosity-evoking, hints at the theme without spoiling " +
+        "the plot, polished and natural. A single short paragraph — this is printed on the back cover.",
+    ),
 });
 
 type Body = {
@@ -47,19 +54,22 @@ type Body = {
   lang?: string;
 };
 
-function systemPrompt(): string {
+function systemPrompt(language: "tr" | "en"): string {
+  const blurbLang = language === "tr" ? "Türkçe" : "English";
   return [
-    "You are an experienced book-cover art director.",
-    "From the given book info, write a single strong ART DIRECTION for the cover IMAGE.",
+    "You are an experienced book-cover art director and copywriter.",
+    "From the given book info, produce three things: a cover ART DIRECTION, a style choice, and a BACK-COVER BLURB.",
     "",
     "RULES:",
-    "1) Output describes ONLY the picture: subject/imagery, mood, lighting, color palette, composition.",
+    "1) artDirection describes ONLY the picture: subject/imagery, mood, lighting, color palette, composition.",
     "2) NEVER include any text, words, title, author name, letters, typography or book-mockup wording in the art direction — the app draws the title/author separately on top.",
     "3) Pick a single clear, evocative focal idea that fits the book's genre and theme; avoid clutter.",
     "4) Leave a calm, simpler area near the top so a title can sit over it.",
-    "5) Write the art direction in ENGLISH (image models follow English best), even if the book is Turkish.",
-    "6) Also choose the single best matching style preset id from the allowed list.",
-    "7) Do not invent specific plot facts; stay evocative and general if the summary is thin.",
+    "5) Write the artDirection in ENGLISH (image models follow English best), even if the book is Turkish.",
+    "6) Choose the single best matching style preset id from the allowed list.",
+    `7) Write the backCover blurb in ${blurbLang} (the book's own language): 2-4 polished sentences, evocative, ` +
+      "curiosity-evoking, no plot spoilers, flawless spelling and grammar. A single short paragraph.",
+    "8) Do not invent specific plot facts; stay evocative and general if the summary is thin.",
   ].join("\n");
 }
 
@@ -91,6 +101,7 @@ export async function POST(request: Request) {
   if (!title) {
     return NextResponse.json({ error: "no-info" }, { status: 400 });
   }
+  const language: "tr" | "en" = body.lang === "en" ? "en" : "tr";
   // Özeti sınırla (maliyet + zaman aşımı koruması).
   const summary = (body.summary ?? "").trim().slice(0, MAX_CHARS);
 
@@ -104,7 +115,7 @@ export async function POST(request: Request) {
       system: [
         {
           type: "text",
-          text: systemPrompt(),
+          text: systemPrompt(language),
           cache_control: { type: "ephemeral" },
         },
       ],
