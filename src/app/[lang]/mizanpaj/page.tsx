@@ -8,6 +8,7 @@ import { toShellUser } from "@/lib/app/identity";
 import { getSidebarCollapsed } from "@/lib/app/prefs";
 import { signOutAction } from "@/app/[lang]/auth-actions";
 import AppShell, { type AppShellContext } from "@/components/app/AppShell";
+import WizardBar from "@/components/app/WizardBar";
 import LayoutStudio from "@/components/layout/LayoutStudio";
 
 export default async function LayoutPage({ params, searchParams }: PageProps<"/[lang]/mizanpaj">) {
@@ -34,6 +35,19 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/[
     savedLabel: initialProject ? (isTr ? "Otomatik kaydedilir" : "Auto-saved") : undefined,
   };
 
+  const wizard = initialProject?.data.wizard;
+  const wizardBar =
+    initialProject && wizard?.active ? (
+      <WizardBar
+        lang={lang}
+        projectId={initialProject.id}
+        current="layout"
+        wizard={wizard}
+        backHref={`/${lang}/projeler`}
+        backLabel={isTr ? "Kitaplarım" : "My Books"}
+      />
+    ) : undefined;
+
   return (
     <AppShell
       lang={lang}
@@ -41,6 +55,7 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/[
       signOut={signOutAction.bind(null, lang)}
       active="mizanpaj"
       context={context}
+      wizardBar={wizardBar}
       defaultCollapsed={collapsed}
     >
       <LayoutStudio

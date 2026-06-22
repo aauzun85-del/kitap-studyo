@@ -25,6 +25,7 @@ const APPSHELL_SEGMENTS = new Set([
   "sesli-kitap",
   "kapak",
   "mizanpaj",
+  "indir",
 ]);
 
 export default function SiteChrome({

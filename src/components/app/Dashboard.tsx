@@ -37,6 +37,16 @@ const COPY = {
     renamePrompt: "Yeni kitap adı:",
     deleteConfirm: "Bu kitabı silmek istediğine emin misin? Bu işlem geri alınamaz.",
     creating: "Oluşturuluyor…",
+    newHeading: "Yeni kitap",
+    newSub: "Birkaç bilgi ver — gerisini 3 adımda birlikte yapacağız.",
+    fTitle: "Kitap adı",
+    fAuthor: "Yazar",
+    fGenre: "Tür",
+    fTitlePh: "Örn. Sessiz Şehir",
+    fAuthorPh: "Örn. Selin Aydın",
+    fGenrePick: "Tür seç…",
+    startCta: "Başla → AI Editör",
+    cancel: "Vazgeç",
   },
   en: {
     kicker: "Dashboard",
@@ -63,8 +73,31 @@ const COPY = {
     renamePrompt: "New book title:",
     deleteConfirm: "Are you sure you want to delete this book? This cannot be undone.",
     creating: "Creating…",
+    newHeading: "New book",
+    newSub: "Give a few details — we'll do the rest in 3 steps together.",
+    fTitle: "Book title",
+    fAuthor: "Author",
+    fGenre: "Genre",
+    fTitlePh: "e.g. The Silent City",
+    fAuthorPh: "e.g. Selin Aydın",
+    fGenrePick: "Pick a genre…",
+    startCta: "Start → AI Editor",
+    cancel: "Cancel",
   },
 } as const;
+
+const GENRES: { v: string; tr: string; en: string }[] = [
+  { v: "roman", tr: "Roman", en: "Novel" },
+  { v: "oyku", tr: "Öykü", en: "Short story" },
+  { v: "cocuk", tr: "Çocuk kitabı", en: "Children's" },
+  { v: "siir", tr: "Şiir", en: "Poetry" },
+  { v: "kisisel-gelisim", tr: "Kişisel gelişim", en: "Self-help" },
+  { v: "bilim-teknik", tr: "Bilim / Teknik", en: "Science / Technical" },
+  { v: "tarih", tr: "Tarih", en: "History" },
+  { v: "biyografi", tr: "Biyografi / Anı", en: "Biography / Memoir" },
+  { v: "akademik", tr: "Akademik", en: "Academic" },
+  { v: "diger", tr: "Diğer", en: "Other" },
+];
 
 const SPINES = [
   "linear-gradient(160deg,#6366f1,#7c3aed)",
@@ -119,6 +152,11 @@ export default function Dashboard({
   const [thumbs, setThumbs] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Yeni kitap sihirbazı başlangıç formu
+  const [newOpen, setNewOpen] = useState(false);
+  const [nTitle, setNTitle] = useState("");
+  const [nAuthor, setNAuthor] = useState("");
+  const [nGenre, setNGenre] = useState("");
 
   const refresh = useCallback(async () => {
     try {
@@ -139,11 +177,21 @@ export default function Dashboard({
 
   const openProject = (id: string) => router.push(`/${lang}/kapak?project=${id}`);
 
-  async function onNew() {
+  // "Yeni Kitap" → önce başlangıç formunu aç (ad/yazar/tür).
+  function onNew() {
+    setNTitle("");
+    setNAuthor("");
+    setNGenre("");
+    setNewOpen(true);
+  }
+
+  // Form gönderilince: proje oluştur ve sihirbazın 1. adımına (AI Editör) geç.
+  async function startWizard() {
+    if (!nTitle.trim()) return;
     setBusy(true);
     try {
-      const { id } = await createProject();
-      openProject(id);
+      const { id } = await createProject(nTitle.trim(), nAuthor.trim(), nGenre);
+      router.push(`/${lang}/editor?project=${id}`);
     } catch (e) {
       console.error(e);
       setError(t.loadError);
@@ -452,6 +500,72 @@ export default function Dashboard({
         )}
       </div>
 
+      {/* ── Yeni kitap başlangıç formu (sihirbazın girişi) ── */}
+      {newOpen && (
+        <div
+          onClick={() => !busy && setNewOpen(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(20,24,40,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 460, maxWidth: "100%", background: "#fff", borderRadius: 18, boxShadow: "0 24px 60px rgba(20,24,40,.28)", padding: 26 }}
+          >
+            <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.3px" }}>{t.newHeading}</div>
+            <div style={{ fontSize: 14, color: "#6b7280", marginTop: 4, marginBottom: 18, lineHeight: 1.5 }}>{t.newSub}</div>
+
+            <label style={dlgLabel}>{t.fTitle}</label>
+            <input
+              className="tipo-input"
+              value={nTitle}
+              onChange={(e) => setNTitle(e.target.value)}
+              placeholder={t.fTitlePh}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter" && nTitle.trim() && !busy) void startWizard(); }}
+              style={dlgInput}
+            />
+
+            <label style={dlgLabel}>{t.fAuthor}</label>
+            <input
+              className="tipo-input"
+              value={nAuthor}
+              onChange={(e) => setNAuthor(e.target.value)}
+              placeholder={t.fAuthorPh}
+              style={dlgInput}
+            />
+
+            <label style={dlgLabel}>{t.fGenre}</label>
+            <select
+              className="tipo-input"
+              value={nGenre}
+              onChange={(e) => setNGenre(e.target.value)}
+              style={{ ...dlgInput, cursor: "pointer" }}
+            >
+              <option value="">{t.fGenrePick}</option>
+              {GENRES.map((g) => (
+                <option key={g.v} value={g[lang]}>{g[lang]}</option>
+              ))}
+            </select>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setNewOpen(false)}
+                disabled={busy}
+                style={{ padding: "11px 18px", borderRadius: 11, border: "1px solid #e1e3ee", background: "#fff", color: "#4b5365", fontFamily: "inherit", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+              >
+                {t.cancel}
+              </button>
+              <button
+                onClick={() => void startWizard()}
+                disabled={busy || !nTitle.trim()}
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "11px 20px", borderRadius: 11, border: "none", background: "var(--pri)", color: "#fff", fontFamily: "inherit", fontSize: 14, fontWeight: 700, cursor: busy || !nTitle.trim() ? "default" : "pointer", opacity: busy || !nTitle.trim() ? 0.55 : 1, boxShadow: "0 6px 16px rgba(79,70,229,.28)" }}
+              >
+                {busy ? t.creating : t.startCta}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* hover + nabız efektleri (inline ile yapılamayanlar) */}
       <style>{`
         .tipo-launch { transition: transform .15s, box-shadow .15s, border-color .15s; }
@@ -462,10 +576,32 @@ export default function Dashboard({
         .tipo-row:hover .tipo-actions { opacity: 1; }
         @keyframes tipoPulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
         .tipo-pulse { animation: tipoPulse 1.3s ease-in-out infinite; }
+        .tipo-input { outline: none; transition: border-color .12s; }
+        .tipo-input:focus { border-color: var(--pri); }
       `}</style>
     </AppShell>
   );
 }
+
+const dlgLabel: CSSProperties = {
+  display: "block",
+  fontSize: 12.5,
+  fontWeight: 600,
+  color: "#6b7280",
+  margin: "12px 0 6px",
+};
+
+const dlgInput: CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  border: "1px solid #e1e3ee",
+  borderRadius: 10,
+  fontSize: 14,
+  fontFamily: "inherit",
+  color: "#1d2333",
+  background: "#fff",
+  boxSizing: "border-box",
+};
 
 const iconBtn: CSSProperties = {
   width: 30,

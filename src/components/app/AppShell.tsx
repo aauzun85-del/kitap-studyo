@@ -210,6 +210,7 @@ export default function AppShell({
   signOut,
   active,
   context,
+  wizardBar,
   fitContent,
   defaultCollapsed,
   children,
@@ -219,6 +220,8 @@ export default function AppShell({
   signOut?: () => Promise<void>;
   active?: "home" | "books" | string;
   context?: AppShellContext;
+  /** Sihirbaz modunda bağlam çubuğunun yerine geçen üretim-hattı çubuğu. */
+  wizardBar?: ReactNode;
   /** true: içerik alanı tam yüksekliği doldurur ve KAYDIRMAZ (tuval araçları:
    *  kapak/mizanpaj kendi iç düzenini yönetir). false/yok: dikey kaydırma. */
   fitContent?: boolean;
@@ -704,8 +707,9 @@ export default function AppShell({
           )}
         </header>
 
-        {/* bağlam çubuğu (çalışma alanı): hangi kitap + hangi modül */}
-        {context && (
+        {/* sihirbaz modunda üretim-hattı çubuğu, normalde bağlam çubuğu */}
+        {wizardBar}
+        {!wizardBar && context && (
           <div
             style={{
               flex: "none",

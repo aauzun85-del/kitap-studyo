@@ -15,6 +15,7 @@ import {
   type ProjectListItem,
   type ProjectMeta,
   type ModuleKey,
+  type WizardStepKey,
   emptyEnvelope,
   migrateEnvelope,
   deriveListFields,
@@ -77,20 +78,49 @@ export async function getProject(id: string): Promise<{ id: string; data: Projec
 
 // ── Oluştur / yeniden adlandır / sil ─────────────────────────────────────────
 
-export async function createProject(seedTitle = ""): Promise<{ id: string; data: ProjectEnvelope }> {
+export async function createProject(
+  seedTitle = "",
+  seedAuthor = "",
+  seedGenre = "",
+): Promise<{ id: string; data: ProjectEnvelope }> {
   const supabase = createClient();
   const userId = await requireUserId();
   const env = emptyEnvelope();
-  if (seedTitle) env.meta.title = seedTitle;
+  env.meta.title = seedTitle;
+  env.meta.author = seedAuthor;
+  if (seedGenre) env.meta.genre = seedGenre;
   const { data, error } = await supabase
     .from("projects")
-    .insert({ user_id: userId, title: seedTitle, author: "", data: env })
+    .insert({ user_id: userId, title: seedTitle, author: seedAuthor, data: env })
     .select("id")
     .single();
   if (error) throw error;
   const id = (data as { id: string }).id;
   envCache.set(id, env);
   return { id, data: env };
+}
+
+/** Sihirbaz adımını "tamamlandı" işaretler (kuyruklu — kardeş yazımı ezmez). */
+export async function completeWizardStep(id: string, step: WizardStepKey): Promise<void> {
+  return enqueue(id, async () => {
+    const supabase = createClient();
+    const env = envCache.get(id) ?? (await fetchEnvelope(id));
+    const wizard = env.wizard ?? {
+      active: true,
+      editorCompleted: false,
+      layoutCompleted: false,
+      coverCompleted: false,
+    };
+    const key =
+      step === "editor" ? "editorCompleted" : step === "layout" ? "layoutCompleted" : "coverCompleted";
+    const merged: ProjectEnvelope = {
+      ...env,
+      wizard: { ...wizard, active: true, [key]: true },
+    };
+    const { error } = await supabase.from("projects").update({ data: merged }).eq("id", id);
+    if (error) throw error;
+    envCache.set(id, merged);
+  });
 }
 
 export async function renameProject(id: string, title: string): Promise<void> {

@@ -8,6 +8,7 @@ import { toShellUser } from "@/lib/app/identity";
 import { getSidebarCollapsed } from "@/lib/app/prefs";
 import { signOutAction } from "@/app/[lang]/auth-actions";
 import AppShell, { type AppShellContext } from "@/components/app/AppShell";
+import WizardBar from "@/components/app/WizardBar";
 import CoverStudio from "@/components/cover/CoverStudio";
 
 export default async function CoverPage({ params, searchParams }: PageProps<"/[lang]/kapak">) {
@@ -35,6 +36,19 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
     savedLabel: initialProject ? (isTr ? "Otomatik kaydedilir" : "Auto-saved") : undefined,
   };
 
+  const wizard = initialProject?.data.wizard;
+  const wizardBar =
+    initialProject && wizard?.active ? (
+      <WizardBar
+        lang={lang}
+        projectId={initialProject.id}
+        current="cover"
+        wizard={wizard}
+        backHref={`/${lang}/projeler`}
+        backLabel={isTr ? "Kitaplarım" : "My Books"}
+      />
+    ) : undefined;
+
   return (
     <AppShell
       lang={lang}
@@ -42,6 +56,7 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
       signOut={signOutAction.bind(null, lang)}
       active="kapak"
       context={context}
+      wizardBar={wizardBar}
       fitContent
       defaultCollapsed={collapsed}
     >

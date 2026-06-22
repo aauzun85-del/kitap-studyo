@@ -24,6 +24,18 @@ export type ProjectMeta = {
   subtitle?: string;
   isbn?: string;
   bio?: string;
+  genre?: string; // tür — sihirbazda sorulur, kapak promtunu yönlendirir
+};
+
+// 3 adımlı "otomatik kitap" sihirbazının durumu (proje ile saklanır).
+// active=true ise modül ekranlarında üretim-hattı çubuğu görünür.
+export type WizardStepKey = "editor" | "layout" | "cover";
+
+export type WizardState = {
+  active: boolean;
+  editorCompleted: boolean;
+  layoutCompleted: boolean;
+  coverCompleted: boolean;
 };
 
 // Paylaşılan kitap gövdesi (düz metin — editör/e-kitap/sesli doğrudan kullanır).
@@ -48,6 +60,21 @@ export type ProjectEnvelope = {
   manuscript: ProjectManuscript;
   modules: ProjectModules;
   cover: CoverDraft;
+  wizard?: WizardState;
+};
+
+// Yeni projeler sihirbazla başlar (active). Eski/migre projeler pasif.
+const ACTIVE_WIZARD: WizardState = {
+  active: true,
+  editorCompleted: false,
+  layoutCompleted: false,
+  coverCompleted: false,
+};
+const INACTIVE_WIZARD: WizardState = {
+  active: false,
+  editorCompleted: false,
+  layoutCompleted: false,
+  coverCompleted: false,
 };
 
 // Tablodan dönen ham satır.
@@ -80,6 +107,17 @@ export function emptyEnvelope(): ProjectEnvelope {
     manuscript: { text: "" },
     modules: {},
     cover: EMPTY_COVER,
+    wizard: { ...ACTIVE_WIZARD }, // yeni projeler sihirbazla başlar
+  };
+}
+
+function normalizeWizard(w: unknown): WizardState {
+  const x = (w as Partial<WizardState>) ?? {};
+  return {
+    active: !!x.active,
+    editorCompleted: !!x.editorCompleted,
+    layoutCompleted: !!x.layoutCompleted,
+    coverCompleted: !!x.coverCompleted,
   };
 }
 
@@ -101,10 +139,12 @@ export function migrateEnvelope(data: unknown): ProjectEnvelope {
     const cover = (d.cover as CoverDraft) ?? base.cover;
     return {
       schema: 2,
-      meta: { title: meta.title ?? "", author: meta.author ?? "", subtitle: meta.subtitle, isbn: meta.isbn, bio: meta.bio },
+      meta: { title: meta.title ?? "", author: meta.author ?? "", subtitle: meta.subtitle, isbn: meta.isbn, bio: meta.bio, genre: meta.genre },
       manuscript: { text: manuscript.text ?? "", updatedBy: manuscript.updatedBy, updatedAt: manuscript.updatedAt },
       modules,
       cover,
+      // wizard alanı yoksa eski projedir → pasif (üretim-hattı çubuğu çıkmaz).
+      wizard: "wizard" in d ? normalizeWizard(d.wizard) : { ...INACTIVE_WIZARD },
     };
   }
 
@@ -122,6 +162,7 @@ export function migrateEnvelope(data: unknown): ProjectEnvelope {
     manuscript: { text: "" },
     modules: {},
     cover,
+    wizard: { ...INACTIVE_WIZARD },
   };
 }
 
