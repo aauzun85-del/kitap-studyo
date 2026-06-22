@@ -82,6 +82,7 @@ export async function createProject(
   seedTitle = "",
   seedAuthor = "",
   seedGenre = "",
+  seedIsbn = "",
 ): Promise<{ id: string; data: ProjectEnvelope }> {
   const supabase = createClient();
   const userId = await requireUserId();
@@ -89,6 +90,7 @@ export async function createProject(
   env.meta.title = seedTitle;
   env.meta.author = seedAuthor;
   if (seedGenre) env.meta.genre = seedGenre;
+  if (seedIsbn) env.meta.isbn = seedIsbn;
   const { data, error } = await supabase
     .from("projects")
     .insert({ user_id: userId, title: seedTitle, author: seedAuthor, data: env })

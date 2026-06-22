@@ -182,6 +182,8 @@ export default function CoverStudio({
   const [userImages, setUserImages] = useState<UserImage[]>([]);
   const [userTemplates, setUserTemplates] = useState<UserTemplate[]>([]);
   const [aiBusy, setAiBusy] = useState(false);
+  // Sihirbaz otomatik üretiminde tuval üstünde gösterilecek yükleme mesajı.
+  const [coverGenMsg, setCoverGenMsg] = useState<string | null>(null);
   const [aiError, setAiError] = useState<"none" | "token" | "generic">("none");
   // Üretim sonrası bilgilendirme (ör. başlık görsele gömülünce yazı katmanları gizlendi).
   const [aiNotice, setAiNotice] = useState<"none" | "embed">("none");
@@ -1435,6 +1437,7 @@ export default function CoverStudio({
       const summary = (initialProject?.data.manuscript.text ?? "").slice(0, 1500);
       let desc = "";
       let styleId = aiStyle;
+      setCoverGenMsg(lang === "tr" ? "Kitap asistanı kapak fikrini yazıyor…" : "The book assistant is sketching your cover…");
       try {
         const res = await fetch("/api/cover-prompt", {
           method: "POST",
@@ -1453,7 +1456,9 @@ export default function CoverStudio({
       setAiDesc(desc);
       setAiModel("flux");
       setAiScope("wrap");
+      setCoverGenMsg(lang === "tr" ? "Kapak görseli üretiliyor… (~30 sn)" : "Generating cover artwork… (~30s)");
       await generateAiCover({ styleId, desc, model: "flux", scope: "wrap", embedText: false });
+      setCoverGenMsg(null);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wizardAuto, title, coverImage]);
@@ -2824,7 +2829,20 @@ export default function CoverStudio({
           {/* Seçili nesne ayarları artık tuvalin sağındaki "Seçim" panelinde. */}
 
           {/* Tuval, kalan yüksekliği doldurur; içinde hem ene hem boya sığar. */}
-          <div className="min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1">
+            {(coverGenMsg || aiBusy) && (
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-lg bg-background/85 backdrop-blur-[2px]">
+                <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-accent/25 border-t-accent" />
+                <div className="text-sm font-semibold text-foreground">
+                  {coverGenMsg ?? (lang === "tr" ? "Kapak görseli üretiliyor…" : "Generating cover…")}
+                </div>
+                <div className="max-w-[240px] text-center text-xs text-muted">
+                  {lang === "tr"
+                    ? "Yapay zekâ kapağını çiziyor — bu biraz sürebilir."
+                    : "AI is painting your cover — this can take a moment."}
+                </div>
+              </div>
+            )}
             <CoverCanvas
               ref={canvasRef}
               spread={spread}

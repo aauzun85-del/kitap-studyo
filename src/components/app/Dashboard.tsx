@@ -45,6 +45,9 @@ const COPY = {
     fTitlePh: "Örn. Sessiz Şehir",
     fAuthorPh: "Örn. Selin Aydın",
     fGenrePick: "Tür seç…",
+    fIsbn: "ISBN (isteğe bağlı)",
+    fIsbnPh: "978…",
+    fIsbnHint: "Verirsen barkod kapağa otomatik eklenir.",
     startCta: "Başla → AI Editör",
     cancel: "Vazgeç",
   },
@@ -81,6 +84,9 @@ const COPY = {
     fTitlePh: "e.g. The Silent City",
     fAuthorPh: "e.g. Selin Aydın",
     fGenrePick: "Pick a genre…",
+    fIsbn: "ISBN (optional)",
+    fIsbnPh: "978…",
+    fIsbnHint: "If provided, the barcode is added to the cover automatically.",
     startCta: "Start → AI Editor",
     cancel: "Cancel",
   },
@@ -157,6 +163,7 @@ export default function Dashboard({
   const [nTitle, setNTitle] = useState("");
   const [nAuthor, setNAuthor] = useState("");
   const [nGenre, setNGenre] = useState("");
+  const [nIsbn, setNIsbn] = useState("");
 
   const refresh = useCallback(async () => {
     try {
@@ -182,6 +189,7 @@ export default function Dashboard({
     setNTitle("");
     setNAuthor("");
     setNGenre("");
+    setNIsbn("");
     setNewOpen(true);
   }
 
@@ -190,7 +198,7 @@ export default function Dashboard({
     if (!nTitle.trim()) return;
     setBusy(true);
     try {
-      const { id } = await createProject(nTitle.trim(), nAuthor.trim(), nGenre);
+      const { id } = await createProject(nTitle.trim(), nAuthor.trim(), nGenre, nIsbn.trim());
       router.push(`/${lang}/editor?project=${id}`);
     } catch (e) {
       console.error(e);
@@ -545,6 +553,17 @@ export default function Dashboard({
                 <option key={g.v} value={g[lang]}>{g[lang]}</option>
               ))}
             </select>
+
+            <label style={dlgLabel}>{t.fIsbn}</label>
+            <input
+              className="tipo-input"
+              value={nIsbn}
+              onChange={(e) => setNIsbn(e.target.value)}
+              placeholder={t.fIsbnPh}
+              inputMode="numeric"
+              style={dlgInput}
+            />
+            <div style={{ fontSize: 12, color: "#9aa1b1", marginTop: 6 }}>{t.fIsbnHint}</div>
 
             <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
               <button
