@@ -8,6 +8,7 @@ import { listProjects, createProject, renameProject, deleteProject } from "@/lib
 import { signThumbs } from "@/lib/projects/storage";
 import { createClient } from "@/lib/supabase/client";
 import type { ProjectListItem } from "@/lib/projects/types";
+import { WIZARD_PROFILES, type PrintStandard } from "@/lib/layout/standards";
 import AppShell, { Icon, MODULES, type ShellUser } from "./AppShell";
 
 // ── Yerel metinler (Pano'ya özel; tasarım Türkçe, app iki dilli) ──
@@ -44,6 +45,8 @@ const COPY = {
     creating: "Oluşturuluyor…",
     newHeading: "Yeni kitap",
     newSub: "Birkaç bilgi ver — gerisini 3 adımda birlikte yapacağız.",
+    fProfile: "Yayın profili",
+    fProfileHint: "Boyut, kenar boşlukları ve kapak baskı ölçüleri buna göre ayarlanır.",
     fTitle: "Kitap adı",
     fAuthor: "Yazar",
     fGenre: "Tür",
@@ -88,6 +91,8 @@ const COPY = {
     creating: "Creating…",
     newHeading: "New book",
     newSub: "Give a few details — we'll do the rest in 3 steps together.",
+    fProfile: "Publishing profile",
+    fProfileHint: "Size, margins and cover print dimensions are set to match this.",
     fTitle: "Book title",
     fAuthor: "Author",
     fGenre: "Genre",
@@ -170,6 +175,7 @@ export default function Dashboard({
   const [busy, setBusy] = useState(false);
   // Yeni kitap sihirbazı başlangıç formu
   const [newOpen, setNewOpen] = useState(false);
+  const [nProfile, setNProfile] = useState<PrintStandard>("kdy");
   const [nTitle, setNTitle] = useState("");
   const [nAuthor, setNAuthor] = useState("");
   const [nGenre, setNGenre] = useState("");
@@ -196,6 +202,7 @@ export default function Dashboard({
 
   // "Yeni Kitap" → önce başlangıç formunu aç (ad/yazar/tür).
   function onNew() {
+    setNProfile("kdy");
     setNTitle("");
     setNAuthor("");
     setNGenre("");
@@ -208,7 +215,7 @@ export default function Dashboard({
     if (!nTitle.trim()) return;
     setBusy(true);
     try {
-      const { id } = await createProject(nTitle.trim(), nAuthor.trim(), nGenre, nIsbn.trim());
+      const { id } = await createProject(nTitle.trim(), nAuthor.trim(), nGenre, nIsbn.trim(), nProfile);
       router.push(`/${lang}/editor?project=${id}`);
     } catch (e) {
       console.error(e);
@@ -572,7 +579,36 @@ export default function Dashboard({
             style={{ width: 460, maxWidth: "100%", background: "#fff", borderRadius: 18, boxShadow: "0 24px 60px rgba(20,24,40,.28)", padding: 26 }}
           >
             <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.3px" }}>{t.newHeading}</div>
-            <div style={{ fontSize: 14, color: "#6b7280", marginTop: 4, marginBottom: 18, lineHeight: 1.5 }}>{t.newSub}</div>
+            <div style={{ fontSize: 14, color: "#6b7280", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>{t.newSub}</div>
+
+            <label style={{ ...dlgLabel, marginTop: 0 }}>{t.fProfile}</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {WIZARD_PROFILES.map((p) => {
+                const active = nProfile === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setNProfile(p.id)}
+                    style={{
+                      flex: "1 1 calc(50% - 4px)",
+                      minWidth: 132,
+                      textAlign: "left",
+                      padding: "9px 12px",
+                      borderRadius: 11,
+                      cursor: "pointer",
+                      border: active ? "1px solid var(--pri)" : "1px solid #e1e3ee",
+                      background: active ? "var(--pri-soft)" : "#fff",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: active ? "var(--pri)" : "#1d2333" }}>{p[lang]}</div>
+                    <div style={{ fontSize: 11.5, color: "#9aa1b1", marginTop: 2 }}>{p.note[lang]}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 12, color: "#9aa1b1", marginTop: 6 }}>{t.fProfileHint}</div>
 
             <label style={dlgLabel}>{t.fTitle}</label>
             <input

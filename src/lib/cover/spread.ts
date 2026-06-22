@@ -45,6 +45,7 @@ export const BOOK_SIZES: BookSize[] = [
   { id: "kdp-6x9-a", label: '6.14×9.21" (156×234 mm)', width: 156, height: 234, category: "kdp" },
   { id: "tr-135x210", label: "135×210 mm (Cep boy)", width: 135, height: 210, category: "tr" },
   { id: "tr-145x210", label: "145×210 mm", width: 145, height: 210, category: "tr" },
+  { id: "tr-150x225", label: "150×225 mm (KDY Akademi)", width: 150, height: 225, category: "tr" },
   { id: "tr-160x240", label: "160×240 mm (Büyük boy)", width: 160, height: 240, category: "tr" },
   { id: "tr-170x240", label: "170×240 mm", width: 170, height: 240, category: "tr" },
   { id: "tr-a5", label: "A5 — 148×210 mm", width: 148, height: 210, category: "tr" },

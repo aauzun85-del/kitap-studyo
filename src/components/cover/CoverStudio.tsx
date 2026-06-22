@@ -21,6 +21,7 @@ import {
   getTemplate,
   type CoverColors,
 } from "@/lib/cover/templates";
+import { STANDARD_PROFILES } from "@/lib/layout/standards";
 import {
   normalizeIsbn,
   isValidEan13,
@@ -196,14 +197,17 @@ export default function CoverStudio({
   // "Boya & değiştir" penceresi açık mı.
   const [editOpen, setEditOpen] = useState(false);
 
-  // Kitap ayarları
-  const [sizeId, setSizeId] = useState(DEFAULT_SIZE_ID);
+  // Kitap ayarları — yayın profili seçilmişse boyut+taşma o profile göre başlar
+  // (kapak baskı speci platformla uyumlu olsun). Eski/profilsiz projede varsayılan.
+  const seedCoverPlatform = initialProject?.data.meta.platform;
+  const seedCoverProfile = seedCoverPlatform ? STANDARD_PROFILES[seedCoverPlatform] : null;
+  const [sizeId, setSizeId] = useState(seedCoverProfile?.defaultSizeId ?? DEFAULT_SIZE_ID);
   const [pageCount, setPageCount] = useState(200);
   const [paperGsm, setPaperGsm] = useState<PaperGsm>(80);
   const [binding, setBinding] = useState<BindingType>("soft");
   const [spineManualOn, setSpineManualOn] = useState(false);
   const [spineManualValue, setSpineManualValue] = useState(11);
-  const [bleedMm, setBleedMm] = useState<number>(DEFAULT_BLEED_MM);
+  const [bleedMm, setBleedMm] = useState<number>(seedCoverProfile?.bleedMm ?? DEFAULT_BLEED_MM);
 
   // PDF çıktısı
   const canvasRef = useRef<CoverCanvasHandle>(null);

@@ -9,7 +9,16 @@
 import { KDY_SIZE, KDY_MARGINS, KDY_BLEED_MM, KDY_MARK_OFFSET_MM } from "./kdy";
 import { recommendedGutter, type Margins } from "./page";
 
-export type PrintStandard = "kdy" | "kdp" | "ingram" | "bnpress" | "lulu";
+export type PrintStandard = "kdy" | "akademi" | "kdp" | "ingram" | "bnpress" | "lulu" | "serbest";
+
+// Sihirbazda kullanıcıya sunulan yayın profilleri (sırayla).
+export const WIZARD_PROFILES: { id: PrintStandard; tr: string; en: string; note: { tr: string; en: string } }[] = [
+  { id: "kdy", tr: "KDY", en: "KDY", note: { tr: "Roman · 13×19,5 cm", en: "Novel · 130×195 mm" } },
+  { id: "akademi", tr: "KDY Akademi", en: "KDY Academic", note: { tr: "Akademik · 15×22,5 cm", en: "Academic · 150×225 mm" } },
+  { id: "kdp", tr: "KDP", en: "KDP", note: { tr: "Amazon · 6×9 inç", en: "Amazon · 6×9 in" } },
+  { id: "ingram", tr: "Ingram", en: "Ingram", note: { tr: "IngramSpark · 6×9 inç", en: "IngramSpark · 6×9 in" } },
+  { id: "serbest", tr: "Serbest", en: "Free", note: { tr: "Boyutu sen seç", en: "You pick the size" } },
+];
 
 export type StandardProfile = {
   id: PrintStandard;
@@ -80,6 +89,19 @@ export const STANDARD_PROFILES: Record<PrintStandard, StandardProfile> = {
     bleedToggle: false,
     bleedDefaultOn: true,
   },
+  // KDY Akademi: KDY ailesinin akademik baskısı. Daha büyük trim (15×22,5 cm),
+  // biraz daha ferah kenar boşlukları; taşma + kesim işaretleri KDY gibi açık.
+  akademi: {
+    id: "akademi",
+    defaultSizeId: "tr-150x225",
+    defaultMargins: { top: 22, bottom: 22, inside: 22, outside: 18 },
+    gutterMm: (pageCount) => recommendedGutter(pageCount),
+    bleedMm: KDY_BLEED_MM,
+    cropMarksAllowed: true,
+    markOffsetMm: KDY_MARK_OFFSET_MM,
+    bleedToggle: false,
+    bleedDefaultOn: true,
+  },
   kdp: {
     id: "kdp",
     defaultSizeId: KDP_DEFAULT_SIZE_ID,
@@ -133,6 +155,20 @@ export const STANDARD_PROFILES: Record<PrintStandard, StandardProfile> = {
     bleedMm: KDP_BLEED_MM,
     cropMarksAllowed: false,
     markOffsetMm: 0,
+    bleedToggle: true,
+    bleedDefaultOn: false,
+  },
+  // Serbest: belirli bir platforma bağlı değil. Esnek, makul bir varsayılan
+  // (13,5×21 cm); kullanıcı boyutu/marjları dilediğince değiştirir, taşmayı açıp
+  // kapatabilir, kesim işaretlerini kullanabilir.
+  serbest: {
+    id: "serbest",
+    defaultSizeId: "tr-135x210",
+    defaultMargins: { top: 18, bottom: 18, inside: 18, outside: 15 },
+    gutterMm: (pageCount) => recommendedGutter(pageCount),
+    bleedMm: 3,
+    cropMarksAllowed: true,
+    markOffsetMm: 5,
     bleedToggle: true,
     bleedDefaultOn: false,
   },

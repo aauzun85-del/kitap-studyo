@@ -83,6 +83,7 @@ export async function createProject(
   seedAuthor = "",
   seedGenre = "",
   seedIsbn = "",
+  seedPlatform?: import("@/lib/layout/standards").PrintStandard,
 ): Promise<{ id: string; data: ProjectEnvelope }> {
   const supabase = createClient();
   const userId = await requireUserId();
@@ -91,6 +92,7 @@ export async function createProject(
   env.meta.author = seedAuthor;
   if (seedGenre) env.meta.genre = seedGenre;
   if (seedIsbn) env.meta.isbn = seedIsbn;
+  if (seedPlatform) env.meta.platform = seedPlatform;
   const { data, error } = await supabase
     .from("projects")
     .insert({ user_id: userId, title: seedTitle, author: seedAuthor, data: env })

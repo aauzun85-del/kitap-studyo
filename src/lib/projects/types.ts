@@ -6,6 +6,7 @@
 // veriler migrateEnvelope() ile sürüme yükseltilir.
 
 import type { CoverDraft } from "@/lib/cover/coverDraft";
+import type { PrintStandard } from "@/lib/layout/standards";
 
 export const PROJECT_SCHEMA = 2 as const;
 
@@ -25,6 +26,7 @@ export type ProjectMeta = {
   isbn?: string;
   bio?: string;
   genre?: string; // tür — sihirbazda sorulur, kapak promtunu yönlendirir
+  platform?: PrintStandard; // yayın profili (KDY/KDP/Ingram/Serbest…) — boyut+marj+kapak speci
 };
 
 // 3 adımlı "otomatik kitap" sihirbazının durumu (proje ile saklanır).
@@ -139,7 +141,7 @@ export function migrateEnvelope(data: unknown): ProjectEnvelope {
     const cover = (d.cover as CoverDraft) ?? base.cover;
     return {
       schema: 2,
-      meta: { title: meta.title ?? "", author: meta.author ?? "", subtitle: meta.subtitle, isbn: meta.isbn, bio: meta.bio, genre: meta.genre },
+      meta: { title: meta.title ?? "", author: meta.author ?? "", subtitle: meta.subtitle, isbn: meta.isbn, bio: meta.bio, genre: meta.genre, platform: meta.platform },
       manuscript: { text: manuscript.text ?? "", updatedBy: manuscript.updatedBy, updatedAt: manuscript.updatedAt },
       modules,
       cover,

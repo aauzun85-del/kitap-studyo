@@ -14,7 +14,6 @@ import {
 } from "@/lib/layout/page";
 import {
   KDY_SIZE,
-  KDY_MARGINS,
   KDY_BODY_FONT,
   KDY_HEADINGS,
 } from "@/lib/layout/kdy";
@@ -123,15 +122,18 @@ export default function LayoutStudio({
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState(false);
 
-  // Baskı standardı (KDY ↔ Amazon KDP). Seçilince boyut/kenar/taşma uygulanır.
-  const [standard, setStandard] = useState<PrintStandard>("kdy");
-  // KDP taşma (bleed) açık mı — yalnızca KDP'de anlamlı (KDY hep taşmalı).
-  const [bleedOn, setBleedOn] = useState(false);
+  // Baskı standardı (yayın profili). Projede seçilmişse ondan başlar; boyut/kenar/
+  // taşma o profilin varsayılanlarına göre kurulur. Eski projelerde profil yoksa KDY.
+  const seedPlatform: PrintStandard = seed?.meta.platform ?? "kdy";
+  const seedProfile = STANDARD_PROFILES[seedPlatform];
+  const [standard, setStandard] = useState<PrintStandard>(seedPlatform);
+  // KDP/Serbest taşma (bleed) açık mı — profilin varsayılanı.
+  const [bleedOn, setBleedOn] = useState(seedProfile.bleedDefaultOn);
 
-  // Sayfa / kenar boşlukları (KDY varsayılanları).
-  const [sizeId, setSizeId] = useState(KDY_SIZE.id);
-  const [margins, setMargins] = useState<Margins>({ ...KDY_MARGINS });
-  const [presetId, setPresetId] = useState<string>("kdy");
+  // Sayfa / kenar boşlukları (profil varsayılanları).
+  const [sizeId, setSizeId] = useState(seedProfile.defaultSizeId);
+  const [margins, setMargins] = useState<Margins>({ ...seedProfile.defaultMargins });
+  const [presetId, setPresetId] = useState<string>(seedPlatform);
   const [gutterAuto, setGutterAuto] = useState(true);
   const [gutterManual, setGutterManual] = useState(0);
   const [zoom, setZoom] = useState(1);
