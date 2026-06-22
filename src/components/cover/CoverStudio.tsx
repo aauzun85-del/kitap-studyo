@@ -1506,6 +1506,21 @@ export default function CoverStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wizardAuto, title, coverImage]);
 
+  // ── KDY profili: ön kapağa KDY logosunu otomatik yerleştir ──
+  // KDY/KDY Akademi kitaplarında, henüz logo yoksa, KDY logo kılavuzuna göre
+  // ön kapağa (alt-orta, 20mm genişlik) markayı koyar. Kullanıcı değiştirebilir.
+  const kdyLogoFiredRef = useRef(false);
+  useEffect(() => {
+    const platform = initialProject?.data.meta.platform;
+    if (platform !== "kdy" && platform !== "akademi") return;
+    if (kdyLogoFiredRef.current || logoImage) return;
+    kdyLogoFiredRef.current = true;
+    setLogoImage(platform === "akademi" ? "/kdy/akademi-white.png" : "/kdy/wordmark-white.png");
+    setLogoSize(Math.round((20 / spread.bookWidth) * 1000) / 10); // ≈20mm genişlik
+    setLogoPos("bottom");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialProject, logoImage]);
+
   // AI ile tasarım ÖĞESİ üret (mühür/rozet/amblem…): saydam PNG döner, tuvale
   // yeni bir "görsel" nesnesi olarak eklenir ve seçilir. Öteki nesneler gibi
   // taşınır/boyutlanır/çoğaltılır/silinir; autosave'e dahildir.
