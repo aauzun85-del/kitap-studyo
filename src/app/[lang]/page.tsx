@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { isLocale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
+import { getCurrentUser } from "@/lib/supabase/user";
 import {
   PaletteIcon,
   LayoutIcon,
@@ -205,6 +206,12 @@ const TESTIMONIALS = {
 export default async function HomePage({ params }: PageProps<"/[lang]">) {
   const { lang } = await params;
   if (!isLocale(lang)) notFound();
+
+  // Giriş yapmış kullanıcı siteye girince pazarlama sayfası yerine doğrudan
+  // Pano'ya (kontrol paneli + Kitap Tasarım Sihirbazı) gider.
+  const user = await getCurrentUser();
+  if (user) redirect(`/${lang}/projeler`);
+
   const dict = getDictionary(lang);
 
   const isTr = lang === "tr";
