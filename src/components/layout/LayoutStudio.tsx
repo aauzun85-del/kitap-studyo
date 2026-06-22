@@ -35,6 +35,7 @@ import {
 } from "@/lib/layout/paginate";
 import { parseDocx, type DocxMode } from "@/lib/layout/docx";
 import { exportBookPdf } from "@/lib/layout/pdf";
+import ExportOverlay from "@/components/app/ExportOverlay";
 import {
   COVER_FONTS,
   FONT_CATEGORY_ORDER,
@@ -92,10 +93,14 @@ export default function LayoutStudio({
   lang,
   dict,
   initialProject,
+  autoExport,
 }: {
   lang: Locale;
   dict: Dictionary;
   initialProject?: { id: string; data: ProjectEnvelope };
+  /** İndirme ekranından "?export=1": sayfalama hazır olunca İç sayfa PDF'ini
+   *  otomatik indir + üstte durum katmanı göster. */
+  autoExport?: boolean;
 }) {
   const t = dict.layoutStudio;
   // Bulut projesi: state proje verisinden tohumlanır; proje yoksa anonim (boş).
@@ -176,6 +181,10 @@ export default function LayoutStudio({
   const [kerning, setKerning] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(false);
+  // İndirme ekranından "?export=1" ile gelince: sayfalama hazır olunca İç sayfa
+  // PDF'i otomatik indirilir; üstteki durum katmanı bunu izler.
+  const [autoExportStatus, setAutoExportStatus] = useState<"working" | "done" | "error">("working");
+  const autoExportFiredRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -371,8 +380,8 @@ export default function LayoutStudio({
     setImportError(false);
   }, []);
 
-  const handleExportPdf = useCallback(async () => {
-    if (pages.length === 0) return;
+  const handleExportPdf = useCallback(async (): Promise<boolean> => {
+    if (pages.length === 0) return false;
     setExporting(true);
     setExportError(false);
     try {
@@ -400,12 +409,26 @@ export default function LayoutStudio({
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      return true;
     } catch {
       setExportError(true);
+      return false;
     } finally {
       setExporting(false);
     }
   }, [pages, sizeId, margins, gutter, cropMarks, kerning, fontId, title, standard, bleedOn]);
+
+  // Export modu: yazı tipleri yüklenip sayfalama hazır olunca İç sayfa PDF'ini
+  // bir kez otomatik indir (indirme ekranındaki tuştan gelindi).
+  useEffect(() => {
+    if (!autoExport || autoExportFiredRef.current) return;
+    if (!fontsReady || pages.length === 0) return;
+    autoExportFiredRef.current = true;
+    void (async () => {
+      const ok = await handleExportPdf();
+      setAutoExportStatus(ok ? "done" : "error");
+    })();
+  }, [autoExport, fontsReady, pages.length, handleExportPdf]);
 
   // Sayfalama: cilt payı otomatikse iki geçişli hesap. Ölçüm tarayıcıda
   // (canvas measureText) yapılır → effect içinde.
@@ -511,6 +534,15 @@ export default function LayoutStudio({
 
   return (
     <div className="mx-auto flex min-h-full w-full max-w-[1400px] flex-col gap-4 px-4 py-6 lg:flex-row">
+      {autoExport && (
+        <ExportOverlay
+          lang={lang}
+          kind="ic"
+          status={autoExportStatus}
+          backHref={projectId ? `/${lang}/indir?project=${projectId}` : `/${lang}/projeler`}
+          onDownload={() => void handleExportPdf()}
+        />
+      )}
       <aside className="w-full shrink-0 lg:w-[380px]">
         <div className="grid grid-cols-4 gap-1 rounded-xl border border-border bg-surface p-1">
           {navItems.map(({ id, label, Icon }) => (

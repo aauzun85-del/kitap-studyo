@@ -36,9 +36,12 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
     savedLabel: initialProject ? (isTr ? "Otomatik kaydedilir" : "Auto-saved") : undefined,
   };
 
+  // İndirme ekranından "?export=1" ile gelindi → Kapak PDF'ini otomatik üret
+  // (kapak yeniden ÜRETİLMEZ, sadece mevcut tasarım PDF'e basılır).
+  const exportMode = sp.export === "1";
   const wizard = initialProject?.data.wizard;
   const wizardBar =
-    initialProject && wizard?.active ? (
+    initialProject && wizard?.active && !exportMode ? (
       <WizardBar
         lang={lang}
         projectId={initialProject.id}
@@ -65,7 +68,8 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
         lang={lang}
         dict={dict}
         initialProject={initialProject}
-        wizardAuto={!!wizard?.active}
+        wizardAuto={!!wizard?.active && !exportMode}
+        autoExport={exportMode}
       />
     </AppShell>
   );

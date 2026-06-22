@@ -198,6 +198,9 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   onGeometrySelect: (geo: ObjGeometry | null) => void; // seçili nesnenin ölçüsü
   onAngleChange: (deg: number) => void;
   onLayersChange: (ids: string[]) => void;
+  // Tuval (zemin + görsel + logolar + metin) tam çizildiğinde çağrılır — async
+  // görsel yüklemeleri dahil. Otomatik PDF/PNG çıktısı için "hazır" sinyali.
+  onReady?: () => void;
 }>(function CoverCanvas({
   spread,
   labels,
@@ -220,6 +223,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   onGeometrySelect,
   onAngleChange,
   onLayersChange,
+  onReady,
 }, ref) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasElRef = useRef<HTMLCanvasElement>(null);
@@ -243,6 +247,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   const onGeoRef = useRef(onGeometrySelect);
   const onAngleRef = useRef(onAngleChange);
   const onLayersRef = useRef(onLayersChange);
+  const onReadyRef = useRef(onReady);
   const textStylesRef = useRef(textStyles);
   const pxRef = useRef<(mm: number) => number>(() => 0);
   const mmRef = useRef<(pxVal: number) => number>(() => 0);
@@ -280,6 +285,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   onGeoRef.current = onGeometrySelect;
   onAngleRef.current = onAngleChange;
   onLayersRef.current = onLayersChange;
+  onReadyRef.current = onReady;
   textStylesRef.current = textStyles;
 
   // Bir nesnenin güncel dönüşümünü kayıt formatına çevirir (konum + oran + açı).
@@ -1577,6 +1583,9 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       );
 
       canvas.requestRenderAll();
+      // Tuval tam çizildi (async görseller dahil) → "hazır" sinyali. Otomatik
+      // PDF çıktısı (indirme ekranından gelen export modu) bunu bekler.
+      if (!disposed) onReadyRef.current?.();
     }
 
     render();

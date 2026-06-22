@@ -35,9 +35,11 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/[
     savedLabel: initialProject ? (isTr ? "Otomatik kaydedilir" : "Auto-saved") : undefined,
   };
 
+  // İndirme ekranından "?export=1" ile gelindi → İç sayfa PDF'ini otomatik üret.
+  const exportMode = sp.export === "1";
   const wizard = initialProject?.data.wizard;
   const wizardBar =
-    initialProject && wizard?.active ? (
+    initialProject && wizard?.active && !exportMode ? (
       <WizardBar
         lang={lang}
         projectId={initialProject.id}
@@ -63,6 +65,7 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/[
         lang={lang}
         dict={dict}
         initialProject={initialProject}
+        autoExport={exportMode}
       />
     </AppShell>
   );

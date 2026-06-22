@@ -25,7 +25,13 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
   if (!initialProject) redirect(`/${lang}/projeler`);
 
   const wizard = initialProject.data.wizard;
+  const pid = initialProject.id;
   const title = initialProject.data.meta.title?.trim() || (isTr ? "Kitabın" : "Your book");
+  // İç sayfa PDF'i metin gerektirir — metin yoksa kullanıcıyı önce metne yönlendir.
+  const hasText = !!initialProject.data.manuscript?.text?.trim();
+  const icHref = `/${lang}/mizanpaj?project=${pid}&export=1`;
+  const kapakHref = `/${lang}/kapak?project=${pid}&export=1`;
+  const addTextHref = `/${lang}/mizanpaj?project=${pid}`;
 
   const wizardBar = wizard ? (
     <WizardBar
@@ -63,20 +69,30 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
           </h1>
           <p style={{ margin: 0, fontSize: 15, color: "#6b7280", lineHeight: 1.6, maxWidth: 460, marginLeft: "auto", marginRight: "auto" }}>
             {isTr
-              ? "Üç adımı da tamamladın. Baskıya hazır dosyaların indirilmeye hazır olacak."
-              : "You've completed all three steps. Your print-ready files will be downloadable here."}
+              ? "Üç adımı da tamamladın. Baskıya hazır dosyalarını buradan indirebilirsin."
+              : "You've completed all three steps. Download your print-ready files below."}
           </p>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center", marginTop: 28 }}>
-            <div style={{ flex: "1 1 200px", maxWidth: 260, border: "1px solid #ececf4", borderRadius: 13, padding: "18px 16px", textAlign: "left" }}>
+            <div style={{ flex: "1 1 220px", maxWidth: 280, border: "1px solid #ececf4", borderRadius: 13, padding: "18px 16px", textAlign: "left", display: "flex", flexDirection: "column" }}>
               <div style={{ fontSize: 15, fontWeight: 700 }}>{isTr ? "İç sayfa PDF" : "Interior PDF"}</div>
-              <div style={{ fontSize: 13, color: "#9aa1b1", marginTop: 4 }}>{isTr ? "Baskıya hazır · 300 DPI" : "Print-ready · 300 DPI"}</div>
-              <div style={{ marginTop: 12, fontSize: 12.5, fontWeight: 700, color: "var(--pri)" }}>{isTr ? "Yakında" : "Soon"}</div>
+              <div style={{ fontSize: 13, color: "#9aa1b1", marginTop: 4, marginBottom: 14, flex: 1 }}>{isTr ? "Baskıya hazır · 300 DPI" : "Print-ready · 300 DPI"}</div>
+              {hasText ? (
+                <a href={icHref} style={{ display: "block", textAlign: "center", background: "#4f46e5", color: "#fff", fontWeight: 700, fontSize: 14, padding: "11px 14px", borderRadius: 11, textDecoration: "none" }}>
+                  {isTr ? "PDF indir" : "Download PDF"}
+                </a>
+              ) : (
+                <a href={addTextHref} style={{ display: "block", textAlign: "center", background: "#fff", color: "#6b7280", fontWeight: 600, fontSize: 13, padding: "11px 12px", borderRadius: 11, textDecoration: "none", border: "1px dashed #d8dae6", lineHeight: 1.4 }}>
+                  {isTr ? "Önce kitabın metnini ekle →" : "Add your book's text first →"}
+                </a>
+              )}
             </div>
-            <div style={{ flex: "1 1 200px", maxWidth: 260, border: "1px solid #ececf4", borderRadius: 13, padding: "18px 16px", textAlign: "left" }}>
+            <div style={{ flex: "1 1 220px", maxWidth: 280, border: "1px solid #ececf4", borderRadius: 13, padding: "18px 16px", textAlign: "left", display: "flex", flexDirection: "column" }}>
               <div style={{ fontSize: 15, fontWeight: 700 }}>{isTr ? "Kapak PDF" : "Cover PDF"}</div>
-              <div style={{ fontSize: 13, color: "#9aa1b1", marginTop: 4 }}>{isTr ? "Tam kapak · taşma payı" : "Full cover · bleed"}</div>
-              <div style={{ marginTop: 12, fontSize: 12.5, fontWeight: 700, color: "var(--pri)" }}>{isTr ? "Yakında" : "Soon"}</div>
+              <div style={{ fontSize: 13, color: "#9aa1b1", marginTop: 4, marginBottom: 14, flex: 1 }}>{isTr ? "Tam kapak · taşma payı" : "Full cover · bleed"}</div>
+              <a href={kapakHref} style={{ display: "block", textAlign: "center", background: "#4f46e5", color: "#fff", fontWeight: 700, fontSize: 14, padding: "11px 14px", borderRadius: 11, textDecoration: "none" }}>
+                {isTr ? "PDF indir" : "Download PDF"}
+              </a>
             </div>
           </div>
         </div>

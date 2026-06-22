@@ -29,6 +29,7 @@ import {
   randomTestIsbn,
 } from "@/lib/cover/barcode";
 import { exportCoverPdf } from "@/lib/cover/pdf";
+import ExportOverlay from "@/components/app/ExportOverlay";
 import {
   EyeIcon,
   EyeSlashIcon,
@@ -127,12 +128,16 @@ export default function CoverStudio({
   dict,
   initialProject,
   wizardAuto,
+  autoExport,
 }: {
   lang: Locale;
   dict: Dictionary;
   initialProject?: { id: string; data: ProjectEnvelope };
   /** Sihirbaz modunda: kapağı kitap bilgisinden otomatik üret + AI panelini aç. */
   wizardAuto?: boolean;
+  /** İndirme ekranından "?export=1" ile gelindi: tuval hazır olunca Kapak PDF'ini
+   *  otomatik indir + üstte durum katmanı göster. */
+  autoExport?: boolean;
 }) {
   const t = dict.coverStudio;
   // Bulut projesi modu: ?project=<id> ile açıldıysa kayıt/yükleme buluta gider.
@@ -208,6 +213,11 @@ export default function CoverStudio({
   const [spineManualOn, setSpineManualOn] = useState(false);
   const [spineManualValue, setSpineManualValue] = useState(11);
   const [bleedMm, setBleedMm] = useState<number>(seedCoverProfile?.bleedMm ?? DEFAULT_BLEED_MM);
+  // İndirme ekranından "?export=1" ile gelince: tuval hazır olunca Kapak PDF'i
+  // otomatik indirilir; üstteki durum katmanı bunu izler.
+  const [autoExportStatus, setAutoExportStatus] = useState<"working" | "done" | "error">("working");
+  const autoExportFiredRef = useRef(false);
+  const autoExportTimerRef = useRef<number | null>(null);
 
   // PDF çıktısı
   const canvasRef = useRef<CoverCanvasHandle>(null);
@@ -723,9 +733,9 @@ export default function CoverStudio({
     a.click();
   };
 
-  const handleExportPdf = async () => {
+  const handleExportPdf = async (): Promise<boolean> => {
     const dataUrl = canvasRef.current?.getPrintDataUrl(PRINT_DPI);
-    if (!dataUrl) return;
+    if (!dataUrl) return false;
     setExporting(true);
     try {
       const safeTitle = (title || t.titlePlaceholder)
@@ -733,9 +743,26 @@ export default function CoverStudio({
         .trim()
         .slice(0, 60) || "kapak";
       await exportCoverPdf(dataUrl, spread, `${safeTitle}-kapak.pdf`, cropMarks);
+      return true;
+    } catch {
+      return false;
     } finally {
       setExporting(false);
     }
+  };
+
+  // Export modu: tuval HAZIR olunca (CoverCanvas onReady) Kapak PDF'ini bir kez
+  // otomatik indir. autoContrast vb. birden çok render tetikleyebildiği için son
+  // render'dan ~700ms sonra (görsel + logolar yerleşince) tetikler.
+  const handleCanvasReady = () => {
+    if (!autoExport || autoExportFiredRef.current) return;
+    if (autoExportTimerRef.current) window.clearTimeout(autoExportTimerRef.current);
+    autoExportTimerRef.current = window.setTimeout(async () => {
+      if (autoExportFiredRef.current) return;
+      autoExportFiredRef.current = true;
+      const ok = await handleExportPdf();
+      setAutoExportStatus(ok ? "done" : "error");
+    }, 700);
   };
 
   // Kapağı PNG olarak cihazın paylaşım menüsüyle paylaş (telefon/tablet ve
@@ -1677,6 +1704,15 @@ export default function CoverStudio({
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col overflow-hidden px-4 pb-2 pt-2">
+      {autoExport && (
+        <ExportOverlay
+          lang={lang}
+          kind="kapak"
+          status={autoExportStatus}
+          backHref={projectId ? `/${lang}/indir?project=${projectId}` : `/${lang}/projeler`}
+          onDownload={() => void handleExportPdf()}
+        />
+      )}
       {draftRestored && (
         <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-emerald-500/40 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
           <span>{t.draftRestored}</span>
@@ -3009,6 +3045,7 @@ export default function CoverStudio({
               onSelect={setSelectedId}
               onAngleChange={setSelectedAngle}
               onLayersChange={handleLayersChange}
+              onReady={handleCanvasReady}
             />
           </div>
 
