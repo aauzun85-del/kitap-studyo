@@ -125,10 +125,13 @@ export default function CoverStudio({
   lang,
   dict,
   initialProject,
+  wizardAuto,
 }: {
   lang: Locale;
   dict: Dictionary;
   initialProject?: { id: string; data: ProjectEnvelope };
+  /** Sihirbaz modunda: kapağı kitap bilgisinden otomatik üret + AI panelini aç. */
+  wizardAuto?: boolean;
 }) {
   const t = dict.coverStudio;
   // Bulut projesi modu: ?project=<id> ile açıldıysa kayıt/yükleme buluta gider.
@@ -237,8 +240,9 @@ export default function CoverStudio({
   const [objects, setObjects] = useState<CustomObject[]>([]);
   const objCounter = useRef(0);
 
-  // Canva tarzı sol ikon şeridi: o an açık olan grup.
-  const [activePanel, setActivePanel] = useState<PanelId>("templates");
+  // Canva tarzı sol ikon şeridi: o an açık olan grup. Sihirbaz modunda doğrudan
+  // AI paneliyle açılır (kapak burada otomatik üretilip düzenlenir).
+  const [activePanel, setActivePanel] = useState<PanelId>(wizardAuto ? "ai" : "templates");
 
   // --- Otomatik kayıt (taslak) ---
   // Tasarım her değişiklikte tarayıcıya kaydedilir; yenilemede kaybolmaz.
@@ -1310,40 +1314,52 @@ export default function CoverStudio({
   };
 
   // AI kapak görseli üret → mevcut "kapak görseli" boru hattına aktar.
-  const generateAiCover = async () => {
+  const generateAiCover = async (opts?: {
+    styleId?: string;
+    desc?: string;
+    model?: "flux" | "nano" | "ideogram";
+    scope?: "front" | "wrap";
+    embedText?: boolean;
+  }) => {
     setAiBusy(true);
     setAiError("none");
     setAiNotice("none");
     try {
-      const wrap = aiScope === "wrap";
+      // Sihirbaz otomatik üretimi taze değerleri override ile geçer (state
+      // güncellemesi asenkron olduğundan); override yoksa mevcut state kullanılır.
+      const useStyle = opts?.styleId ?? aiStyle;
+      const useDesc = opts?.desc ?? aiDesc;
+      const useModel = opts?.model ?? aiModel;
+      const useScope = opts?.scope ?? aiScope;
+      const useEmbed = opts?.embedText ?? aiEmbedText;
+      const wrap = useScope === "wrap";
       // Nano/Ideogram + "metni göm" açıksa: başlık/yazar görselin İÇİNE basılsın
       // diye metinli komut (bu iki model yazıyı iyi basar). Aksi halde (FLUX veya
       // göm kapalı): yazısız sanat komutu.
-      const embed =
-        (aiModel === "nano" || aiModel === "ideogram") && aiEmbedText;
+      const embed = (useModel === "nano" || useModel === "ideogram") && useEmbed;
       const prompt = embed
         ? buildNanoCoverPrompt({
-            styleId: aiStyle,
-            description: aiDesc,
+            styleId: useStyle,
+            description: useDesc,
             title,
             author,
             subtitle,
             wrap,
           })
-        : buildAiPrompt(aiStyle, aiDesc, wrap);
+        : buildAiPrompt(useStyle, useDesc, wrap);
       // Nano Banana Pro: tek URL üretir, "custom" boyut desteklemez → kitabın
       // oranına en yakın izinli oranı seçeriz (yatay sarmal dahil).
       // FLUX: tam sarmalda özel boyut, sadece önde en yakın dikey oran.
       const endpoint =
-        aiModel === "nano"
+        useModel === "nano"
           ? "/api/cover-nano"
-          : aiModel === "ideogram"
+          : useModel === "ideogram"
             ? "/api/cover-ideogram"
             : "/api/cover-art";
       // Nano ve Ideogram aynı oran kümesini (yatay sarmal dahil) kabul eder →
       // ikisi de nearestNanoAspect kullanır; özel boyut desteklemezler.
       const payload =
-        aiModel === "nano" || aiModel === "ideogram"
+        useModel === "nano" || useModel === "ideogram"
           ? {
               prompt,
               aspectRatio: wrap
@@ -1405,6 +1421,42 @@ export default function CoverStudio({
       setAiBusy(false);
     }
   };
+
+  // ── SİHİRBAZ: kapak adımına girince kitap bilgisinden OTOMATİK kapak üret ──
+  // Kitap asistanı (tür+bilgi → art-direction promtu) → Flux arka plan → başlık/
+  // yazar kapağın kendi katmanlarıyla üstüne biner. Bir kez çalışır (kapak yoksa).
+  const wizardFiredRef = useRef(false);
+  useEffect(() => {
+    if (!wizardAuto || wizardFiredRef.current) return;
+    if (!title.trim() || coverImage) return; // başlık hazır + henüz kapak yok
+    wizardFiredRef.current = true;
+    void (async () => {
+      const genre = initialProject?.data.meta.genre ?? "";
+      const summary = (initialProject?.data.manuscript.text ?? "").slice(0, 1500);
+      let desc = "";
+      let styleId = aiStyle;
+      try {
+        const res = await fetch("/api/cover-prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, author, genre, summary, lang }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { artDirection?: string; suggestedStyle?: string };
+          if (data.artDirection) desc = data.artDirection;
+          if (data.suggestedStyle) styleId = data.suggestedStyle;
+        }
+      } catch {
+        // asistan başarısız olsa da yine de stil presetiyle bir kapak üretelim
+      }
+      setAiStyle(styleId);
+      setAiDesc(desc);
+      setAiModel("flux");
+      setAiScope("wrap");
+      await generateAiCover({ styleId, desc, model: "flux", scope: "wrap", embedText: false });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizardAuto, title, coverImage]);
 
   // AI ile tasarım ÖĞESİ üret (mühür/rozet/amblem…): saydam PNG döner, tuvale
   // yeni bir "görsel" nesnesi olarak eklenir ve seçilir. Öteki nesneler gibi
@@ -1713,7 +1765,7 @@ export default function CoverStudio({
 
             <button
               type="button"
-              onClick={generateAiCover}
+              onClick={() => generateAiCover()}
               disabled={aiBusy}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >

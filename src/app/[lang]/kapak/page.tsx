@@ -65,6 +65,7 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
         lang={lang}
         dict={dict}
         initialProject={initialProject}
+        wizardAuto={!!wizard?.active}
       />
     </AppShell>
   );
