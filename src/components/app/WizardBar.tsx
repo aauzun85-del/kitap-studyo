@@ -7,6 +7,7 @@ import type { Locale } from "@/i18n/config";
 import type { WizardState, WizardStepKey } from "@/lib/projects/types";
 import { completeWizardStep } from "@/lib/projects/data";
 import { Icon } from "./AppShell";
+import WizardGuide from "./WizardGuide";
 
 const STEPS: { key: WizardStepKey; seg: string; label: Record<Locale, string> }[] = [
   { key: "editor", seg: "editor", label: { tr: "AI Editör", en: "AI Editor" } },
@@ -59,6 +60,7 @@ export default function WizardBar({
     current === "cover" ? (t ? "Tamamla → İndir" : "Finish → Download") : t ? "Tamamladım" : "Done";
 
   return (
+    <>
     <div
       style={{
         flex: "none",
@@ -182,5 +184,7 @@ export default function WizardBar({
         </button>
       )}
     </div>
+    <WizardGuide lang={lang} step={current} />
+    </>
   );
 }
