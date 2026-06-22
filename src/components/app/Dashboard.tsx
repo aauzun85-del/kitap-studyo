@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Locale } from "@/i18n/config";
@@ -23,6 +23,11 @@ const COPY = {
     continueCta: "Devam et",
     whatNext: "Ne yapmak istersin?",
     whatNextSub: "6 modül · tek pakette",
+    wizKicker: "KİTAP TASARIM SİHİRBAZI",
+    wizTitle: "Kitabını 3 adımda hazırla",
+    wizSub: "Birkaç tıkla baştan sona — yapay zekâ editörden baskıya hazır kapağa.",
+    wizCta: "Kitabını hazırlamaya başla",
+    wizSteps: ["AI Editör", "Mizanpaj", "Kapak"],
     recent: "Son kitaplar",
     colBook: "KİTAP",
     colUpdated: "GÜNCELLEME",
@@ -62,6 +67,11 @@ const COPY = {
     continueCta: "Continue",
     whatNext: "What would you like to do?",
     whatNextSub: "6 modules · one package",
+    wizKicker: "BOOK DESIGN WIZARD",
+    wizTitle: "Build your book in 3 steps",
+    wizSub: "End to end in a few clicks — from AI editor to a print-ready cover.",
+    wizCta: "Start preparing your book",
+    wizSteps: ["AI Editor", "Layout", "Cover"],
     recent: "Recent books",
     colBook: "BOOK",
     colUpdated: "UPDATED",
@@ -366,8 +376,51 @@ export default function Dashboard({
           </div>
         )}
 
+        {/* ── Kitap Tasarım Sihirbazı (asıl başlangıç noktası) ── */}
+        <div
+          style={{
+            marginTop: recent ? 28 : 8,
+            borderRadius: 18,
+            padding: "22px 26px",
+            background: "linear-gradient(120deg, #eef0fd, #f3edfe)",
+            border: "1px solid #dfe0fb",
+            display: "flex",
+            alignItems: "center",
+            gap: 22,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, fontWeight: 800, letterSpacing: ".6px", color: "var(--pri)" }}>
+              <Icon name="ai" size={15} />
+              {t.wizKicker}
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.3px", marginTop: 6 }}>{t.wizTitle}</div>
+            <div style={{ fontSize: 14, color: "#6b7280", marginTop: 4, lineHeight: 1.5 }}>{t.wizSub}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+              {t.wizSteps.map((s, i) => (
+                <Fragment key={s}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "6px 12px", borderRadius: 99, background: "#fff", border: "1px solid #e1e3ee", fontSize: 13, fontWeight: 600 }}>
+                    <span style={{ width: 20, height: 20, flex: "none", borderRadius: "50%", background: "var(--pri)", color: "#fff", fontSize: 11.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
+                    {s}
+                  </span>
+                  {i < t.wizSteps.length - 1 && <Icon name="arrow" size={15} style={{ color: "#b6bbcb" }} />}
+                </Fragment>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={onNew}
+            disabled={busy}
+            style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "14px 24px", border: "none", borderRadius: 13, background: "linear-gradient(135deg, var(--pri), #7c3aed)", color: "#fff", fontFamily: "inherit", fontSize: 15, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1, boxShadow: "0 8px 20px rgba(79,70,229,.30)", flex: "none" }}
+          >
+            {t.wizCta}
+            <Icon name="arrow" size={18} sw={2.1} />
+          </button>
+        </div>
+
         {/* ── modül başlatıcı ── */}
-        <div style={{ marginTop: recent ? 32 : 8, display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div style={{ marginTop: 32, display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <h2 style={sectionTitle}>{t.whatNext}</h2>
           <div style={{ fontSize: 13.5, color: "#9aa1b1" }}>{t.whatNextSub}</div>
         </div>
