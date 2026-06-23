@@ -218,6 +218,7 @@ export default function CoverStudio({
   const [autoExportStatus, setAutoExportStatus] = useState<"working" | "done" | "error">("working");
   const autoExportFiredRef = useRef(false);
   const autoExportTimerRef = useRef<number | null>(null);
+  const autoExportSafetyRef = useRef<number | null>(null);
 
   // PDF çıktısı
   const canvasRef = useRef<CoverCanvasHandle>(null);
@@ -734,6 +735,10 @@ export default function CoverStudio({
   };
 
   const handleExportPdf = async (): Promise<boolean> => {
+    // Not: getPrintDataUrl zaten yakalamadan ÖNCE senkron canvas.renderAll()
+    // yapar → kuyruktaki kare basılır. (Eskiden burada requestAnimationFrame ile
+    // bir "flush" vardı; arka plandaki/odakta-olmayan sekmede rAF tetiklenmediği
+    // için export'u SONSUZA dek askıda bırakıyordu — kaldırıldı.)
     const dataUrl = canvasRef.current?.getPrintDataUrl(PRINT_DPI);
     if (!dataUrl) return false;
     setExporting(true);
@@ -744,7 +749,8 @@ export default function CoverStudio({
         .slice(0, 60) || "kapak";
       await exportCoverPdf(dataUrl, spread, `${safeTitle}-kapak.pdf`, cropMarks);
       return true;
-    } catch {
+    } catch (e) {
+      console.warn("[kapak] PDF dışa aktarma başarısız", e);
       return false;
     } finally {
       setExporting(false);
@@ -752,18 +758,51 @@ export default function CoverStudio({
   };
 
   // Export modu: tuval HAZIR olunca (CoverCanvas onReady) Kapak PDF'ini bir kez
-  // otomatik indir. autoContrast vb. birden çok render tetikleyebildiği için son
-  // render'dan ~700ms sonra (görsel + logolar yerleşince) tetikler.
+  // otomatik indir.
+  //  (a) KRİTİK: hidrasyon (taslağın yüklenip uygulanması) bitene kadar onReady'yi
+  //      YOK SAY. Aksi halde ilk (BOŞ) render export'u tetikler → boş kapak PDF'i.
+  //      hydratedRef ancak applyDraft (başlık/yazar/görsel/logolar) uygulandıktan
+  //      SONRA açılır; bulut modunda resolveDraftImages (ağ) bekler.
+  //  (b) Hidrasyon SONRASI render'ın (kapak görseli + logo fromURL await'leri,
+  //      autoContrast yeniden çizimleri) oturması için ~700ms debounce; her yeni
+  //      onReady timer'ı sıfırlar → en son, dolu render baz alınır.
   const handleCanvasReady = () => {
-    if (!autoExport || autoExportFiredRef.current) return;
+    if (!autoExport || autoExportFiredRef.current || !hydratedRef.current) return;
     if (autoExportTimerRef.current) window.clearTimeout(autoExportTimerRef.current);
     autoExportTimerRef.current = window.setTimeout(async () => {
       if (autoExportFiredRef.current) return;
+      // Savunma: tuval gerçekten doluysa bas. Beklenmedik şekilde her şey boşsa
+      // SESSİZCE boş PDF üretme → "error"a düş (kullanıcı elle "Tekrar dene"yle
+      // dolu içeriği indirir).
+      const hasContent = !!title || !!author || !!images.cover || objects.length > 0;
+      if (!hasContent) {
+        autoExportFiredRef.current = true;
+        if (autoExportSafetyRef.current) window.clearTimeout(autoExportSafetyRef.current);
+        setAutoExportStatus("error");
+        return;
+      }
       autoExportFiredRef.current = true;
+      if (autoExportSafetyRef.current) window.clearTimeout(autoExportSafetyRef.current);
       const ok = await handleExportPdf();
       setAutoExportStatus(ok ? "done" : "error");
     }, 700);
   };
+
+  // SAFETY: hidrasyon/render asılı kalırsa overlay sonsuza dek "hazırlanıyor"
+  // kalmasın. ~12 sn içinde export tetiklenmediyse "error"a düş → kullanıcı elle
+  // "Tekrar dene"ye basabilir; o ana kadar gerçek içerik yüklenmiş olur, böylece
+  // manuel export DOLU PDF üretir.
+  useEffect(() => {
+    if (!autoExport) return;
+    autoExportSafetyRef.current = window.setTimeout(() => {
+      if (autoExportFiredRef.current) return;
+      autoExportFiredRef.current = true;
+      setAutoExportStatus("error");
+    }, 12000);
+    return () => {
+      if (autoExportSafetyRef.current) window.clearTimeout(autoExportSafetyRef.current);
+    };
+  }, [autoExport]);
 
   // Kapağı PNG olarak cihazın paylaşım menüsüyle paylaş (telefon/tablet ve
   // destekleyen masaüstü tarayıcılar). Desteklenmiyorsa PNG indirmeye düşer.

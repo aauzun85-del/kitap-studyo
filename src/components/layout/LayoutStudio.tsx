@@ -185,6 +185,7 @@ export default function LayoutStudio({
   // PDF'i otomatik indirilir; üstteki durum katmanı bunu izler.
   const [autoExportStatus, setAutoExportStatus] = useState<"working" | "done" | "error">("working");
   const autoExportFiredRef = useRef(false);
+  const autoExportSafetyRef = useRef<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -419,16 +420,33 @@ export default function LayoutStudio({
   }, [pages, sizeId, margins, gutter, cropMarks, kerning, fontId, title, standard, bleedOn]);
 
   // Export modu: yazı tipleri yüklenip sayfalama hazır olunca İç sayfa PDF'ini
-  // bir kez otomatik indir (indirme ekranındaki tuştan gelindi).
+  // bir kez otomatik indir (indirme ekranındaki tuştan gelindi). Metin
+  // initialProject'ten SENKRON gelir (cover'ın aksine ağ beklemesi yok), ayrıca
+  // pages.length>0 koşulu boş PDF'i engeller.
   useEffect(() => {
     if (!autoExport || autoExportFiredRef.current) return;
     if (!fontsReady || pages.length === 0) return;
     autoExportFiredRef.current = true;
+    if (autoExportSafetyRef.current) window.clearTimeout(autoExportSafetyRef.current);
     void (async () => {
       const ok = await handleExportPdf();
       setAutoExportStatus(ok ? "done" : "error");
     })();
   }, [autoExport, fontsReady, pages.length, handleExportPdf]);
+
+  // SAFETY: yazı tipi/sayfalama asılı kalırsa overlay sonsuza dek "hazırlanıyor"
+  // kalmasın → ~12 sn içinde tetiklenmediyse "error"a düş (elle "Tekrar dene").
+  useEffect(() => {
+    if (!autoExport) return;
+    autoExportSafetyRef.current = window.setTimeout(() => {
+      if (autoExportFiredRef.current) return;
+      autoExportFiredRef.current = true;
+      setAutoExportStatus("error");
+    }, 12000);
+    return () => {
+      if (autoExportSafetyRef.current) window.clearTimeout(autoExportSafetyRef.current);
+    };
+  }, [autoExport]);
 
   // Sayfalama: cilt payı otomatikse iki geçişli hesap. Ölçüm tarayıcıda
   // (canvas measureText) yapılır → effect içinde.
