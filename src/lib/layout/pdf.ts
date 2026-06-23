@@ -308,6 +308,30 @@ function widthOf(toks: Tok[], sizePt: number, spaceW: number, kerning: boolean):
   return w;
 }
 
+// ── Optik kenar hizalama (hanging punctuation) ──────────────────────────────
+// Satır BAŞINDA açılış noktalama/tırnak marja hafifçe SOLA, satır SONUNDA kapanış
+// noktalama/tire marja hafifçe SAĞA "asılır". Böylece düz noktalama (özellikle
+// tırnak ve tire) yüzünden çukur görünen metin kenarı OPTİK olarak düzleşir.
+// Değerler em (= sizePt) kesridir; tipografik tahmin, ölçülü.
+const LEFT_HANG: Record<string, number> = {
+  '"': 0.3, "'": 0.32, "“": 0.3, "‘": 0.34, "«": 0.24,
+  "(": 0.1, "[": 0.08, "{": 0.08,
+};
+const RIGHT_HANG: Record<string, number> = {
+  ".": 0.28, ",": 0.28, ";": 0.16, ":": 0.14, "!": 0.06, "?": 0.06,
+  "-": 0.45, "‐": 0.45, "–": 0.3, "—": 0.18,
+  '"': 0.3, "'": 0.3, "”": 0.3, "’": 0.3, "»": 0.24,
+  ")": 0.1, "]": 0.08, "}": 0.08,
+};
+function firstWordTok(toks: Tok[]): WordTok | undefined {
+  for (const t of toks) if (!("gap" in t)) return t as WordTok;
+  return undefined;
+}
+function lastWordTok(toks: Tok[]): WordTok | undefined {
+  for (let i = toks.length - 1; i >= 0; i--) if (!("gap" in toks[i])) return toks[i] as WordTok;
+  return undefined;
+}
+
 // Köşelere kesim işaretleri (crop marks): trim kenarına hizalı, bleed'in DIŞINDA.
 // İşaretler bleed kenarından (trim'den `bleed` kadar dışarı) başlar ve kâğıt
 // kenarına (trim'den `to` kadar dışarı) kadar uzar.
@@ -401,24 +425,34 @@ export async function exportBookPdf(input: PdfExportInput): Promise<Uint8Array> 
       const boxWidthPt = (geo.contentWidth - 2 * line.blockIndentMm) * K - insetPt;
       const indentPt = line.indentMm * K;
 
+      // Optik kenar hizalama: satır başı/sonu noktalama marja "asılır". Yalnız
+      // gövde (justify + sol) satırlarda; ortalı/sağ başlıklarda uygulanmaz.
+      const isBodyEdge = line.justify || line.align === "left" || line.align === "justify";
+      const fwc = isBodyEdge ? [...(firstWordTok(toks)?.word ?? "")][0] ?? "" : "";
+      const lwc = isBodyEdge ? [...(lastWordTok(toks)?.word ?? "")].slice(-1)[0] ?? "" : "";
+      const leftHang = (LEFT_HANG[fwc] ?? 0) * sizePt; // pt — satır başını sola kaydırır
+      const rightHang = (RIGHT_HANG[lwc] ?? 0) * sizePt; // pt — satır sonunu sağa sarkıtır
+
       // Hizalama.
       let startXpt: number;
       let extraGap = 0;
       if (line.justify && gapCount > 0) {
-        startXpt = boxLeftPt + indentPt;
+        startXpt = boxLeftPt + indentPt - leftHang;
         // Boşluk başına eklenecek (veya çıkarılacak) pay. Satır pdf-lib ölçüsünde
         // kutudan biraz genişse (sayfalama tarayıcı/canvas ölçüsüyle dizdiği için
         // olabilir) boşlukları SIKIŞTIR — taşma yerine. En çok boşluğun ~1/3'ü
         // kadar daraltılır; böylece metin dış metin kenarını (marjı) aşmaz ve
-        // folyoyla hizalı kalır.
-        const raw = (boxWidthPt - indentPt - naturalW) / gapCount;
+        // folyoyla hizalı kalır. Asılan noktalama kadar ek genişlik tanınır →
+        // metin gövdesi marja dayanır, noktalama dışarı taşar.
+        const raw = (boxWidthPt + leftHang + rightHang - indentPt - naturalW) / gapCount;
         extraGap = Math.max(raw, -spaceW * 0.33);
       } else if (line.align === "center") {
         startXpt = boxLeftPt + (boxWidthPt - naturalW) / 2;
       } else if (line.align === "right") {
         startXpt = boxLeftPt + (boxWidthPt - naturalW);
       } else {
-        startXpt = boxLeftPt + indentPt;
+        // Sol hizalı (ragged): yalnız satır başı asılır.
+        startXpt = boxLeftPt + indentPt - leftHang;
       }
 
       // Taban çizgisi: kutu içinde dikey ortalamaya yakın.
