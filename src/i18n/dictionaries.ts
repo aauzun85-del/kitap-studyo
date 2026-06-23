@@ -1577,7 +1577,7 @@ const tr: Dictionary = {
       "Başlık sayfası ve koşu başlıkları için kullanılabilir.",
     qualityMissingAuthor: "Yazar adı eksik",
     qualityMissingAuthorDetail:
-      "Üst bilgi açıksa yazar adı boş kalmamalı.",
+      "Başlık sayfası ve üst bilgiler için yazar adı önerilir.",
     qualityAuthorOk: "Yazar adı hazır",
     qualityAuthorOkDetail:
       "Başlık sayfası ve meta alanları için kullanılabilir.",
@@ -2671,7 +2671,7 @@ const en: Dictionary = {
       "It can be used on the title page and running heads.",
     qualityMissingAuthor: "Author name is missing",
     qualityMissingAuthorDetail:
-      "If running heads are enabled, the author name should not be empty.",
+      "An author name is recommended for the title page and running heads.",
     qualityAuthorOk: "Author name is ready",
     qualityAuthorOkDetail:
       "It can be used on the title page and metadata.",

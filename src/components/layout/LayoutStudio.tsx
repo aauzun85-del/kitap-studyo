@@ -49,6 +49,7 @@ import {
   LayoutIcon,
   SlidersIcon,
   StackIcon,
+  CheckCircleIcon,
 } from "@/components/PhosphorIcons";
 
 // Sayfalama hep sabit DPI'da yapılır (yakınlaştırmadan bağımsız sayfa sayısı).
@@ -589,7 +590,7 @@ export default function LayoutStudio({
     { id: "text", label: t.navText, Icon: TextTIcon },
     { id: "page", label: t.navPage, Icon: LayoutIcon },
     { id: "type", label: t.navType, Icon: SlidersIcon },
-    { id: "quality", label: t.navQuality, Icon: StackIcon },
+    { id: "quality", label: t.navQuality, Icon: CheckCircleIcon },
   ];
 
   const isEmpty = blocks.length === 0 && !title.trim();
@@ -1006,8 +1007,8 @@ function buildQualityChecks({
   if (!title.trim()) add("error", t.qualityMissingTitle, t.qualityMissingTitleDetail);
   else add("success", t.qualityTitleOk, t.qualityTitleOkDetail);
 
-  if (!author.trim() && runningHeads) add("warning", t.qualityMissingAuthor, t.qualityMissingAuthorDetail);
-  else if (author.trim()) add("success", t.qualityAuthorOk, t.qualityAuthorOkDetail);
+  if (!author.trim()) add("warning", t.qualityMissingAuthor, t.qualityMissingAuthorDetail);
+  else add("success", t.qualityAuthorOk, t.qualityAuthorOkDetail);
 
   if (bodyBlockCount === 0) add("error", t.qualityNoBody, t.qualityNoBodyDetail);
   else add("success", t.qualityBodyOk, formatQualityTemplate(t.qualityBodyOkDetail, { count: bodyBlockCount }));
@@ -1089,7 +1090,10 @@ function buildQualityChecks({
   const errorCount = checks.filter((c) => c.severity === "error").length;
   const warningCount = checks.filter((c) => c.severity === "warning").length;
   const successCount = checks.filter((c) => c.severity === "success").length;
-  const score = Math.max(0, Math.min(100, 100 - errorCount * 24 - warningCount * 8));
+  // Hatalar (eksik başlık/gövde, platform sınırı) skoru ağır düşürür; uyarılar
+  // (isteğe bağlı ayarlar/öneriler) daha hafif — yapısal olarak sağlam ama birkaç
+  // isteğe-bağlı kapalı kitap "hazır değil" yanılgısı vermesin.
+  const score = Math.max(0, Math.min(100, 100 - errorCount * 18 - warningCount * 5));
   return { score, checks, errorCount, warningCount, successCount };
 }
 
