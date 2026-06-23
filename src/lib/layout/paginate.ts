@@ -570,9 +570,27 @@ function wrapRuns(
       }
     }
 
-    // Bölünemiyor: satır boşsa taşmayı kabul et (sonsuz döngüyü önle), aksi
-    // halde satırı kapat ve kelimeyi yeni satırda yeniden değerlendir.
+    // Hece sınırından bölünemiyor: satır boşsa SON ÇARE harf-harf böl (taşmayı
+    // önle), aksi halde satırı kapat ve kelimeyi yeni satırda yeniden değerlendir.
     if (!hasContent) {
+      const avail = maxW();
+      const chars = [...t.text];
+      let acc = 0;
+      let cut = 0;
+      for (let i = 0; i < chars.length; i++) {
+        const cw = ctx.measureText(chars[i]).width;
+        if (i > 0 && acc + cw > avail) break;
+        acc += cw;
+        cut = i + 1;
+      }
+      if (cut < chars.length) {
+        // Sığan kadarını koy (tiresiz), gerisini yeni satıra bırak.
+        pushPiece(chars.slice(0, cut).join(""), t.bold, t.italic, false);
+        endLine();
+        queue[qi] = { text: chars.slice(cut).join(""), bold: t.bold, italic: t.italic, spaceBefore: false };
+        continue;
+      }
+      // Tek karakter bile sığmıyor (dejenere) → taşmayı kabul et, döngüyü kır.
       pushPiece(t.text, t.bold, t.italic, false);
       width += wWidth;
       qi++;
@@ -616,6 +634,45 @@ function layoutJustified(
   const meta: JMeta[] = [];
   const HYPHEN_PENALTY = 50;
 
+  // SON ÇARE — satıra sığmayan tek parça (bölünemez upuzun kelime, URL, gözden
+  // kaçmış boşluksuz birleşme) gelirse harf-harf böl → yaslamada ASLA çılgın
+  // boşluk/taşma olmaz. Eşik = en dar satır genişliği. Gerçek Türkçe kelimeler
+  // bu eşiğin çok altında olduğundan yalnızca patolojik parçalar bölünür.
+  let maxBoxWidth = lineWidthFor(1);
+  for (const ln of [2, 3, 4, 5, 6, 50]) maxBoxWidth = Math.min(maxBoxWidth, lineWidthFor(ln));
+  const FORCE_BREAK_PENALTY = 200; // tireden pahalı → yalnız mecbur kalınca, tiresiz
+
+  // Bir kutu (kelime/hece parçası) ekler; eşikten genişse harf-harf, aralara
+  // GÖRÜNMEZ (tiresiz) kırılma noktası koyarak böler. ctx.font çağıran tarafça
+  // ayarlanmış olmalı.
+  const pushBox = (text: string, t: Tok) => {
+    const w = ctx.measureText(text).width;
+    if (w <= maxBoxWidth || [...text].length <= 1) {
+      items.push({ type: "box", width: w });
+      meta.push({ kind: "box", text, bold: t.bold, italic: t.italic });
+      return;
+    }
+    let chunk = "";
+    let chunkW = 0;
+    const flush = (more: boolean) => {
+      items.push({ type: "box", width: chunkW });
+      meta.push({ kind: "box", text: chunk, bold: t.bold, italic: t.italic });
+      if (more) {
+        items.push({ type: "penalty", width: 0, penalty: FORCE_BREAK_PENALTY, flagged: false });
+        meta.push({ kind: "penalty", hyphen: false });
+      }
+      chunk = "";
+      chunkW = 0;
+    };
+    for (const ch of [...text]) {
+      const cw = ctx.measureText(ch).width;
+      if (chunk && chunkW + cw > maxBoxWidth) flush(true);
+      chunk += ch;
+      chunkW += cw;
+    }
+    if (chunk) flush(false);
+  };
+
   toks.forEach((t, ti) => {
     // Sözcükler arası esneyen boşluk YALNIZCA orijinalde boşluk varsa. Bitişik
     // parçalar (italik kelime + normal nokta vb.) boşluksuz, bölünmeden birleşir.
@@ -626,16 +683,14 @@ function layoutJustified(
     ctx.font = fontFor(t);
     const pts = hyphenate ? hyphenPoints(t.text) : [];
     if (pts.length === 0) {
-      items.push({ type: "box", width: ctx.measureText(t.text).width });
-      meta.push({ kind: "box", text: t.text, bold: t.bold, italic: t.italic });
+      pushBox(t.text, t);
     } else {
       const hyphenW = ctx.measureText("-").width;
       const bounds = [...pts, t.text.length];
       let prev = 0;
       for (let i = 0; i < bounds.length; i++) {
         const frag = t.text.slice(prev, bounds[i]);
-        items.push({ type: "box", width: ctx.measureText(frag).width });
-        meta.push({ kind: "box", text: frag, bold: t.bold, italic: t.italic });
+        pushBox(frag, t);
         if (i < bounds.length - 1) {
           items.push({ type: "penalty", width: hyphenW, penalty: HYPHEN_PENALTY, flagged: true });
           meta.push({ kind: "penalty", hyphen: true });
