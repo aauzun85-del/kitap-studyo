@@ -314,7 +314,14 @@ export function reapplyRuns(oldRuns: Run[], newText: string): Run[] {
 
 // Ham markdown metni bloklara ayırır (manuel giriş yolu).
 export function parseBlocks(raw: string, detectHeadings: boolean): Block[] {
-  const normalized = raw.replace(/\r\n?/g, "\n");
+  const normalized = raw
+    .replace(/\r\n?/g, "\n")
+    // Bozuk kaynak onarımı: cümle sonu noktalama + HEMEN ardından büyük harf
+    // (boşluk yok) → araya boşluk koy. "dinlenirler.Son" → "dinlenirler. Son",
+    // "değilim?Aydınlığın" → "değilim? Aydınlığın". Küçük-harf + noktalama + BÜYÜK
+    // harf kalıbı Türkçede neredeyse her zaman cümle sınırıdır; "3.5", "T.C.",
+    // "v.b." gibi sayı/kısaltmalar (büyük harf veya küçük harf ardılı) etkilenmez.
+    .replace(/(\p{Ll})([.!?…])(\p{Lu})/gu, "$1$2 $3");
   const chunks = normalized.split(/\n{2,}/);
   const blocks: Block[] = [];
 
@@ -1375,6 +1382,14 @@ export function paginate(input: PaginateInput): Page[] {
     });
     usedPx += tocHeadingHeightPx;
 
+    // Nokta dolgulu içindekiler: başlık SOLDA, sayfa no SAĞ kenarda, arası nokta
+    // (ajans/profesyonel biçim). Nokta sayısı, satırı sağ kenara dolduracak şekilde
+    // ölçülerek hesaplanır (ctx ile).
+    const tocSizePx = ptToPx(KDY_TOC.sizePt, dpi);
+    const tocFontStr = fontStr(KDY_TOC.weight, false, tocSizePx, KDY_TOC.font);
+    ctx.font = tocFontStr;
+    const dotW = ctx.measureText(".").width || 1;
+
     chapters.forEach((ch, idx) => {
       if (usedPx + tocEntryHeightPx > contentHeightPx) {
         page = newFront("toc");
@@ -1385,7 +1400,15 @@ export function paginate(input: PaginateInput): Page[] {
       // kullan (akıllı tırnaktan geçir); yoksa bölümün kendi başlığı.
       const override = input.tocOverrides?.[idx]?.trim();
       const title = override ? smartQuoteText(override) : ch.runs.map((r) => r.text).join("");
-      const text = pageNo > 0 ? `${title}${KDY_RULES.tocLeader}${pageNo}` : title;
+      let text = title;
+      if (pageNo > 0) {
+        ctx.font = tocFontStr;
+        const pageStr = String(pageNo);
+        const titleW = ctx.measureText(title + " ").width;
+        const pageW = ctx.measureText(" " + pageStr).width;
+        const dots = Math.max(2, Math.floor((contentWidthPx - titleW - pageW) / dotW));
+        text = `${title} ${".".repeat(dots)} ${pageStr}`;
+      }
       page.lines.push({
         segments: plainSegments(text),
         kind: "toc-entry",
@@ -1393,7 +1416,7 @@ export function paginate(input: PaginateInput): Page[] {
         font: KDY_TOC.font,
         weight: KDY_TOC.weight,
         italic: false,
-        align: "center",
+        align: "left",
         indentMm: 0,
         blockIndentMm: 0,
         justify: false,
