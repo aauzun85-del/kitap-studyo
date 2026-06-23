@@ -171,7 +171,7 @@ export type Page = {
 // fontFamily / sizePt blok-bazlı geçersiz kılma: canvas biçim çubuğu doldurur.
 // Boşsa ayarlardan/KDY'den gelen varsayılan kullanılır.
 export type Block =
-  | { type: "heading"; level: 1 | 2 | 3 | 4; runs: Run[]; align?: ParaAlign; fontFamily?: string; sizePt?: number; subhead?: boolean }
+  | { type: "heading"; level: 1 | 2 | 3 | 4; runs: Run[]; align?: ParaAlign; fontFamily?: string; sizePt?: number; subhead?: boolean; kicker?: string }
   | {
       type: "paragraph";
       runs: Run[];
@@ -225,6 +225,34 @@ export function looksLikeSubhead(runs: Run[]): boolean {
   const textual = runs.filter((r) => r.text.trim().length > 0);
   return textual.length > 0 && textual.every((r) => r.bold);
 }
+
+// ── Başlık hiyerarşisi sezgileri ───────────────────────────────────────────
+// "BÖLÜM N" / "KISIM N" / "CHAPTER N" gibi YALNIZCA numaralı bölüm İŞARETİ
+// (kendi başına, başlıksız). Bunlar bir sonraki başlığın ÜSTÜNE küçük bir
+// "kicker" olarak biner → bölüm tek temiz sayfada açılır, ayrı boş sayfa harcamaz.
+const CHAPTER_MARKER = /^(bölüm|bolum|kısım|kisim|chapter|part)\s+([ivxlcdm]+|\d+)\s*[.\-–—:]?\s*$/i;
+export function isChapterMarker(text: string): boolean {
+  return CHAPTER_MARKER.test(text.trim());
+}
+
+// Alt-bölüm sezgisi: numaralı/sıralı küçük başlıklar — "(1) ...", "1. ...",
+// "1) ...", "EGZERSİZ I", "ADIM 2" vb. Bunlar AYRI SAYFA AÇMAZ; akış içinde
+// kalın ara başlık (level 2) olarak dizilir. Büyük-harf olsalar bile.
+const SUBSECTION_PREFIX = /^(\(\s*\d+\s*\)|\d+\s*[.)])\s+/;
+const SUBSECTION_KEYWORD = /^(egzersiz|egzersi̇z|alıştırma|alistirma|exercise|adım|adim|aşama|asama|step)\b/i;
+export function looksLikeSubsection(text: string): boolean {
+  const t = text.trim();
+  return SUBSECTION_PREFIX.test(t) || SUBSECTION_KEYWORD.test(t);
+}
+
+// "ARKA KAPAK YAZISI" vb. — arka kapağa ait tanıtım metni iç sayfaya sızmış.
+// Bu başlık ve SONRASI iç sayfadan atılır (içeriğin sonu sayılır).
+const BACK_COVER_HEADING = /^arka\s*kapak/i;
+export function isBackCoverHeading(text: string): boolean {
+  return BACK_COVER_HEADING.test(text.trim());
+}
+
+const plainOf = (runs: Run[]): string => runs.map((r) => r.text).join("").trim();
 
 // Satır-içi **kalın** / *italik* / _italik_ → Run[].
 export function inlineRuns(text: string): Run[] {
@@ -321,7 +349,11 @@ export function parseBlocks(raw: string, detectHeadings: boolean): Block[] {
           // Kapanış vinyeti: ortalı, gövde puntosunda; bölüm değil (TOC'a girmez).
           blocks.push({ type: "paragraph", runs: inlineRuns(headingText), align: "center" });
         } else {
-          blocks.push({ type: "heading", level: 1, runs: inlineRuns(headingText) });
+          // Numaralı/sıralı küçük başlıklar (EGZERSİZ I, "(1) ...") AYRI SAYFA
+          // AÇMAZ → level 2 (akış içinde kalın ara başlık). Diğerleri tentatif
+          // ana bölüm (level 1); kesin hiyerarşi restructureHeadings'te belirlenir.
+          const lvl = looksLikeSubsection(headingText) ? 2 : 1;
+          blocks.push({ type: "heading", level: lvl, runs: inlineRuns(headingText) });
         }
         const rest = rawLines.slice(i).join(" ");
         if (rest) blocks.push({ type: "paragraph", runs: inlineRuns(rest) });
@@ -340,7 +372,58 @@ export function parseBlocks(raw: string, detectHeadings: boolean): Block[] {
     blocks.push({ type: "paragraph", runs: inlineRuns(rawLines.join(" ")) });
   }
 
-  return blocks;
+  return restructureHeadings(blocks);
+}
+
+// Başlık hiyerarşisini netleştirir:
+//  1) "ARKA KAPAK YAZISI" başlığı ve SONRASINI at (arka kapağa ait, iç sayfada değil).
+//  2) "BÖLÜM N" işaretlerini bir SONRAKİ başlığın "kicker"ına çevir → bölüm tek
+//     temiz sayfada açılır (üstte küçük "BÖLÜM I", altında büyük başlık); ayrı
+//     boş "BÖLÜM N" sayfası + arkasındaki boş sayfa harcanmaz.
+//  3) Bölüm işareti KULLANAN kitaplarda, işaret almamış (kicker'sız) ana-bölüm
+//     başlıklarını alt-bölüme (level 2 — akış içi kalın başlık, yeni sayfa açmaz)
+//     indir. İşaretsiz kitaplarda hiyerarşi DEĞİŞMEZ (geriye dönük uyum).
+export function restructureHeadings(input: Block[]): Block[] {
+  // 1) Arka kapak metnini kes.
+  const bcIdx = input.findIndex(
+    (b) => b.type === "heading" && isBackCoverHeading(plainOf(b.runs)),
+  );
+  const blocks = bcIdx >= 0 ? input.slice(0, bcIdx) : input;
+
+  const hasMarkers = blocks.some(
+    (b) => b.type === "heading" && isChapterMarker(plainOf(b.runs)),
+  );
+  if (!hasMarkers) return blocks;
+
+  // 2) İşaretleri sonraki başlığa kicker olarak bağla.
+  const out: Block[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (b.type === "heading" && isChapterMarker(plainOf(b.runs))) {
+      const next = blocks[i + 1];
+      if (next && next.type === "heading") {
+        next.kicker = plainOf(b.runs);
+        next.level = 1;
+        next.subhead = false;
+        continue; // işaret bloğunu at (kicker'a taşındı)
+      }
+      // Sonraki blok başlık değilse işareti olduğu gibi bırak.
+    }
+    out.push(b);
+  }
+
+  // 3) İşaret almamış ana-bölüm başlıklarını alt-bölüme indir.
+  for (const b of out) {
+    if (
+      b.type === "heading" &&
+      b.level === 1 &&
+      !b.kicker &&
+      !isChapterMarker(plainOf(b.runs))
+    ) {
+      b.level = 2;
+    }
+  }
+  return out;
 }
 
 // ── Ölçüm yardımcıları ─────────────────────────────────────────────────────
@@ -891,6 +974,37 @@ export function paginate(input: PaginateInput): Page[] {
         chapterIndex++;
         chapterPageOf.set(chapterIndex, counter);
         addGap(contentHeightPx * 0.12);
+        // "BÖLÜM N" kicker'ı: başlığın ÜSTÜNDE küçük, ortalı etiket (aynı açılış
+        // sayfasında). Böylece ayrı bir "BÖLÜM N" sayfası harcanmaz.
+        if (block.kicker) {
+          const kSizePt = Math.max(settings.bodySizePt, 12);
+          const kSizePx = ptToPx(kSizePt, dpi);
+          const kLeadPx = autoLeadingPx(kSizePt, 0, dpi);
+          const kRuns: Run[] = [
+            { text: block.kicker.toLocaleUpperCase("tr"), bold: true, italic: false },
+          ];
+          wrapRuns(ctx, kRuns, 700, false, kSizePx, settings.headingFontFamily, contentWidthPx, contentWidthPx).forEach(
+            (segments) =>
+              addLine(
+                {
+                  segments,
+                  kind: "heading",
+                  sizePt: kSizePt,
+                  font: settings.headingFontFamily,
+                  weight: 700,
+                  italic: false,
+                  align: "center",
+                  indentMm: 0,
+                  blockIndentMm: 0,
+                  justify: false,
+                  spaceBeforeMm: 0,
+                  heightMm: 0,
+                },
+                kLeadPx,
+              ),
+          );
+          addGap(kLeadPx * 1.5); // kicker ↔ başlık arası
+        }
         pendingDropCap = settings.dropCap; // bölümün ilk paragrafı drop cap alsın
       } else if (isSub) {
         addGap(bodyLeadPx * 2); // üstte ~2 satır boşluk
