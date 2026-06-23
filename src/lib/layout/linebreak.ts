@@ -104,7 +104,14 @@ export function knuthPlass(
 
       // Uygun kırılma: ne çok sıkışık (ratio < -1) ne de tolerans üstü gevşek.
       if (ratio >= -1 && ratio <= tolerance) {
-        const badness = 100 * Math.pow(Math.abs(ratio), 3);
+        // Asimetrik ceza: GEVŞEK (ratio>0) satırlar, büyük boşluklar göze
+        // sıkışmadan daha rahatsız edici geldiği için ek (1 + ratio·1.5)
+        // çarpanıyla daha çok cezalandırılır; SIKIŞIK (ratio<0) satırlar standart
+        // kübik kalır. Sürekli/yumuşak — sert eşik yok (süreksizlik oluşmaz).
+        const badness =
+          ratio >= 0
+            ? 100 * Math.pow(ratio, 3) * (1 + ratio * 1.5)
+            : 100 * Math.pow(Math.abs(ratio), 3);
         const pen = item.type === "penalty" ? item.penalty : 0;
         const base = linePenalty + badness;
         let demerits: number;
