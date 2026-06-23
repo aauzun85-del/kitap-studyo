@@ -34,6 +34,11 @@ import {
   type Run,
   type ParaAlign,
 } from "@/lib/layout/paginate";
+import {
+  LAYOUT_THEMES,
+  type LayoutTheme,
+  type ChapterOrnament,
+} from "@/lib/layout/themes";
 import { parseDocx, type DocxMode } from "@/lib/layout/docx";
 import { exportBookPdf } from "@/lib/layout/pdf";
 import ExportOverlay from "@/components/app/ExportOverlay";
@@ -172,6 +177,12 @@ export default function LayoutStudio({
   const [dropCap, setDropCap] = useState(true);
   // Satır kırma yöntemi — varsayılan "balanced" (Knuth–Plass, profesyonel).
   const [lineBreak, setLineBreak] = useState<"balanced" | "greedy">("balanced");
+  // Bölüm açılış stili (tema sistemi).
+  const [chapterTopRatio, setChapterTopRatio] = useState(0.12);
+  const [chapterOrnament, setChapterOrnament] = useState<ChapterOrnament>("none");
+  const [showChapterKicker, setShowChapterKicker] = useState(true);
+  // Seçili tema (boş = elle/varsayılan; tema seçince ayarlar paketçe uygulanır).
+  const [themeId, setThemeId] = useState("");
   // İçindekiler başlık geçersiz kılmaları (bölüm sırasına göre). Boş = otomatik.
   const [tocOverrides, setTocOverrides] = useState<Record<number, string>>({});
 
@@ -228,6 +239,9 @@ export default function LayoutStudio({
       hyphenate,
       dropCap,
       lineBreak,
+      chapterTopRatio,
+      chapterOrnament,
+      showChapterKicker,
     }),
     [
       fontId,
@@ -245,8 +259,30 @@ export default function LayoutStudio({
       hyphenate,
       dropCap,
       lineBreak,
+      chapterTopRatio,
+      chapterOrnament,
+      showChapterKicker,
     ],
   );
+
+  // Tema uygula: tüm tipografi + bölüm-açılış ayarlarını paketçe oturt. Marjlara
+  // DOKUNMAZ (platform/KDY uyumu korunur). Seçimden sonra her ayar elle değişebilir.
+  const applyTheme = useCallback((theme: LayoutTheme) => {
+    setThemeId(theme.id);
+    setFontId(theme.bodyFontId);
+    setHeadingFontId(theme.headingFontId);
+    setBodySizePt(theme.bodySizePt);
+    setLeadingPt(theme.leadingPt);
+    setAlign(theme.align);
+    setIndentMm(theme.firstLineIndentMm);
+    setParagraphSpacingMm(theme.paragraphSpacingMm);
+    setHyphenate(theme.hyphenate);
+    setLineBreak(theme.lineBreak);
+    setDropCap(theme.dropCap);
+    setChapterTopRatio(theme.chapterTopRatio);
+    setChapterOrnament(theme.chapterOrnament);
+    setShowChapterKicker(theme.showChapterKicker);
+  }, []);
 
   // Etkin bloklar: Word modundaysa ve içe aktarım varsa onu, yoksa elle
   // yazılan markdown'ı kullan. İçe aktarım korunur; kaynağı değiştirince
@@ -671,6 +707,9 @@ export default function LayoutStudio({
               setGutterManual={setGutterManual}
               gutter={gutter}
             />
+          )}
+          {panel === "type" && (
+            <ThemePicker t={t} lang={lang} themeId={themeId} onApply={applyTheme} />
           )}
           {panel === "type" && (
             <TypePanel
@@ -1647,6 +1686,55 @@ function PagePanel({
           <NumberRow label={t.gutterLabel} value={gutterManual} step={0.5} onChange={setGutterManual} suffix={t.unitMm} />
         )}
         <p className="text-xs text-muted">{t.gutterHint}</p>
+      </div>
+    </div>
+  );
+}
+
+// Tema seçici (düz liste): bir temaya tıklayınca tüm tipografi + bölüm-açılış
+// ayarları paketçe oturur. Yazı sekmesinin en üstünde; altındaki ince ayarlarla
+// dilenirse üzerine düzenleme yapılır.
+function ThemePicker({
+  t,
+  lang,
+  themeId,
+  onApply,
+}: {
+  t: T;
+  lang: "tr" | "en";
+  themeId: string;
+  onApply: (theme: LayoutTheme) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <h2 className="text-sm font-semibold">{t.themeHeading}</h2>
+        <p className="mt-1 text-xs text-muted">{t.themeHint}</p>
+      </div>
+      <div className="space-y-2">
+        {LAYOUT_THEMES.map((theme) => {
+          const active = theme.id === themeId;
+          return (
+            <button
+              key={theme.id}
+              type="button"
+              onClick={() => onApply(theme)}
+              className={`block w-full rounded-lg border p-3 text-left transition ${
+                active
+                  ? "border-accent bg-accent/10"
+                  : "border-border bg-background hover:border-accent/60"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-foreground">{theme.name[lang]}</span>
+                {active && (
+                  <span className="shrink-0 text-[11px] font-semibold text-accent">{t.themeActive}</span>
+                )}
+              </div>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted">{theme.description[lang]}</p>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

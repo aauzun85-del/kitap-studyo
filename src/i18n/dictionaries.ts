@@ -370,6 +370,9 @@ type LayoutStudioCopy = {
   navPage: string;
   navType: string;
   navQuality: string;
+  themeHeading: string;
+  themeHint: string;
+  themeActive: string;
   // Kitap bilgileri paneli.
   bookHeading: string;
   bookTitleLabel: string;
@@ -1435,6 +1438,10 @@ const tr: Dictionary = {
     navPage: "Sayfa",
     navType: "Yazı",
     navQuality: "Denetim",
+    themeHeading: "Tema",
+    themeHint:
+      "Bir tema seç; tüm yazı ve bölüm açılış ayarları tek seferde oturur. Sonra dilersen aşağıdan ince ayar yap.",
+    themeActive: "Seçili",
     bookHeading: "Kitap bilgileri",
     bookTitleLabel: "Kitap adı",
     bookTitlePlaceholder: "Örn. Sessiz Sokaklar",
@@ -2529,6 +2536,10 @@ const en: Dictionary = {
     navPage: "Page",
     navType: "Type",
     navQuality: "Checks",
+    themeHeading: "Theme",
+    themeHint:
+      "Pick a theme; all type and chapter-opening settings apply at once. Fine-tune below if you like.",
+    themeActive: "Active",
     bookHeading: "Book details",
     bookTitleLabel: "Book title",
     bookTitlePlaceholder: "e.g. Silent Streets",

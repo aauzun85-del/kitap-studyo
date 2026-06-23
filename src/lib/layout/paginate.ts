@@ -41,6 +41,10 @@ export type LayoutSettings = {
   showPageNumbers: boolean;
   hyphenate: boolean; // satır sonlarında Türkçe hece bölme (tireleme)
   dropCap: boolean; // bölüm başlarında büyük baş harf (drop cap)
+  // Bölüm açılış stili (tema sistemi). Boş/eski taslaklarda makul varsayılanlar.
+  chapterTopRatio?: number; // başlık sayfanın % kaçından başlar (vars. 0.12)
+  chapterOrnament?: "none" | "rule" | "dots"; // başlık altı süs (vars. "none")
+  showChapterKicker?: boolean; // "BÖLÜM N" üst etiketi (vars. true)
   // Satır kırma yöntemi (yalnız iki yana yaslı paragraflarda etkili):
   //  - "balanced": Knuth–Plass — tüm paragrafa bakıp boşlukları en dengeli
   //    dağıtan kırılma noktalarını seçer (profesyonel, varsayılan).
@@ -1043,10 +1047,10 @@ export function paginate(input: PaginateInput): Page[] {
         startChapter();
         chapterIndex++;
         chapterPageOf.set(chapterIndex, counter);
-        addGap(contentHeightPx * 0.12);
+        addGap(contentHeightPx * (settings.chapterTopRatio ?? 0.12));
         // "BÖLÜM N" kicker'ı: başlığın ÜSTÜNDE küçük, ortalı etiket (aynı açılış
-        // sayfasında). Böylece ayrı bir "BÖLÜM N" sayfası harcanmaz.
-        if (block.kicker) {
+        // sayfasında). Tema "kicker gizle" derse atlanır.
+        if (block.kicker && (settings.showChapterKicker ?? true)) {
           const kSizePt = Math.max(settings.bodySizePt, 12);
           const kSizePx = ptToPx(kSizePt, dpi);
           const kLeadPx = autoLeadingPx(kSizePt, 0, dpi);
@@ -1104,6 +1108,42 @@ export function paginate(input: PaginateInput): Page[] {
           headLeadPx,
         ),
       );
+      // Bölüm açılış süsü (tema): yalnız ANA bölüm başlığının altında, ortalı ince
+      // çizgi ("rule") ya da nokta dizisi ("dots"). Metin tabanlı → hem önizleme
+      // hem PDF'te aynı görünür.
+      if (block.level === 1 && !isSub) {
+        const orn = settings.chapterOrnament ?? "none";
+        if (orn !== "none") {
+          const ornText = orn === "rule" ? "———" : "• • •";
+          const ornSizePt = Math.max(settings.bodySizePt, 11);
+          const ornSizePx = ptToPx(ornSizePt, dpi);
+          const ornLeadPx = autoLeadingPx(ornSizePt, 0, dpi);
+          addGap(ornLeadPx * 0.7); // başlık ↔ süs arası
+          wrapRuns(
+            ctx,
+            [{ text: ornText, bold: false, italic: false }],
+            400, false, ornSizePx, settings.headingFontFamily, contentWidthPx, contentWidthPx,
+          ).forEach((segments) =>
+            addLine(
+              {
+                segments,
+                kind: "heading",
+                sizePt: ornSizePt,
+                font: settings.headingFontFamily,
+                weight: 400,
+                italic: false,
+                align: "center",
+                indentMm: 0,
+                blockIndentMm: 0,
+                justify: false,
+                spaceBeforeMm: 0,
+                heightMm: 0,
+              },
+              ornLeadPx,
+            ),
+          );
+        }
+      }
       // Ara başlık: altta ~1 satır; diğerleri: KDY spaceAfter.
       addGap(isSub ? bodyLeadPx * 1 : mmToPx(style.spaceAfterMm, dpi) + headLeadPx * 0.4);
       continue;
