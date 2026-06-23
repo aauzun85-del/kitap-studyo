@@ -39,6 +39,7 @@ import {
   type LayoutTheme,
   type ChapterOrnament,
 } from "@/lib/layout/themes";
+import { ThemeThumbnail } from "@/lib/layout/themeThumbnail";
 import { parseDocx, type DocxMode } from "@/lib/layout/docx";
 import { exportBookPdf } from "@/lib/layout/pdf";
 import ExportOverlay from "@/components/app/ExportOverlay";
@@ -1725,13 +1726,27 @@ function ThemePicker({
                   : "border-border bg-background hover:border-accent/60"
               }`}
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold text-foreground">{theme.name[lang]}</span>
-                {active && (
-                  <span className="shrink-0 text-[11px] font-semibold text-accent">{t.themeActive}</span>
-                )}
+              <div className="flex items-start gap-3">
+                <ThemeThumbnail
+                  theme={theme}
+                  size={56}
+                  decorative
+                  className="shrink-0 rounded-[3px]"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-foreground">{theme.name[lang]}</span>
+                    {active && (
+                      <span className="shrink-0 text-[11px] font-semibold text-accent">
+                        {t.themeActive}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-xs leading-relaxed text-muted">
+                    {theme.description[lang]}
+                  </p>
+                </div>
               </div>
-              <p className="mt-0.5 text-xs leading-relaxed text-muted">{theme.description[lang]}</p>
             </button>
           );
         })}
