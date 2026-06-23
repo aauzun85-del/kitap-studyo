@@ -20,6 +20,7 @@ import {
 import {
   STANDARD_PROFILES,
   effectiveBleedMm,
+  kdpMinInsideMm,
   type PrintStandard,
 } from "@/lib/layout/standards";
 import {
@@ -64,8 +65,10 @@ function familyOf(fontId: string): string {
   return COVER_FONTS.find((f) => f.id === fontId)?.family ?? KDY_BODY_FONT;
 }
 
-type PanelId = "book" | "text" | "page" | "type";
+type PanelId = "book" | "text" | "page" | "type" | "quality";
 type SourceMode = "manual" | "word";
+type QualitySeverity = "error" | "warning" | "success";
+type QualityCheck = { severity: QualitySeverity; label: string; detail: string };
 
 const SAMPLE_TR = `# Birinci Bölüm
 
@@ -491,6 +494,45 @@ export default function LayoutStudio({
     return { words, chars: raw.length };
   }, [raw]);
 
+  const quality = useMemo(
+    () =>
+      buildQualityChecks({
+        t,
+        title,
+        author,
+        raw,
+        blocks,
+        pages,
+        standard,
+        margins,
+        gutter,
+        frontMatter,
+        runningHeads,
+        pageNumbers,
+        hyphenate,
+        lineBreak,
+        contentWidthMm: pageGeometry(size, margins, gutter, true).contentWidth,
+        contentHeightMm: pageGeometry(size, margins, gutter, true).contentHeight,
+      }),
+    [
+      t,
+      title,
+      author,
+      raw,
+      blocks,
+      pages,
+      standard,
+      size,
+      margins,
+      gutter,
+      frontMatter,
+      runningHeads,
+      pageNumbers,
+      hyphenate,
+      lineBreak,
+    ],
+  );
+
   const applyPreset = useCallback((id: string) => {
     setPresetId(id);
     // Baskı standardı kimlikleri (kdy/kdp/ingram/bnpress/lulu) doğrudan o
@@ -547,6 +589,7 @@ export default function LayoutStudio({
     { id: "text", label: t.navText, Icon: TextTIcon },
     { id: "page", label: t.navPage, Icon: LayoutIcon },
     { id: "type", label: t.navType, Icon: SlidersIcon },
+    { id: "quality", label: t.navQuality, Icon: StackIcon },
   ];
 
   const isEmpty = blocks.length === 0 && !title.trim();
@@ -563,7 +606,7 @@ export default function LayoutStudio({
         />
       )}
       <aside className="w-full shrink-0 lg:w-[380px]">
-        <div className="grid grid-cols-4 gap-1 rounded-xl border border-border bg-surface p-1">
+        <div className="grid grid-cols-5 gap-1 rounded-xl border border-border bg-surface p-1">
           {navItems.map(({ id, label, Icon }) => (
             <button
               key={id}
@@ -663,6 +706,16 @@ export default function LayoutStudio({
               setLineBreak={setLineBreak}
             />
           )}
+          {panel === "quality" && (
+            <QualityPanel
+              t={t}
+              score={quality.score}
+              checks={quality.checks}
+              errorCount={quality.errorCount}
+              warningCount={quality.warningCount}
+              successCount={quality.successCount}
+            />
+          )}
           {panel === "type" && frontMatter && chapterTitles.length > 0 && (
             <div className="mt-4 space-y-3 rounded-xl border border-border bg-surface p-4">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">{t.tocEditHeading}</h3>
@@ -703,6 +756,19 @@ export default function LayoutStudio({
             <span className="text-sm font-semibold">
               {t.pageCountLabel} {pages.length} {t.pageWord}
             </span>
+            {!isEmpty && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  quality.errorCount > 0
+                    ? "bg-red-50 text-red-700"
+                    : quality.warningCount > 0
+                      ? "bg-amber-50 text-amber-700"
+                      : "bg-emerald-50 text-emerald-700"
+                }`}
+              >
+                {t.qualityScoreLabel} {quality.score}
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {standard === "kdy" ? (
@@ -877,12 +943,231 @@ function roleLabelOf(role: Page["role"], t: T): string {
   }
 }
 
+function plainBlockText(block: Block): string {
+  return "runs" in block ? block.runs.map((r) => r.text).join("").trim() : "";
+}
+
+function formatQualityTemplate(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
+}
+
+function buildQualityChecks({
+  t,
+  title,
+  author,
+  raw,
+  blocks,
+  pages,
+  standard,
+  margins,
+  gutter,
+  frontMatter,
+  runningHeads,
+  pageNumbers,
+  hyphenate,
+  lineBreak,
+  contentWidthMm,
+  contentHeightMm,
+}: {
+  t: T;
+  title: string;
+  author: string;
+  raw: string;
+  blocks: Block[];
+  pages: Page[];
+  standard: PrintStandard;
+  margins: Margins;
+  gutter: number;
+  frontMatter: boolean;
+  runningHeads: boolean;
+  pageNumbers: boolean;
+  hyphenate: boolean;
+  lineBreak: LayoutSettings["lineBreak"];
+  contentWidthMm: number;
+  contentHeightMm: number;
+}): {
+  score: number;
+  checks: QualityCheck[];
+  errorCount: number;
+  warningCount: number;
+  successCount: number;
+} {
+  const checks: QualityCheck[] = [];
+  const chapters = blocks.filter((b) => b.type === "heading" && b.level === 1);
+  const bodyPages = pages.filter((p) => p.role === "body");
+  const lastBodyPage = bodyPages.at(-1);
+  const sourceWordCount = raw.trim() ? raw.trim().split(/\s+/).length : 0;
+  const bodyBlockCount = blocks.filter((b) => b.type === "paragraph" || b.type === "blockquote").length;
+
+  const add = (severity: QualitySeverity, label: string, detail: string) => {
+    checks.push({ severity, label, detail });
+  };
+
+  if (!title.trim()) add("error", t.qualityMissingTitle, t.qualityMissingTitleDetail);
+  else add("success", t.qualityTitleOk, t.qualityTitleOkDetail);
+
+  if (!author.trim() && runningHeads) add("warning", t.qualityMissingAuthor, t.qualityMissingAuthorDetail);
+  else if (author.trim()) add("success", t.qualityAuthorOk, t.qualityAuthorOkDetail);
+
+  if (bodyBlockCount === 0) add("error", t.qualityNoBody, t.qualityNoBodyDetail);
+  else add("success", t.qualityBodyOk, formatQualityTemplate(t.qualityBodyOkDetail, { count: bodyBlockCount }));
+
+  if (chapters.length === 0) add("warning", t.qualityNoChapters, t.qualityNoChaptersDetail);
+  else add("success", t.qualityChaptersOk, formatQualityTemplate(t.qualityChaptersOkDetail, { count: chapters.length }));
+
+  if (!frontMatter) add("warning", t.qualityFrontMatterOff, t.qualityFrontMatterOffDetail);
+  else add("success", t.qualityFrontMatterOk, t.qualityFrontMatterOkDetail);
+
+  if (!pageNumbers) add("warning", t.qualityPageNumbersOff, t.qualityPageNumbersOffDetail);
+  else add("success", t.qualityPageNumbersOk, t.qualityPageNumbersOkDetail);
+
+  if (!runningHeads) add("warning", t.qualityRunningHeadsOff, t.qualityRunningHeadsOffDetail);
+  else add("success", t.qualityRunningHeadsOk, t.qualityRunningHeadsOkDetail);
+
+  if (lineBreak === "balanced") add("success", t.qualityLineBreakOk, t.qualityLineBreakOkDetail);
+  else add("warning", t.qualityLineBreakGreedy, t.qualityLineBreakGreedyDetail);
+
+  if (hyphenate) add("success", t.qualityHyphenationOk, t.qualityHyphenationOkDetail);
+  else if (standard !== "kdp" || sourceWordCount > 1200) add("warning", t.qualityHyphenationOff, t.qualityHyphenationOffDetail);
+
+  if (contentWidthMm < 70 || contentHeightMm < 115) {
+    add(
+      "warning",
+      t.qualityTextAreaTight,
+      formatQualityTemplate(t.qualityTextAreaTightDetail, {
+        width: Math.round(contentWidthMm),
+        height: Math.round(contentHeightMm),
+      }),
+    );
+  } else {
+    add(
+      "success",
+      t.qualityTextAreaOk,
+      formatQualityTemplate(t.qualityTextAreaOkDetail, {
+        width: Math.round(contentWidthMm),
+        height: Math.round(contentHeightMm),
+      }),
+    );
+  }
+
+  if (standard === "kdp" || standard === "ingram" || standard === "bnpress" || standard === "lulu") {
+    const inside = margins.inside + gutter;
+    const minInside = kdpMinInsideMm(Math.max(1, pages.length));
+    if (inside + 0.01 < minInside) {
+      add(
+        "error",
+        t.qualityInsideMarginLow,
+        formatQualityTemplate(t.qualityInsideMarginLowDetail, {
+          current: inside.toFixed(1),
+          required: minInside.toFixed(1),
+        }),
+      );
+    } else {
+      add(
+        "success",
+        t.qualityInsideMarginOk,
+        formatQualityTemplate(t.qualityInsideMarginOkDetail, { current: inside.toFixed(1) }),
+      );
+    }
+    if (pages.length > 828) add("error", t.qualityKdpPageLimit, t.qualityKdpPageLimitDetail);
+  }
+
+  const lastBodyLines = lastBodyPage?.lines.filter((l) => l.kind === "body").length ?? 0;
+  if (lastBodyPage && lastBodyLines > 0 && lastBodyLines <= 3 && bodyPages.length > 1) {
+    add("warning", t.qualityShortLastPage, t.qualityShortLastPageDetail);
+  }
+
+  const repeatedHeadingTexts = new Set<string>();
+  const seenHeadingTexts = new Set<string>();
+  for (const chapter of chapters) {
+    const text = plainBlockText(chapter).toLocaleLowerCase("tr");
+    if (seenHeadingTexts.has(text)) repeatedHeadingTexts.add(text);
+    seenHeadingTexts.add(text);
+  }
+  if (repeatedHeadingTexts.size > 0) add("warning", t.qualityDuplicateChapters, t.qualityDuplicateChaptersDetail);
+
+  const errorCount = checks.filter((c) => c.severity === "error").length;
+  const warningCount = checks.filter((c) => c.severity === "warning").length;
+  const successCount = checks.filter((c) => c.severity === "success").length;
+  const score = Math.max(0, Math.min(100, 100 - errorCount * 24 - warningCount * 8));
+  return { score, checks, errorCount, warningCount, successCount };
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs font-medium text-muted">{label}</span>
       {children}
     </label>
+  );
+}
+
+function QualityPanel({
+  t,
+  score,
+  checks,
+  errorCount,
+  warningCount,
+  successCount,
+}: {
+  t: T;
+  score: number;
+  checks: QualityCheck[];
+  errorCount: number;
+  warningCount: number;
+  successCount: number;
+}) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold">{t.qualityHeading}</h2>
+        <p className="mt-1 text-xs text-muted">{t.qualityHint}</p>
+      </div>
+      <div className="rounded-xl border border-border bg-background p-4">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <div className="text-xs font-medium uppercase tracking-wide text-muted">{t.qualityScoreLabel}</div>
+            <div className="mt-1 text-4xl font-semibold text-foreground">{score}</div>
+          </div>
+          <div className="text-right text-xs text-muted">
+            {formatQualityTemplate(t.qualitySummary, {
+              errors: errorCount,
+              warnings: warningCount,
+              ok: successCount,
+            })}
+          </div>
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-border">
+          <div
+            className={`h-full rounded-full ${
+              errorCount > 0 ? "bg-red-500" : warningCount > 0 ? "bg-amber-500" : "bg-emerald-500"
+            }`}
+            style={{ width: `${score}%` }}
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        {checks.map((check, i) => (
+          <div key={`${check.label}-${i}`} className="rounded-lg border border-border bg-background p-3">
+            <div className="flex items-start gap-2">
+              <span
+                className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                  check.severity === "error"
+                    ? "bg-red-500"
+                    : check.severity === "warning"
+                      ? "bg-amber-500"
+                      : "bg-emerald-500"
+                }`}
+              />
+              <div>
+                <div className="text-sm font-semibold text-foreground">{check.label}</div>
+                <div className="mt-0.5 text-xs leading-relaxed text-muted">{check.detail}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

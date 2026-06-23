@@ -369,6 +369,7 @@ type LayoutStudioCopy = {
   navText: string;
   navPage: string;
   navType: string;
+  navQuality: string;
   // Kitap bilgileri paneli.
   bookHeading: string;
   bookTitleLabel: string;
@@ -488,6 +489,61 @@ type LayoutStudioCopy = {
   exportHintIngram: string;
   imprintNote: string;
   imprintNoteKdp: string;
+  // Yayın denetimi.
+  qualityHeading: string;
+  qualityHint: string;
+  qualityScoreLabel: string;
+  qualitySummary: string;
+  qualityMissingTitle: string;
+  qualityMissingTitleDetail: string;
+  qualityTitleOk: string;
+  qualityTitleOkDetail: string;
+  qualityMissingAuthor: string;
+  qualityMissingAuthorDetail: string;
+  qualityAuthorOk: string;
+  qualityAuthorOkDetail: string;
+  qualityNoBody: string;
+  qualityNoBodyDetail: string;
+  qualityBodyOk: string;
+  qualityBodyOkDetail: string;
+  qualityNoChapters: string;
+  qualityNoChaptersDetail: string;
+  qualityChaptersOk: string;
+  qualityChaptersOkDetail: string;
+  qualityFrontMatterOff: string;
+  qualityFrontMatterOffDetail: string;
+  qualityFrontMatterOk: string;
+  qualityFrontMatterOkDetail: string;
+  qualityPageNumbersOff: string;
+  qualityPageNumbersOffDetail: string;
+  qualityPageNumbersOk: string;
+  qualityPageNumbersOkDetail: string;
+  qualityRunningHeadsOff: string;
+  qualityRunningHeadsOffDetail: string;
+  qualityRunningHeadsOk: string;
+  qualityRunningHeadsOkDetail: string;
+  qualityLineBreakOk: string;
+  qualityLineBreakOkDetail: string;
+  qualityLineBreakGreedy: string;
+  qualityLineBreakGreedyDetail: string;
+  qualityHyphenationOk: string;
+  qualityHyphenationOkDetail: string;
+  qualityHyphenationOff: string;
+  qualityHyphenationOffDetail: string;
+  qualityTextAreaTight: string;
+  qualityTextAreaTightDetail: string;
+  qualityTextAreaOk: string;
+  qualityTextAreaOkDetail: string;
+  qualityInsideMarginLow: string;
+  qualityInsideMarginLowDetail: string;
+  qualityInsideMarginOk: string;
+  qualityInsideMarginOkDetail: string;
+  qualityKdpPageLimit: string;
+  qualityKdpPageLimitDetail: string;
+  qualityShortLastPage: string;
+  qualityShortLastPageDetail: string;
+  qualityDuplicateChapters: string;
+  qualityDuplicateChaptersDetail: string;
   // Birimler.
   unitMm: string;
   unitPt: string;
@@ -1378,6 +1434,7 @@ const tr: Dictionary = {
     navText: "Metin",
     navPage: "Sayfa",
     navType: "Yazı",
+    navQuality: "Denetim",
     bookHeading: "Kitap bilgileri",
     bookTitleLabel: "Kitap adı",
     bookTitlePlaceholder: "Örn. Sessiz Sokaklar",
@@ -1507,6 +1564,84 @@ const tr: Dictionary = {
       "İlk 2 sayfayı (logo + künye) KDY otomatik ekler; bu dosyada bulunmaz. PDF doğrudan başlık sayfasıyla başlar.",
     imprintNoteKdp:
       "KDP'de tüm sayfaları sen sağlarsın. Telif/künye sayfasını eklemeyi unutma; PDF başlık sayfasıyla başlar.",
+    qualityHeading: "Yayın denetimi",
+    qualityHint:
+      "Baskıya çıkmadan önce metin, yapı ve platform kurallarını hızlıca kontrol eder.",
+    qualityScoreLabel: "Hazırlık",
+    qualitySummary: "{errors} hata · {warnings} uyarı · {ok} tamam",
+    qualityMissingTitle: "Kitap adı eksik",
+    qualityMissingTitleDetail:
+      "Başlık sayfası ve üst bilgiler için kitap adını girin.",
+    qualityTitleOk: "Kitap adı hazır",
+    qualityTitleOkDetail:
+      "Başlık sayfası ve koşu başlıkları için kullanılabilir.",
+    qualityMissingAuthor: "Yazar adı eksik",
+    qualityMissingAuthorDetail:
+      "Üst bilgi açıksa yazar adı boş kalmamalı.",
+    qualityAuthorOk: "Yazar adı hazır",
+    qualityAuthorOkDetail:
+      "Başlık sayfası ve meta alanları için kullanılabilir.",
+    qualityNoBody: "Gövde metni yok",
+    qualityNoBodyDetail:
+      "PDF oluşturmadan önce kitap metnini yazın veya Word'den aktarın.",
+    qualityBodyOk: "Gövde metni bulundu",
+    qualityBodyOkDetail: "{count} metin bloğu sayfalanıyor.",
+    qualityNoChapters: "Bölüm başlığı algılanmadı",
+    qualityNoChaptersDetail:
+      "İçindekiler ve bölüm açılışları için ana bölümleri # ile işaretleyin.",
+    qualityChaptersOk: "Bölüm yapısı hazır",
+    qualityChaptersOkDetail: "{count} ana bölüm algılandı.",
+    qualityFrontMatterOff: "Ön sayfalar kapalı",
+    qualityFrontMatterOffDetail:
+      "Başlık sayfası, biyografi ve içindekiler üretilmeyecek.",
+    qualityFrontMatterOk: "Ön sayfalar açık",
+    qualityFrontMatterOkDetail:
+      "Başlık sayfası ve içindekiler otomatik hazırlanır.",
+    qualityPageNumbersOff: "Sayfa numaraları kapalı",
+    qualityPageNumbersOffDetail:
+      "Baskı kitapta okurun konum takibi zorlaşır.",
+    qualityPageNumbersOk: "Sayfa numaraları açık",
+    qualityPageNumbersOkDetail:
+      "Gövde sayfalarında numaralar otomatik yerleşir.",
+    qualityRunningHeadsOff: "Üst bilgiler kapalı",
+    qualityRunningHeadsOffDetail:
+      "Kitap adı/bölüm adı koşu başlığı olarak görünmeyecek.",
+    qualityRunningHeadsOk: "Üst bilgiler açık",
+    qualityRunningHeadsOkDetail:
+      "Karşılıklı sayfalarda kitap ve bölüm bilgisi gösterilir.",
+    qualityLineBreakOk: "Dengeli satır kırma açık",
+    qualityLineBreakOkDetail:
+      "Paragraflar daha düzenli boşluklarla iki yana yaslanır.",
+    qualityLineBreakGreedy: "Sıkı satır kırma seçili",
+    qualityLineBreakGreedyDetail:
+      "Dengeli kırma, özellikle dar sayfalarda daha profesyonel sonuç verir.",
+    qualityHyphenationOk: "Heceleme açık",
+    qualityHyphenationOkDetail:
+      "Türkçe metinde satır sonları daha dengeli dağılır.",
+    qualityHyphenationOff: "Heceleme kapalı",
+    qualityHyphenationOffDetail:
+      "İki yana yaslı uzun metinlerde boşluklar dalgalanabilir.",
+    qualityTextAreaTight: "Metin alanı dar",
+    qualityTextAreaTightDetail:
+      "Etkin alan yaklaşık {width}×{height} mm; marj veya puntoyu gözden geçirin.",
+    qualityTextAreaOk: "Metin alanı dengeli",
+    qualityTextAreaOkDetail:
+      "Etkin alan yaklaşık {width}×{height} mm.",
+    qualityInsideMarginLow: "İç kenar platform minimumunun altında",
+    qualityInsideMarginLowDetail:
+      "Etkin iç kenar {current} mm; en az {required} mm olmalı.",
+    qualityInsideMarginOk: "İç kenar platforma uygun",
+    qualityInsideMarginOkDetail:
+      "Etkin iç kenar {current} mm.",
+    qualityKdpPageLimit: "Sayfa sayısı üst sınırı aşıyor",
+    qualityKdpPageLimitDetail:
+      "KDP ailesinde tek cilt için 828 sayfa sınırını aşmayın.",
+    qualityShortLastPage: "Son gövde sayfası çok kısa",
+    qualityShortLastPageDetail:
+      "Son sayfada yalnız birkaç satır kaldı; paragraf aralığı, punto veya bölüm sonunu gözden geçirin.",
+    qualityDuplicateChapters: "Tekrarlayan bölüm başlığı var",
+    qualityDuplicateChaptersDetail:
+      "Aynı ana bölüm adı içindekilerde karışıklık yaratabilir.",
     unitMm: "mm",
     unitPt: "pt",
   },
@@ -2393,6 +2528,7 @@ const en: Dictionary = {
     navText: "Text",
     navPage: "Page",
     navType: "Type",
+    navQuality: "Checks",
     bookHeading: "Book details",
     bookTitleLabel: "Book title",
     bookTitlePlaceholder: "e.g. Silent Streets",
@@ -2522,6 +2658,84 @@ const en: Dictionary = {
       "KDY adds the first 2 pages (logo + imprint) automatically; they are not in this file. The PDF starts directly with the title page.",
     imprintNoteKdp:
       "On KDP you provide every page yourself. Don't forget to add a copyright/imprint page; the PDF starts with the title page.",
+    qualityHeading: "Publication checks",
+    qualityHint:
+      "Quickly checks the manuscript, structure and platform rules before print export.",
+    qualityScoreLabel: "Ready",
+    qualitySummary: "{errors} errors · {warnings} warnings · {ok} passed",
+    qualityMissingTitle: "Book title is missing",
+    qualityMissingTitleDetail:
+      "Enter a book title for the title page and running heads.",
+    qualityTitleOk: "Book title is ready",
+    qualityTitleOkDetail:
+      "It can be used on the title page and running heads.",
+    qualityMissingAuthor: "Author name is missing",
+    qualityMissingAuthorDetail:
+      "If running heads are enabled, the author name should not be empty.",
+    qualityAuthorOk: "Author name is ready",
+    qualityAuthorOkDetail:
+      "It can be used on the title page and metadata.",
+    qualityNoBody: "No body text",
+    qualityNoBodyDetail:
+      "Write the manuscript or import it from Word before creating a PDF.",
+    qualityBodyOk: "Body text found",
+    qualityBodyOkDetail: "{count} text blocks are being paginated.",
+    qualityNoChapters: "No chapter headings detected",
+    qualityNoChaptersDetail:
+      "Mark main chapters with # for contents and chapter openings.",
+    qualityChaptersOk: "Chapter structure is ready",
+    qualityChaptersOkDetail: "{count} main chapters detected.",
+    qualityFrontMatterOff: "Front matter is off",
+    qualityFrontMatterOffDetail:
+      "The title page, bio and table of contents will not be generated.",
+    qualityFrontMatterOk: "Front matter is on",
+    qualityFrontMatterOkDetail:
+      "The title page and contents are generated automatically.",
+    qualityPageNumbersOff: "Page numbers are off",
+    qualityPageNumbersOffDetail:
+      "Readers may have a harder time tracking location in print.",
+    qualityPageNumbersOk: "Page numbers are on",
+    qualityPageNumbersOkDetail:
+      "Body page numbers are placed automatically.",
+    qualityRunningHeadsOff: "Running heads are off",
+    qualityRunningHeadsOffDetail:
+      "The book/chapter name will not appear in the header area.",
+    qualityRunningHeadsOk: "Running heads are on",
+    qualityRunningHeadsOkDetail:
+      "Facing pages show book and chapter information.",
+    qualityLineBreakOk: "Balanced line breaking is on",
+    qualityLineBreakOkDetail:
+      "Justified paragraphs use more even spacing.",
+    qualityLineBreakGreedy: "Greedy line breaking is selected",
+    qualityLineBreakGreedyDetail:
+      "Balanced breaking gives a more professional result, especially on narrow pages.",
+    qualityHyphenationOk: "Hyphenation is on",
+    qualityHyphenationOkDetail:
+      "Turkish line endings distribute more evenly.",
+    qualityHyphenationOff: "Hyphenation is off",
+    qualityHyphenationOffDetail:
+      "Long justified text may show uneven word spacing.",
+    qualityTextAreaTight: "Text area is tight",
+    qualityTextAreaTightDetail:
+      "The active area is about {width}×{height} mm; review margins or type size.",
+    qualityTextAreaOk: "Text area is balanced",
+    qualityTextAreaOkDetail:
+      "The active area is about {width}×{height} mm.",
+    qualityInsideMarginLow: "Inside margin is below the platform minimum",
+    qualityInsideMarginLowDetail:
+      "Effective inside margin is {current} mm; it should be at least {required} mm.",
+    qualityInsideMarginOk: "Inside margin matches the platform",
+    qualityInsideMarginOkDetail:
+      "Effective inside margin is {current} mm.",
+    qualityKdpPageLimit: "Page count exceeds the upper limit",
+    qualityKdpPageLimitDetail:
+      "For the KDP family, keep a single paperback under 828 pages.",
+    qualityShortLastPage: "Last body page is very short",
+    qualityShortLastPageDetail:
+      "Only a few lines remain on the final page; review spacing, type size or the ending.",
+    qualityDuplicateChapters: "Repeated chapter title",
+    qualityDuplicateChaptersDetail:
+      "Duplicate main chapter names can make the table of contents confusing.",
     unitMm: "mm",
     unitPt: "pt",
   },
