@@ -1153,6 +1153,12 @@ export function paginate(input: PaginateInput): Page[] {
               heightPx: leadPx,
             })),
           );
+          // Baş harf 3 satır yüksekliğinde; paragraf daha KISA ise (örn. 2 satır)
+          // harfin alt kısmı bir sonraki paragrafın/başlığın üstüne taşar (görsel
+          // "üst üste binme"). Eksik satır kadar boşluk ekle → sonraki içerik
+          // baş harfin altından başlar.
+          const capOverhang = dropLines - segLines.length;
+          if (capOverhang > 0) addGap(capOverhang * leadPx);
           continue; // drop cap'li paragraf yerleştirildi
         }
         // Çok kısa paragraf: drop cap'i atla, normal akışa düş.
