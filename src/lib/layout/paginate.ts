@@ -314,18 +314,22 @@ export function reapplyRuns(oldRuns: Run[], newText: string): Run[] {
 
 // Ham markdown metni bloklara ayırır (manuel giriş yolu).
 export function parseBlocks(raw: string, detectHeadings: boolean): Block[] {
+  // Bozuk kaynak onarımı: noktalamadan sonra boşluksuz birleşmiş kelimeleri ayır.
+  // Bu boşluksuz birleşmeler tek DEV/BÖLÜNEMEZ parça oluşturup yaslamada (Knuth-
+  // Plass) çılgın boşluklara yol açıyordu. lookbehind/lookahead → harfler tüketilmez,
+  // ardışık birleşmeler de düzelir. Açılış tırnakları (" ' « — U+201C/2018/00AB);
+  // KAPANIŞ tırnağı (") kasıtlı dışarıda (öncesine boşluk konmamalı).
+  const OQ = "\\u201C\\u2018\\u00AB"; // açılış tırnakları
   const normalized = raw
     .replace(/\r\n?/g, "\n")
-    // Bozuk kaynak onarımı: noktalama + boşluksuz birleşmiş kelimeleri ayır.
-    // (lookbehind/lookahead → harfler tüketilmez, ardışık birleşmeler de düzelir.)
-    //   • Cümle sonu (.!?…) + BÜYÜK harf: "dinlenirler.Son" → ". Son". Küçük-harf
-    //     öncesi şartı "3.5"/"T.C."/"v.b." sayı/kısaltmalarını korur.
-    .replace(/(?<=\p{Ll})([.!?…])(?=\p{Lu})/gu, "$1 ")
-    //   • Virgül/noktalı virgül İKİ HARF arasında: "kaçıyorsun,saklanıyorsun" →
-    //     ", saklanıyorsun". (Bu boşluksuz birleşmeler tek dev parça oluşturup
-    //     yaslamada çılgın boşluklara yol açıyordu.) Ondalık "3,5" rakam olduğundan
-    //     etkilenmez.
-    .replace(/(?<=\p{L})([,;])(?=\p{L})/gu, "$1 ");
+    // .!?… + BÜYÜK harf / açılış tırnağı. Küçük-harf öncesi → "3.5"/"T.C."/"v.b." korunur.
+    .replace(new RegExp(`(?<=\\p{Ll})([.!?…])(?=[\\p{Lu}${OQ}])`, "gu"), "$1 ")
+    // : + BÜYÜK harf / açılış tırnağı ("geliyordu:"Beni", "yatardık:Annem").
+    // Saat "10:30"/"http:" (rakam/işaret) korunur.
+    .replace(new RegExp(`(?<=\\p{Ll})(:)(?=[\\p{Lu}${OQ}])`, "gu"), "$1 ")
+    // , ; iki harf arası ya da harf + açılış tırnağı ("kaçıyorsun,saklanıyorsun").
+    // Ondalık "3,5" (rakam) korunur.
+    .replace(new RegExp(`(?<=\\p{L})([,;])(?=[\\p{L}${OQ}])`, "gu"), "$1 ");
   const chunks = normalized.split(/\n{2,}/);
   const blocks: Block[] = [];
 
