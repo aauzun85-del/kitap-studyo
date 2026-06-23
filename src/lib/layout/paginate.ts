@@ -316,12 +316,16 @@ export function reapplyRuns(oldRuns: Run[], newText: string): Run[] {
 export function parseBlocks(raw: string, detectHeadings: boolean): Block[] {
   const normalized = raw
     .replace(/\r\n?/g, "\n")
-    // Bozuk kaynak onarımı: cümle sonu noktalama + HEMEN ardından büyük harf
-    // (boşluk yok) → araya boşluk koy. "dinlenirler.Son" → "dinlenirler. Son",
-    // "değilim?Aydınlığın" → "değilim? Aydınlığın". Küçük-harf + noktalama + BÜYÜK
-    // harf kalıbı Türkçede neredeyse her zaman cümle sınırıdır; "3.5", "T.C.",
-    // "v.b." gibi sayı/kısaltmalar (büyük harf veya küçük harf ardılı) etkilenmez.
-    .replace(/(\p{Ll})([.!?…])(\p{Lu})/gu, "$1$2 $3");
+    // Bozuk kaynak onarımı: noktalama + boşluksuz birleşmiş kelimeleri ayır.
+    // (lookbehind/lookahead → harfler tüketilmez, ardışık birleşmeler de düzelir.)
+    //   • Cümle sonu (.!?…) + BÜYÜK harf: "dinlenirler.Son" → ". Son". Küçük-harf
+    //     öncesi şartı "3.5"/"T.C."/"v.b." sayı/kısaltmalarını korur.
+    .replace(/(?<=\p{Ll})([.!?…])(?=\p{Lu})/gu, "$1 ")
+    //   • Virgül/noktalı virgül İKİ HARF arasında: "kaçıyorsun,saklanıyorsun" →
+    //     ", saklanıyorsun". (Bu boşluksuz birleşmeler tek dev parça oluşturup
+    //     yaslamada çılgın boşluklara yol açıyordu.) Ondalık "3,5" rakam olduğundan
+    //     etkilenmez.
+    .replace(/(?<=\p{L})([,;])(?=\p{L})/gu, "$1 ");
   const chunks = normalized.split(/\n{2,}/);
   const blocks: Block[] = [];
 
