@@ -409,7 +409,8 @@ export default function LayoutStudio({
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      // Büyük PDF'te blob okunmadan revoke edilirse indirme kesilir → gecikmeli iptal.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       return true;
     } catch {
       setExportError(true);

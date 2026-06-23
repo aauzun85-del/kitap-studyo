@@ -88,6 +88,11 @@ export async function exportCoverPdf(
   const a = document.createElement("a");
   a.href = url;
   a.download = fileName;
+  // Bağlantıyı DOM'a ekle (bazı tarayıcılar eklenmemiş <a>'da indirmeyi atlar) ve
+  // blob URL'ini HEMEN değil GECİKMELİ iptal et: büyük PDF'te tarayıcı blob'u
+  // okumadan revoke edilirse indirme yarıda kesilir ("inmedi" hatası).
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

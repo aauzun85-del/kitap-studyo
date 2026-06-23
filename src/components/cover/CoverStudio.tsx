@@ -735,10 +735,10 @@ export default function CoverStudio({
   };
 
   const handleExportPdf = async (): Promise<boolean> => {
-    // Not: getPrintDataUrl zaten yakalamadan ÖNCE senkron canvas.renderAll()
-    // yapar → kuyruktaki kare basılır. (Eskiden burada requestAnimationFrame ile
-    // bir "flush" vardı; arka plandaki/odakta-olmayan sekmede rAF tetiklenmediği
-    // için export'u SONSUZA dek askıda bırakıyordu — kaldırıldı.)
+    // Export başladı → bekleyen otomatik-export debounce'unu iptal et (tekrar
+    // tetiklenmesin). Not: getPrintDataUrl zaten yakalamadan ÖNCE senkron
+    // canvas.renderAll() yapar → kuyruktaki kare basılır.
+    if (autoExportTimerRef.current) window.clearTimeout(autoExportTimerRef.current);
     const dataUrl = canvasRef.current?.getPrintDataUrl(PRINT_DPI);
     if (!dataUrl) return false;
     setExporting(true);
@@ -1033,7 +1033,10 @@ export default function CoverStudio({
   // hydratedRef açılana kadar (ilk yükleme) kayıt yapma. Her değişiklikten
   // ~0,6 sn sonra diske yaz; arada yeni değişiklik gelirse zamanlayıcı sıfırlanır.
   useEffect(() => {
-    if (!hydratedRef.current) return;
+    // SALT-OKUNUR EXPORT MODU: indirme ekranından "?export=1" ile açıldıysa kapağı
+    // YALNIZCA basıyoruz — kullanıcının kayıtlı tasarımının üzerine ASLA yazma
+    // (yoksa geçici/yeniden-hesaplanmış geometri kaydedilip tasarım "dağılır").
+    if (!hydratedRef.current || autoExport) return;
     // VERİ KAYBI KORUMASI: tamamen boş (varsayılan) bir state'i ASLA otomatik
     // kaydetme. Bir yükleme/render hatası state'i sıfırlarsa, bu kayıt kullanıcının
     // diskteki iyi taslağını boşla ezerdi. Gerçek "Yeni tasarım" taslağı zaten
@@ -1153,11 +1156,14 @@ export default function CoverStudio({
     textStyles,
     objects,
     projectId,
+    autoExport,
   ]);
 
   // --- Sekme kapanırken/gizlenirken bekleyen kaydı hemen yaz ---
   // Debounce penceresinde sayfa kapanırsa son değişiklikler kaybolmasın.
   useEffect(() => {
+    // Salt-okunur export modunda dinleyici BAĞLAMA → geri dönerken bile yazma yok.
+    if (autoExport) return;
     const flush = () => {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
@@ -1174,7 +1180,7 @@ export default function CoverStudio({
       window.removeEventListener("pagehide", flush);
       document.removeEventListener("visibilitychange", flush);
     };
-  }, [projectId]);
+  }, [projectId, autoExport]);
 
   // "Yeni tasarım": kayıtlı taslağı sil + tüm alanları varsayılana döndür.
   const startNewDesign = () => {
@@ -1530,7 +1536,7 @@ export default function CoverStudio({
   // yazar kapağın kendi katmanlarıyla üstüne biner. Bir kez çalışır (kapak yoksa).
   const wizardFiredRef = useRef(false);
   useEffect(() => {
-    if (!wizardAuto || wizardFiredRef.current) return;
+    if (!wizardAuto || autoExport || wizardFiredRef.current) return; // export modunda asla üretme
     if (!title.trim() || coverImage) return; // başlık hazır + henüz kapak yok
     wizardFiredRef.current = true;
     void (async () => {
@@ -1629,6 +1635,9 @@ export default function CoverStudio({
   // KDY/KDY Akademi profilli kitaplarda, henüz logo yoksa markayı otomatik koy.
   const kdyLogoFiredRef = useRef(false);
   useEffect(() => {
+    // Salt-okunur export modunda nesne/logo MUTASYONU yapma → kayıtlı tasarım
+    // değişmez (bu efekt, autosave'i tetikleyip "dağılma"ya yol açan asıl sebepti).
+    if (autoExport) return;
     const platform = initialProject?.data.meta.platform;
     if (platform !== "kdy" && platform !== "akademi") return;
     if (kdyLogoFiredRef.current || logoImage) return;
