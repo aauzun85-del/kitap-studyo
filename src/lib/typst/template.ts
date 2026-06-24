@@ -14,12 +14,35 @@ function leadingExpr(leadingPt: number, bodySizePt: number): string {
   return `${Math.max(0, lead).toFixed(2)}pt`;
 }
 
+// Kesim (kros) işaretleri — pdf.ts drawCropMarks geometrisinin Typst portu.
+// Her trim köşesinde, taşma kenarı ile kâğıt kenarı arasındaki DIŞ bantta, trim
+// kenarına hizalı dikey + yatay tik. Sayfa arka planına (#place, MediaBox mutlak)
+// çizilir. cropMarks kapalıysa "none".
+function cropMarksBg(pw: number, ph: number, to: number, bleedMm: number): string {
+  const b = to - bleedMm; // dış bant genişliği (kros uzunluğu)
+  if (b <= 0) return "none";
+  const S = "0.4pt + black";
+  const mm = (n: number) => `${n.toFixed(3)}mm`;
+  const seg = (x1: number, y1: number, x2: number, y2: number) =>
+    `place(top + left, line(start: (${mm(x1)}, ${mm(y1)}), end: (${mm(x2)}, ${mm(y2)}), stroke: ${S}))`;
+  const marks = [
+    seg(to, 0, to, b), seg(0, to, b, to), // sol-üst
+    seg(pw - to, 0, pw - to, b), seg(pw - b, to, pw, to), // sağ-üst
+    seg(to, ph - b, to, ph), seg(0, ph - to, b, ph - to), // sol-alt
+    seg(pw - to, ph - b, pw - to, ph), seg(pw - b, ph - to, pw, ph - to), // sağ-alt
+  ];
+  return `{\n  ${marks.join("\n  ")}\n}`;
+}
+
 export function buildPreamble(input: TypstBookInput): string {
   const { settings: s, size, margins: m, gutter, bleedMm, markOffsetMm, cropMarks, meta } = input;
   // to = kesim çizgisinin kâğıt kenarına uzaklığı (pdf.ts:377 ile birebir).
   const to = cropMarks && bleedMm > 0 ? markOffsetMm : bleedMm;
-  const pageW = (size.width + 2 * to).toFixed(3);
-  const pageH = (size.height + 2 * to).toFixed(3);
+  const pageWnum = size.width + 2 * to;
+  const pageHnum = size.height + 2 * to;
+  const pageW = pageWnum.toFixed(3);
+  const pageH = pageHnum.toFixed(3);
+  const background = cropMarks && bleedMm > 0 ? cropMarksBg(pageWnum, pageHnum, to, bleedMm) : "none";
   const mTop = (to + m.top).toFixed(3);
   const mBot = (to + m.bottom).toFixed(3);
   const mIn = (to + m.inside + gutter).toFixed(3);
@@ -40,6 +63,7 @@ export function buildPreamble(input: TypstBookInput): string {
   margin: (top: ${mTop}mm, bottom: ${mBot}mm, inside: ${mIn}mm, outside: ${mOut}mm),
   binding: left,
   numbering: ${s.showPageNumbers ? '"1"' : "none"},
+  background: ${background},
 )
 #set text(font: ${fontExpr}, size: ${s.bodySizePt}pt, lang: "tr", region: "TR", hyphenate: ${s.hyphenate})
 #set par(justify: ${justify}, leading: ${leading}, first-line-indent: (amount: ${indent}mm, all: false), spacing: ${leading} + ${paraSpacing}mm, linebreaks: ${linebreaks})
