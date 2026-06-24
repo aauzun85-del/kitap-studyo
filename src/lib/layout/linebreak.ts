@@ -21,7 +21,9 @@ export type KPItem =
 export type KPOptions = {
   tolerance?: number; // izin verilen en gevşek satır (ratio üst sınırı); ~8
   linePenalty?: number; // her satır için taban ceza; ~10
-  flaggedPenalty?: number; // ardışık tireli satırlar için ek ceza; ~100
+  flaggedPenalty?: number; // ardışık tireli satır cezası. DİKKAT: demerit'ler
+  // badness'ın KARESİ (dar kolonda ~1e6+) olduğundan etkili olması için ~milyon
+  // mertebesinde olmalı; küçük değerler (örn. 100) pratikte görünmez kalır.
   fitnessPenalty?: number; // komşu satırların gevşeklik sınıfı çok farklıysa ceza
 };
 
