@@ -42,6 +42,7 @@ import {
 import { ThemeThumbnail } from "@/lib/layout/themeThumbnail";
 import { parseDocx, type DocxMode } from "@/lib/layout/docx";
 import { exportBookPdf } from "@/lib/layout/pdf";
+import { exportBookPdfTypst } from "@/lib/typst";
 import ExportOverlay from "@/components/app/ExportOverlay";
 import {
   COVER_FONTS,
@@ -461,6 +462,45 @@ export default function LayoutStudio({
     }
   }, [pages, sizeId, margins, gutter, cropMarks, kerning, fontId, title, standard, bleedOn]);
 
+  // DENEME — Typst (WASM) motoruyla aynı PDF. Mevcut motorla YAN YANA; blocks +
+  // meta + settings + geometri besler (pages[] DEĞİL — Typst kendi sayfalıyor).
+  // Doğrulanınca varsayılan olacak; şimdilik ayrı tuş.
+  const handleExportPdfTypst = useCallback(async (): Promise<boolean> => {
+    if (blocks.length === 0) return false;
+    setExporting(true);
+    setExportError(false);
+    try {
+      const profile = STANDARD_PROFILES[standard];
+      const bytes = await exportBookPdfTypst({
+        meta,
+        blocks,
+        settings,
+        size: getSize(sizeId),
+        margins,
+        gutter,
+        bleedMm: effectiveBleedMm(standard, bleedOn),
+        markOffsetMm: profile.markOffsetMm,
+        cropMarks: profile.cropMarksAllowed ? cropMarks : false,
+      });
+      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const safe = (title.trim() || "kitap").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
+      a.download = `${safe || "kitap"}-ic-sayfa-typst.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
+    } catch {
+      setExportError(true);
+      return false;
+    } finally {
+      setExporting(false);
+    }
+  }, [blocks, meta, settings, sizeId, margins, gutter, cropMarks, standard, bleedOn, title]);
+
   // Export modu: yazı tipleri yüklenip sayfalama hazır olunca İç sayfa PDF'ini
   // bir kez otomatik indir (indirme ekranındaki tuştan gelindi). Metin
   // initialProject'ten SENKRON gelir (cover'ın aksine ağ beklemesi yok), ayrıca
@@ -869,6 +909,16 @@ export default function LayoutStudio({
               className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {exporting ? t.exportingLabel : t.exportPdfCta}
+            </button>
+            {/* DENEME — Typst motoru (yan yana karşılaştırma). Doğrulanınca
+                varsayılan olacak; ilk tıklamada ~28MB WASM yüklenir (birkaç sn). */}
+            <button
+              onClick={() => void handleExportPdfTypst()}
+              disabled={exporting || isEmpty || blocks.length === 0}
+              title="Typst (WASM) motoruyla — deneme. İlk sefer biraz yavaş."
+              className="rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              PDF · Typst ⚡
             </button>
           </div>
         </div>

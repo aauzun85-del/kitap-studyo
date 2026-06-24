@@ -44,3 +44,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Typst WASM (copied from node_modules at build; not committed)
+/public/typst/
