@@ -691,10 +691,11 @@ function layoutJustified(
         items.push({ type: "penalty", width: 0, penalty: INFINITY, flagged: false });
         meta.push({ kind: "penalty", hyphen: false });
       }
-      // stretch = 1.0·boşluk: KP'ye satırı tireleMEden sığdırma payı verir.
-      // (0.5 idi → boşluk azdı, satırlar sığmak için MECBUREN tireleniyordu;
-      // ölçümle dar kolonda tire-merdivenini ~4 kat azalttığı doğrulandı.)
-      items.push({ type: "glue", width: spaceWidth, stretch: spaceWidth, shrink: spaceWidth * 0.33 });
+      // stretch = 0.5·boşluk (SIKI). Daha yüksek stretch tire-merdivenini azaltır
+      // AMA boşlukları (river) belirgin artırır; ölçümle river yazarın asıl gözüne
+      // batan kusur olduğundan SIKI tutuyoruz (river ile tireleme dar kolonda
+      // doğrudan ödünleşir; ikisini birden çözmek olgun motor/Typst işi).
+      items.push({ type: "glue", width: spaceWidth, stretch: spaceWidth * 0.5, shrink: spaceWidth * 0.33 });
       meta.push({ kind: "glue" });
     }
     ctx.font = fontFor(t);
@@ -727,16 +728,13 @@ function layoutJustified(
   meta.push({ kind: "penalty", hyphen: false });
 
   // Kademeli tolerans: önce EN SIKI dağılımı dene (boşluklar az esnesin); o
-  // tolerans uygun bir kırılma bulamazsa kademe kademe gevşet. İnce kademeler +
-  // düşük tavan (6) → "bir sıkışık nokta yüzünden tüm paragrafı 10'a açma"
-  // davranışı azalır, en kötü satır sınırlanır. stretch = 1.0·boşluk olduğundan
-  // tolerans 1 ≈ en çok 2× boşluk.
-  // flaggedPenalty = 3e6: ardışık tireli satır cezası. Demerit'ler badness'ın
-  // KARESİ (~1e6+) olduğundan eski 100 değeri etkisizdi; bu ölçekte ceza ancak
-  // ~milyon mertebesinde "ısırıyor" → tire-merdivenleri kırılır.
+  // tolerans uygun bir kırılma bulamazsa kademe kademe gevşet. Düşük TAVAN (6,
+  // eski 10 değil) → "bir sıkışık nokta yüzünden tüm paragrafı 10'a açma" olmaz;
+  // en kötü satır sınırlanır (river en kötü ~5.3×→3.9× düştü, ölçümle). Bu, river
+  // azaltan TEK güvenli kaldıraç; stretch/flaggedPenalty river'ı kötüleştiriyordu.
   let breaks: number[] | null = null;
-  for (const tolerance of [1, 2, 3, 4.5, 6]) {
-    breaks = knuthPlass(items, lineWidthFor, { tolerance, flaggedPenalty: 3_000_000 });
+  for (const tolerance of [1.5, 3, 4.5, 6]) {
+    breaks = knuthPlass(items, lineWidthFor, { tolerance });
     if (breaks && breaks.length >= 2) break;
   }
   if (!breaks || breaks.length < 2) return null;
