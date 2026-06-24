@@ -9,7 +9,7 @@
 
 import { mmToPx, pxToMm } from "./page";
 import { hyphenPoints } from "./hyphenate";
-import { knuthPlass, type KPItem } from "./linebreak";
+import { knuthPlass, INFINITY, type KPItem } from "./linebreak";
 import {
   KDY_HEADINGS,
   KDY_TITLE,
@@ -677,10 +677,20 @@ function layoutJustified(
     if (chunk) flush(false);
   };
 
+  const lastTi = toks.length - 1;
   toks.forEach((t, ti) => {
+    const isLastTok = ti === lastTi;
     // Sözcükler arası esneyen boşluk YALNIZCA orijinalde boşluk varsa. Bitişik
     // parçalar (italik kelime + normal nokta vb.) boşluksuz, bölünmeden birleşir.
     if (ti > 0 && t.spaceBefore) {
+      // ÖKSÜZ SON SATIR (runt) ÖNLEME: son kelimenin ÖNÜNDEKİ boşluğu kırılamaz
+      // yap (INFINITY ceza → bu boşlukta satır kırılamaz) → son kelime tek başına
+      // alt satıra düşemez, önceki kelimeyle birlikte kalır. Yazarın gözüne batan
+      // "tek kelime ortada" kusurunu kökten kaldırır.
+      if (isLastTok) {
+        items.push({ type: "penalty", width: 0, penalty: INFINITY, flagged: false });
+        meta.push({ kind: "penalty", hyphen: false });
+      }
       // stretch = 1.0·boşluk: KP'ye satırı tireleMEden sığdırma payı verir.
       // (0.5 idi → boşluk azdı, satırlar sığmak için MECBUREN tireleniyordu;
       // ölçümle dar kolonda tire-merdivenini ~4 kat azalttığı doğrulandı.)
@@ -688,7 +698,9 @@ function layoutJustified(
       meta.push({ kind: "glue" });
     }
     ctx.font = fontFor(t);
-    const pts = hyphenate ? hyphenPoints(t.text) : [];
+    // Son kelimeyi heceleme → kırpılmış parçanın (örn. "tık.") tek başına son
+    // satırda kalmasını da engelle.
+    const pts = hyphenate && !isLastTok ? hyphenPoints(t.text) : [];
     if (pts.length === 0) {
       pushBox(t.text, t);
     } else {

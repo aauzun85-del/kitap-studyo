@@ -11,7 +11,7 @@
 //               tire genişliği taşır
 // Toplam "demerit" (kötülük puanı) en küçük olan kırılma kümesi seçilir.
 
-const INFINITY = 10000;
+export const INFINITY = 10000;
 
 export type KPItem =
   | { type: "box"; width: number }
