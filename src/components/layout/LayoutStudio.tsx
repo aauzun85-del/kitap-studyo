@@ -330,7 +330,7 @@ export default function LayoutStudio({
   const commitBlockFinal = useCallback((index: number, runs: Run[]) => {
     setBlocks((prev) => {
       const b = prev[index];
-      if (!b || b.type === "blank") return prev;
+      if (!b || b.type === "blank" || b.type === "image" || b.type === "table") return prev;
       const text = runs.map((r) => r.text).join("");
       if (text.trim().length === 0) {
         const next = [...prev];
@@ -352,7 +352,7 @@ export default function LayoutStudio({
   const commitBlockDraft = useCallback((index: number, runs: Run[]) => {
     setBlocks((prev) => {
       const b = prev[index];
-      if (!b || b.type === "blank") return prev;
+      if (!b || b.type === "blank" || b.type === "image" || b.type === "table") return prev;
       if (runs.length === 0 || runsEqual(b.runs, runs)) return prev;
       const next = [...prev];
       next[index] = { ...b, runs };
@@ -366,7 +366,7 @@ export default function LayoutStudio({
       setBlocks((prev) => {
         if (editingBlock == null) return prev;
         const b = prev[editingBlock];
-        if (!b || b.type === "blank") return prev;
+        if (!b || b.type === "blank" || b.type === "image" || b.type === "table") return prev;
         const next = [...prev];
         next[editingBlock] = fn(b);
         return next;
@@ -938,8 +938,8 @@ export default function LayoutStudio({
             <FormatBar
               t={t}
               block={editingBlockData}
-              fontId={editingBlockData.fontFamily ? idOfFamily(editingBlockData.fontFamily) : blockDefaultFontId(editingBlockData, fontId, headingFontId)}
-              sizePt={editingBlockData.sizePt ?? blockDefaultSizePt(editingBlockData, bodySizePt)}
+              fontId={"fontFamily" in editingBlockData && editingBlockData.fontFamily ? idOfFamily(editingBlockData.fontFamily) : blockDefaultFontId(editingBlockData, fontId, headingFontId)}
+              sizePt={("sizePt" in editingBlockData ? editingBlockData.sizePt : undefined) ?? blockDefaultSizePt(editingBlockData, bodySizePt)}
               selBold={selFmt.bold}
               selItalic={selFmt.italic}
               onFont={(id) => setBlockFont(familyOf(id))}
@@ -2097,7 +2097,7 @@ function FormatBar({
   // Kalın/italik vurgusu artık seçili metnin canlı durumundan gelir.
   const isBold = selBold;
   const isItalic = selItalic;
-  const curAlign = block.type === "blank" ? undefined : block.align;
+  const curAlign = block.type === "blank" || block.type === "table" ? undefined : block.align;
   const aligns: { a: ParaAlign; label: string; sym: string }[] = [
     { a: "left", label: t.alignLeft, sym: "⯇" },
     { a: "center", label: "Orta", sym: "≡" },

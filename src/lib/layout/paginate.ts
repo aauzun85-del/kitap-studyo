@@ -118,7 +118,12 @@ export type Block =
       fontFamily?: string;
     }
   | { type: "blockquote"; runs: Run[]; align?: ParaAlign; fontFamily?: string; sizePt?: number }
-  | { type: "blank" };
+  | { type: "blank" }
+  // Word'den içe aktarılan görsel: bayt verisi + sanal yol (Typst VFS'e mapShadow
+  // edilir) + Word'deki doğal ölçü (mm). Typst dışı motorlar bu bloğu atlar.
+  | { type: "image"; path: string; data: Uint8Array; widthMm?: number; heightMm?: number; align?: ParaAlign }
+  // Tablo: satır × hücre × run. columns = sütun sayısı (w:tblGrid'den).
+  | { type: "table"; columns: number; rows: Run[][][] };
 
 export const HEADING_KEYWORDS =
   /^(bölüm|bolum|kısım|kisim|chapter|part|önsöz|onsoz|giriş|giris|sonsöz|sonsoz|epilog|prolog|introduction|preface|epilogue)\b/i;
@@ -970,6 +975,9 @@ export function paginate(input: PaginateInput): Page[] {
 
   for (const block of blocks) {
     currentBlockIndex++;
+    // Görsel/tablo: bu (JS) motor render etmez — Typst yolu yapar. Sessizce atla
+    // (eski davranış zaten düşürüyordu; çökme/karışma olmasın).
+    if (block.type === "image" || block.type === "table") continue;
     if (block.type === "blank") {
       addGap(autoLeadingPx(settings.bodySizePt, settings.leadingPt, dpi));
       continue;

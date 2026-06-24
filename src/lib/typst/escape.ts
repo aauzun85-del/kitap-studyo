@@ -17,28 +17,29 @@ export function escapeTypst(s: string): string {
     .replace(/\n+/g, " "); // run içi kaçak satır sonları → boşluk
 }
 
-// Bir run → Typst markup. Kalın/italik için MARKUP sözdizimi *...* / _..._
-// kullanılır (FONKSİYON formu #strong[...] DEĞİL): çünkü #strong[X] sonrası gelen
-// "(" tüm derlemeyi çökertir, ";" yutulur. Markup formu bu kod-modu tuzaklarının
-// HİÇBİRİNE düşmez (sonraki tüm karakterler düz metin). Tek sınır: kelime ORTASI
-// biçim (ke*lime*de) — kitaplarda neredeyse hiç olmaz; olursa düz * görünür (çökme yok).
-// Vurgu işaretleri kelime sınırında olmalı → baştaki/sondaki boşluk dışarı taşınır.
-function wrapMarkup(m: string, open: string, close: string): string {
-  const lm = /^(\s*)([\s\S]*?)(\s*)$/.exec(m);
-  if (!lm) return m;
-  const [, lead, core, trail] = lm;
-  if (!core) return m; // yalnız boşluk → sarma
-  return `${lead}${open}${core}${close}${trail}`;
-}
-
-function runToMarkup(r: Run): string {
-  const m = escapeTypst(r.text);
-  if (r.bold && r.italic) return wrapMarkup(m, "*_", "_*");
-  if (r.bold) return wrapMarkup(m, "*", "*");
-  if (r.italic) return wrapMarkup(m, "_", "_");
+// Kalın/italik için FONKSİYON formu #strong[...] / #emph[...] kullanılır (markup
+// *...* / _..._ DEĞİL): markup formu kelime-ortası/bitişik run'larda (örn. OCR/
+// sembol-font parçalı metin) bozulur ("NAS_IL_" çözülemez). Fonksiyon formu her
+// içerikle (kelime-ortası dahil) sağlam çalışır; TEK tuzağı: bir #strong[X]'ten
+// SONRA gelen "(" derlemeyi çökertir, ";" yutulur, "." alan-erişimi sanılır.
+// Çözüm: stilli run'dan sonraki run'ın BAŞ karakteri ( ; . ise kaçırılır (\( vb.).
+function styledWrap(r: Run, m: string): string {
+  if (r.bold && r.italic) return `#strong[#emph[${m}]]`;
+  if (r.bold) return `#strong[${m}]`;
+  if (r.italic) return `#emph[${m}]`;
   return m;
 }
 
 export function runsToMarkup(runs: Run[]): string {
-  return runs.map(runToMarkup).join("");
+  let out = "";
+  let prevStyled = false;
+  for (const r of runs) {
+    let m = escapeTypst(r.text);
+    // Önceki run #strong/#emph ile bittiyse, bu run'ın baş ( ; . karakterini
+    // kaçır → "]" sonrası kod-devamı (çağrı/alan/yutma) olmasın.
+    if (prevStyled && /^[(;.]/.test(m)) m = "\\" + m;
+    out += styledWrap(r, m);
+    prevStyled = Boolean(r.bold || r.italic);
+  }
+  return out;
 }

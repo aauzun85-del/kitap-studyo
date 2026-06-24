@@ -74,7 +74,9 @@ export function smartQuoteText(text: string): string {
 
 export function smartQuoteBlocks(blocks: Block[]): Block[] {
   return blocks.map((b) => {
-    if (b.type === "blank") return b;
+    // run taşımayan bloklar (boş / görsel / tablo) dokunulmaz. (Tablo hücre
+    // metni v1'de akıllı tırnaktan geçmez — sonra eklenebilir.)
+    if (b.type === "blank" || b.type === "image" || b.type === "table") return b;
     // Her blok kendi bağlamında başlar (önceki blok tırnağı taşımaz).
     return { ...b, runs: applySmartQuotesToRuns(b.runs, { prev: "" }) };
   });

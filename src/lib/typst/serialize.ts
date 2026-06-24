@@ -25,7 +25,7 @@ export type TypstBookInput = {
   cropMarks: boolean;
 };
 
-function blockToTypst(b: Block): string {
+function blockToTypst(b: Block, contentWidthMm: number): string {
   switch (b.type) {
     case "heading":
       return `#heading(level: ${b.level})[${runsToMarkup(b.runs)}]`;
@@ -35,6 +35,24 @@ function blockToTypst(b: Block): string {
       return `#block(inset: (x: ${KDY_RULES.blockquoteIndentMm}mm))[#emph[${runsToMarkup(b.runs)}]]`;
     case "blank":
       return "#v(0.8em)";
+    case "image": {
+      // Word'deki doğal genişlik; kolonu aşıyorsa ya da bilinmiyorsa kolona sığdır.
+      const w =
+        b.widthMm && b.widthMm <= contentWidthMm ? `${b.widthMm.toFixed(2)}mm` : "100%";
+      return `#figure(image("${b.path}", width: ${w}))`;
+    }
+    case "table": {
+      // Hücreler satır-satır; eksik hücreler boş ile doldurulur (dikdörtgen kalsın).
+      const cols = Math.max(1, b.columns);
+      const cells: string[] = [];
+      for (const row of b.rows) {
+        for (let c = 0; c < cols; c++) {
+          cells.push(`[${row[c] ? runsToMarkup(row[c]) : ""}]`);
+        }
+      }
+      // Tablo hücrelerinde gövde girintisi/yaslaması olmasın → kendi par'ı.
+      return `#[#set par(first-line-indent: 0pt, justify: false); #table(columns: ${cols}, inset: 5pt, stroke: 0.5pt, ${cells.join(", ")})]`;
+    }
     default:
       return "";
   }
@@ -47,8 +65,12 @@ export function bookToTypst(input: TypstBookInput): string {
 
   // 2) Önsöz + gövde.
   const preamble = buildPreamble({ ...input, meta });
+  const contentWidthMm = Math.max(
+    20,
+    input.size.width - input.margins.inside - input.margins.outside - input.gutter,
+  );
   const body = blocks
-    .map(blockToTypst)
+    .map((b) => blockToTypst(b, contentWidthMm))
     .filter((s) => s.length > 0)
     .join("\n\n");
 

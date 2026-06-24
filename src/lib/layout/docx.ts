@@ -101,6 +101,48 @@ function parseStyles(xml: string | undefined): Map<string, StyleInfo> {
   return map;
 }
 
+// word/_rels/document.xml.rels: görsel ilişkilerini rel-id → zip içi tam yola eşler.
+function parseImageRels(xml: Uint8Array | undefined): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!xml) return map;
+  const doc = new DOMParser().parseFromString(strFromU8(xml), "application/xml");
+  for (const rel of Array.from(doc.getElementsByTagName("Relationship"))) {
+    const id = rel.getAttribute("Id");
+    const target = rel.getAttribute("Target");
+    const type = rel.getAttribute("Type") ?? "";
+    if (!id || !target || !/image/i.test(type)) continue;
+    const clean = target.replace(/^\//, "").replace(/^(\.\.\/)+/, "");
+    map.set(id, clean.startsWith("word/") ? clean : `word/${clean}`);
+  }
+  return map;
+}
+
+// w:tbl → tablo bloğu (satır × hücre × run). Hücre içi paragraflar boşlukla birleşir.
+function parseTable(tbl: Element): Block {
+  const grid = directChild(tbl, "w:tblGrid");
+  const colCount = grid
+    ? Array.from(grid.children).filter((c) => c.tagName === "w:gridCol").length
+    : 0;
+  const rows: Run[][][] = [];
+  for (const tr of Array.from(tbl.children)) {
+    if (tr.tagName !== "w:tr") continue;
+    const cells: Run[][] = [];
+    for (const tc of Array.from(tr.children)) {
+      if (tc.tagName !== "w:tc") continue;
+      const cellRuns: Run[] = [];
+      for (const cp of Array.from(tc.getElementsByTagName("w:p"))) {
+        const { runs } = paragraphRuns(cp);
+        if (runs.length === 0) continue;
+        if (cellRuns.length) cellRuns.push({ text: " ", bold: false, italic: false });
+        cellRuns.push(...runs);
+      }
+      cells.push(cellRuns);
+    }
+    if (cells.length) rows.push(cells);
+  }
+  return { type: "table", columns: colCount || Math.max(1, ...rows.map((r) => r.length)), rows };
+}
+
 function runText(r: Element): string {
   let out = "";
   for (const c of Array.from(r.children)) {
@@ -154,7 +196,7 @@ export function parseDocx(buffer: ArrayBuffer, mode: DocxMode): DocxResult {
     pendingHeading = null;
   };
 
-  for (const p of Array.from(doc.getElementsByTagName("w:p"))) {
+  const processPara = (p: Element): void => {
     const ppr = directChild(p, "w:pPr");
     const { runs, sizePt } = paragraphRuns(p);
     const hasText = runs.some((r) => r.text.trim().length > 0);
@@ -164,7 +206,7 @@ export function parseDocx(buffer: ArrayBuffer, mode: DocxMode): DocxResult {
         flushHeading();
         blocks.push({ type: "blank" });
       }
-      continue;
+      return;
     }
     paragraphCount++;
 
@@ -197,20 +239,20 @@ export function parseDocx(buffer: ArrayBuffer, mode: DocxMode): DocxResult {
     if (isClosingWord(plainText)) {
       flushHeading();
       blocks.push({ type: "paragraph", runs, align: "center" });
-      continue;
+      return;
     }
 
     if (level >= 1) {
       flushHeading();
       headingCount++;
       blocks.push({ type: "heading", level: Math.min(level, 4) as 1 | 2 | 3 | 4, runs, align });
-      continue;
+      return;
     }
 
     if (styleInfo?.isQuote) {
       flushHeading();
       blocks.push({ type: "blockquote", runs, align });
-      continue;
+      return;
     }
 
     // KDY modu: Word'de stil atanmamış ama başlık gibi görünen satırları
@@ -222,7 +264,7 @@ export function parseDocx(buffer: ArrayBuffer, mode: DocxMode): DocxResult {
         flushHeading();
         headingCount++;
         blocks.push({ type: "heading", level: 2, runs, align: "center", subhead: true });
-        continue;
+        return;
       }
       const plain = runs.map((r) => r.text).join("").trim();
       if (looksLikeHeading(plain)) {
@@ -231,7 +273,7 @@ export function parseDocx(buffer: ArrayBuffer, mode: DocxMode): DocxResult {
         } else {
           pendingHeading = { runs: [...runs], align };
         }
-        continue;
+        return;
       }
     }
 
@@ -254,6 +296,46 @@ export function parseDocx(buffer: ArrayBuffer, mode: DocxMode): DocxResult {
       // KDY modu: yalnızca yapısal hizalamayı (ortalı/sağa) koru.
       const keepAlign = align === "center" || align === "right" ? align : undefined;
       blocks.push({ type: "paragraph", runs, align: keepAlign });
+    }
+  };
+
+  // Görselleri (w:drawing/a:blip) çıkar: rel id → media yolu → zip'ten bayt.
+  const relMap = parseImageRels(files["word/_rels/document.xml.rels"]);
+  let imgCounter = 0;
+  const emitImages = (p: Element): void => {
+    for (const drawing of Array.from(p.getElementsByTagName("w:drawing"))) {
+      const blip = drawing.getElementsByTagName("a:blip")[0];
+      const id = blip ? blip.getAttribute("r:embed") ?? blip.getAttribute("embed") : null;
+      const media = id ? relMap.get(id) : undefined;
+      const data = media ? files[media] : undefined;
+      if (!media || !data) continue;
+      const ext = (media.split(".").pop() || "png").toLowerCase();
+      const extent = drawing.getElementsByTagName("wp:extent")[0];
+      const cx = extent ? Number(extent.getAttribute("cx")) : 0;
+      const cy = extent ? Number(extent.getAttribute("cy")) : 0;
+      blocks.push({
+        type: "image",
+        // Mutlak VFS yolu (/main.typ köküne göre) — mapShadow ile #image eşleşmeli.
+        path: `/media/img${++imgCounter}.${ext}`,
+        data,
+        widthMm: cx > 0 ? cx / 36000 : undefined, // EMU → mm (36000 EMU = 1 mm)
+        heightMm: cy > 0 ? cy / 36000 : undefined,
+        align: "center",
+      });
+    }
+  };
+
+  // Gövde çocuklarını SIRAYLA gez: paragraf (görsel + metin) ve tablo. Eski hâl
+  // tüm w:p'leri düz tarıyordu → tablo hücre metni gevşek paragraf olarak sızıyor,
+  // tablo yapısı + görseller tamamen kayboluyordu.
+  const bodyEl = doc.getElementsByTagName("w:body")[0];
+  for (const child of Array.from(bodyEl ? bodyEl.children : [])) {
+    if (child.tagName === "w:p") {
+      emitImages(child);
+      processPara(child);
+    } else if (child.tagName === "w:tbl") {
+      flushHeading();
+      blocks.push(parseTable(child));
     }
   }
 

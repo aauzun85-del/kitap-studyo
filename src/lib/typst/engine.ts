@@ -5,16 +5,20 @@
 
 import { COMPILER_WASM_URL, RENDERER_WASM_URL, loadFontData } from "./assets";
 
-type Engine = {
-  compilePdf: (src: string) => Promise<Uint8Array>;
-  compileSvg: (src: string) => Promise<string>;
+// Görsel varlığı: sanal yol → bayt (Typst VFS'e mapShadow edilir).
+export type TypstAsset = { path: string; data: Uint8Array };
+
+type Snippet = {
+  pdf: (o: { mainContent: string }) => Promise<Uint8Array>;
+  svg: (o: { mainContent: string }) => Promise<string>;
+  mapShadow: (path: string, data: Uint8Array) => Promise<void>;
 };
 
-let enginePromise: Promise<Engine> | null = null;
+let enginePromise: Promise<Snippet> | null = null;
 // Derleme mutex'i: $typst durumlu → çağrıları sıraya diz.
 let compileLock: Promise<unknown> = Promise.resolve();
 
-async function init(): Promise<Engine> {
+async function init(): Promise<Snippet> {
   const mod = await import("@myriaddreamin/typst.ts/dist/esm/contrib/snippet.mjs");
   const $typst = mod.$typst;
   const TypstSnippet = mod.TypstSnippet;
@@ -30,30 +34,31 @@ async function init(): Promise<Engine> {
     TypstSnippet.preloadFonts(fontData),
   );
 
-  return {
-    compilePdf: (src: string) => $typst.pdf({ mainContent: src }) as Promise<Uint8Array>,
-    compileSvg: (src: string) => $typst.svg({ mainContent: src }) as Promise<string>,
-  };
+  return $typst as Snippet;
 }
 
-export function getTypstEngine(): Promise<Engine> {
+export function getTypstEngine(): Promise<Snippet> {
   return (enginePromise ??= init());
 }
 
 // Tüm derlemeleri sıraya dizen sarmalayıcı (eşzamanlı çağrı $typst'i bozar).
-async function serialized<T>(fn: (e: Engine) => Promise<T>): Promise<T> {
-  const run = compileLock.then(async () => fn(await getTypstEngine()));
-  // zincir kırılmasın diye hatayı yut (çağıran asıl run'dan alır)
+// Derlemeden önce görselleri VFS'e map'ler (#image bunlara başvurur).
+async function serialized<T>(assets: TypstAsset[], fn: (e: Snippet) => Promise<T>): Promise<T> {
+  const run = compileLock.then(async () => {
+    const e = await getTypstEngine();
+    for (const a of assets) await e.mapShadow(a.path, a.data);
+    return fn(e);
+  });
   compileLock = run.catch(() => undefined);
   return run;
 }
 
-export function compilePdf(src: string): Promise<Uint8Array> {
-  return serialized((e) => e.compilePdf(src));
+export function compilePdf(src: string, assets: TypstAsset[] = []): Promise<Uint8Array> {
+  return serialized(assets, (e) => e.pdf({ mainContent: src }));
 }
 
-export function compileSvg(src: string): Promise<string> {
-  return serialized((e) => e.compileSvg(src));
+export function compileSvg(src: string, assets: TypstAsset[] = []): Promise<string> {
+  return serialized(assets, (e) => e.svg({ mainContent: src }));
 }
 
 // Mizanpaj açılışında çağrılır → 28MB WASM kullanıcı yazarken arkada ısınır.
