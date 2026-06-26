@@ -11,7 +11,7 @@ import type { BookSize, Margins } from "@/lib/layout/page";
 import { smartQuoteBlocks, prepareMeta } from "@/lib/layout/prepare";
 import { KDY_RULES } from "@/lib/layout/kdy";
 import { runsToMarkup } from "./escape";
-import { buildPreamble } from "./template";
+import { buildPreamble, typstStr } from "./template";
 
 export type TypstBookInput = {
   meta: BookMeta; // HAM — serializer cleanMeta+smartQuote uygular
@@ -25,9 +25,33 @@ export type TypstBookInput = {
   cropMarks: boolean;
 };
 
+// Bölüm açılışı (level-1 ana başlık): sağ-sayfa + üst boşluk + "BÖLÜM N" kicker +
+// başlık (gerçek #heading → içindekiler/koşu başlığı görür) + süs.
+function chapterOpen(b: Extract<Block, { type: "heading" }>, s: LayoutSettings, contentHeightMm: number): string {
+  const right = s.chapterStartsOnRightPage;
+  const topMm = ((s.chapterTopRatio ?? 0.12) * contentHeightMm).toFixed(2);
+  const orn = s.chapterOrnament ?? "none";
+  const showKick = s.showChapterKicker ?? true;
+  const kick = showKick && b.kicker ? `kicker: ${typstStr(b.kicker)}, ` : "";
+  const title = `#heading(level: 1, outlined: true)[${runsToMarkup(b.runs)}]`;
+  return `#_chapter(${kick}ornament: "${orn}", right: ${right}, top: ${topMm}mm)[${title}]`;
+}
+
+// Bölümün İLK paragrafı: drop-cap. İlk grafem büyük baş harf; kalanı düz metin
+// (drop-cap paragrafında satır-içi kalın/italik ender → düşürülür, v1).
+function dropCapPara(b: Extract<Block, { type: "paragraph" }>): string {
+  const plain = b.runs.map((r) => r.text).join("");
+  const cap = [...plain][0] ?? "";
+  if (!cap.trim()) return runsToMarkup(b.runs);
+  const rest = plain.slice(cap.length);
+  return `#_dropcap(${typstStr(cap)}, ${typstStr(rest)})`;
+}
+
 function blockToTypst(b: Block, contentWidthMm: number): string {
   switch (b.type) {
     case "heading":
+      // Ara başlık (subhead): küçük ortalı; içindekilere girmez.
+      if (b.subhead) return `#_subhead[${runsToMarkup(b.runs)}]`;
       return `#heading(level: ${b.level})[${runsToMarkup(b.runs)}]`;
     case "paragraph":
       return runsToMarkup(b.runs);
@@ -69,10 +93,30 @@ export function bookToTypst(input: TypstBookInput): string {
     20,
     input.size.width - input.margins.inside - input.margins.outside - input.gutter,
   );
-  const body = blocks
-    .map((b) => blockToTypst(b, contentWidthMm))
-    .filter((s) => s.length > 0)
-    .join("\n\n");
+  const contentHeightMm = Math.max(
+    20,
+    input.size.height - input.margins.top - input.margins.bottom,
+  );
+
+  // Durumlu gez: ana bölüm başlığı → açılış + drop-cap'i sıraya koy; sonraki ilk
+  // paragraf drop-cap olur. Boş bloklar bekletmeyi bozmaz; diğerleri iptal eder.
+  const out: string[] = [];
+  let pendingDropCap = false;
+  for (const b of blocks) {
+    if (b.type === "heading" && b.level === 1 && !b.subhead) {
+      out.push(chapterOpen(b, input.settings, contentHeightMm));
+      pendingDropCap = input.settings.dropCap;
+      continue;
+    }
+    if (b.type === "paragraph" && pendingDropCap) {
+      out.push(dropCapPara(b));
+      pendingDropCap = false;
+      continue;
+    }
+    if (b.type !== "blank") pendingDropCap = false;
+    out.push(blockToTypst(b, contentWidthMm));
+  }
+  const body = out.filter((s) => s.length > 0).join("\n\n");
 
   return `${preamble}\n${body}\n`;
 }

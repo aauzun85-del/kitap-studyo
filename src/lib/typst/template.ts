@@ -34,6 +34,46 @@ function cropMarksBg(pw: number, ph: number, to: number, bleedMm: number): strin
   return `{\n  ${marks.join("\n  ")}\n}`;
 }
 
+// Statik Typst yardımcıları (başlık seviyeleri + bölüm açılışı + drop-cap + ara
+// başlık). String.raw → drop-cap ölçümündeki "\" satır-sonu kaçmasın. JS
+// interpolasyonu YOK (hepsi sabit).
+const HELPERS = String.raw`#set heading(numbering: none)
+#show heading.where(level: 1): it => align(center, text(size: 24pt, weight: 700, it.body))
+#show heading.where(level: 2): it => { v(0.7em, weak: true); set par(first-line-indent: 0pt, justify: false); align(center, text(size: 20pt, weight: 700, it.body)); v(0.4em, weak: true) }
+#show heading.where(level: 3): it => { v(0.6em, weak: true); set par(first-line-indent: 0pt, justify: false); text(size: 18pt, weight: 700, it.body); v(0.3em, weak: true) }
+#show heading.where(level: 4): it => { v(0.5em, weak: true); set par(first-line-indent: 0pt, justify: false); text(size: 16pt, weight: 700, it.body); v(0.2em, weak: true) }
+#let _subhead(body) = { v(0.5em, weak: true); set par(first-line-indent: 0pt, justify: false); align(center, text(size: 13pt, weight: 700, body)); v(0.3em, weak: true) }
+#let _chapter(kicker: none, ornament: "none", right: true, top: 30mm, body) = {
+  if right { pagebreak(to: "odd", weak: true) } else { pagebreak(weak: true) }
+  v(top, weak: true)
+  if kicker != none { set par(first-line-indent: 0pt, justify: false); align(center, text(size: 11pt, weight: 700, tracking: 0.12em)[#upper(kicker)]); v(0.5em) }
+  body
+  if ornament == "rule" { v(0.4em); align(center, line(length: 14%, stroke: 0.6pt + black)) }
+  if ornament == "dots" { v(0.3em); align(center, text(size: 13pt)[• • •]) }
+  v(0.9em)
+}
+#let _dropcap(cap, rest, lines: 2, gap: 0.25em) = layout(bounds => context {
+  if rest.trim() == "" { text(size: 1.8em, weight: 700)[#cap] } else {
+    let W = bounds.width
+    let pitch = measure(box(width: 4cm)[a\ a]).height - measure(box[a]).height
+    let cs = lines * pitch
+    let capt = text(size: cs, weight: 700, top-edge: "cap-height", bottom-edge: "baseline")[#cap]
+    let cw = measure(box(capt)).width
+    let iw = cw + gap
+    let fw = W - iw
+    let words = rest.split(" ")
+    let hgt(n) = measure(box(width: fw)[#set par(justify: false); #words.slice(0, calc.min(n, words.len())).join(" ")]).height
+    let limit = lines * pitch + pitch * 0.3
+    let n = 1
+    while n < words.len() and hgt(n + 1) <= limit { n = n + 1 }
+    let head = words.slice(0, n).join(" ")
+    let tail = if n < words.len() { words.slice(n).join(" ") } else { "" }
+    grid(columns: (iw, fw), gutter: 0pt, place(top + left, capt), box(width: fw)[#set par(justify: true, first-line-indent: 0pt); #head])
+    if tail != "" { box(width: 100%)[#set par(justify: true, first-line-indent: 0pt); #tail] }
+  }
+})
+`;
+
 export function buildPreamble(input: TypstBookInput): string {
   const { settings: s, size, margins: m, gutter, bleedMm, markOffsetMm, cropMarks, meta } = input;
   // to = kesim çizgisinin kâğıt kenarına uzaklığı (pdf.ts:377 ile birebir).
@@ -66,18 +106,9 @@ export function buildPreamble(input: TypstBookInput): string {
   background: ${background},
 )
 #set text(font: ${fontExpr}, size: ${s.bodySizePt}pt, lang: "tr", region: "TR", hyphenate: ${s.hyphenate})
-#set par(justify: ${justify}, leading: ${leading}, first-line-indent: (amount: ${indent}mm, all: false), spacing: ${leading} + ${paraSpacing}mm, linebreaks: ${linebreaks})
+#set par(justify: ${justify}, leading: ${leading}, first-line-indent: (amount: ${indent}mm, all: true), spacing: ${leading} + ${paraSpacing}mm, linebreaks: ${linebreaks})
 #set smartquote(enabled: false)
-#set heading(numbering: none)
-#show heading: it => {
-  set text(weight: 700)
-  set par(first-line-indent: 0pt, justify: false, leading: 0.5em)
-  let sz = (24pt, 20pt, 18pt, 16pt).at(it.level - 1, default: 16pt)
-  v(0.8em)
-  if it.level <= 2 { align(center, text(size: sz, it.body)) } else { text(size: sz, it.body) }
-  v(0.4em)
-}
-`;
+${HELPERS}`;
 }
 
 // Typst string literali (çift tırnaklı; yalnız \ ve " kaçırılır — içerik kaçışı DEĞİL).
