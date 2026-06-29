@@ -42,7 +42,9 @@ import {
 import { ThemeThumbnail } from "@/lib/layout/themeThumbnail";
 import { parseDocx, type DocxMode } from "@/lib/layout/docx";
 import { exportBookPdf } from "@/lib/layout/pdf";
-import { exportBookPdfTypst } from "@/lib/typst";
+import { exportBookPdfTypst, type TypstBookInput } from "@/lib/typst";
+import { ManuscriptEditor } from "@/components/editor/ManuscriptEditor";
+import { LiveTypstPreview } from "@/components/editor/LiveTypstPreview";
 import ExportOverlay from "@/components/app/ExportOverlay";
 import {
   COVER_FONTS,
@@ -192,6 +194,10 @@ export default function LayoutStudio({
   const measureRef = useRef<HTMLCanvasElement | null>(null);
   const [pages, setPages] = useState<Page[]>([]);
   const [gutter, setGutter] = useState(0);
+
+  // Yazma görünümü: sağda canlı baskı önizlemeyle birlikte gerçek bir yazı
+  // editörü (yalnız elle-yaz modunda; Word içe-aktarımları blok-tabanlı kalır).
+  const [writeMode, setWriteMode] = useState(false);
 
   // PDF dışa aktarma.
   const [cropMarks, setCropMarks] = useState(true);
@@ -461,6 +467,24 @@ export default function LayoutStudio({
       setExporting(false);
     }
   }, [pages, sizeId, margins, gutter, cropMarks, kerning, fontId, title, standard, bleedOn]);
+
+  // Yazma görünümünün canlı önizlemesine giden Typst girdisi. Export'la AYNI
+  // montaj; yalnız kesim krosları/taşma KAPALI → temiz "kitap sayfası" görünür
+  // (yazarken kırpma bandı kafa karıştırmasın; export tam geometriyi kullanır).
+  const typstInput: TypstBookInput = useMemo(
+    () => ({
+      meta,
+      blocks,
+      settings,
+      size: getSize(sizeId),
+      margins,
+      gutter,
+      bleedMm: 0,
+      markOffsetMm: STANDARD_PROFILES[standard].markOffsetMm,
+      cropMarks: false,
+    }),
+    [meta, blocks, settings, sizeId, margins, gutter, standard],
+  );
 
   // DENEME — Typst (WASM) motoruyla aynı PDF. Mevcut motorla YAN YANA; blocks +
   // meta + settings + geometri besler (pages[] DEĞİL — Typst kendi sayfalıyor).
@@ -852,6 +876,26 @@ export default function LayoutStudio({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            {sourceMode === "manual" && (
+              <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
+                <button
+                  onClick={() => setWriteMode(false)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                    !writeMode ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {t.previewTabPreview}
+                </button>
+                <button
+                  onClick={() => setWriteMode(true)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                    writeMode ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {t.previewTabWrite}
+                </button>
+              </div>
+            )}
             {standard === "kdy" ? (
               <label className="flex items-center gap-1.5 text-xs text-muted" title={t.cropMarksLabel}>
                 <input
@@ -933,6 +977,16 @@ export default function LayoutStudio({
           </div>
         )}
 
+        {writeMode ? (
+          <div className="flex min-h-0 flex-1">
+            <div className="min-w-0 flex-1 overflow-hidden border-r border-border p-3">
+              <ManuscriptEditor value={raw} onChange={setRaw} />
+            </div>
+            <div className="hidden min-w-0 flex-1 lg:block">
+              <LiveTypstPreview input={typstInput} />
+            </div>
+          </div>
+        ) : (
         <div className="flex-1 overflow-auto p-6">
           {editingBlockData && (
             <FormatBar
@@ -1010,6 +1064,7 @@ export default function LayoutStudio({
             </div>
           )}
         </div>
+        )}
       </main>
     </div>
   );

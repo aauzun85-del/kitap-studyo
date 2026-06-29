@@ -474,6 +474,8 @@ type LayoutStudioCopy = {
   roleBlank: string;
   // Önizleme.
   previewHeading: string;
+  previewTabPreview: string;
+  previewTabWrite: string;
   pageCountLabel: string;
   pageWord: string;
   zoomLabel: string;
@@ -1546,6 +1548,8 @@ const tr: Dictionary = {
     roleToc: "İçindekiler",
     roleBlank: "Boş sayfa",
     previewHeading: "Önizleme",
+    previewTabPreview: "Önizleme",
+    previewTabWrite: "✍️ Yaz",
     pageCountLabel: "Toplam",
     pageWord: "sayfa",
     zoomLabel: "Yakınlaştır",
@@ -2644,6 +2648,8 @@ const en: Dictionary = {
     roleToc: "Contents",
     roleBlank: "Blank page",
     previewHeading: "Preview",
+    previewTabPreview: "Preview",
+    previewTabWrite: "✍️ Write",
     pageCountLabel: "Total",
     pageWord: "pages",
     zoomLabel: "Zoom",
