@@ -476,6 +476,8 @@ type LayoutStudioCopy = {
   previewHeading: string;
   previewTabPreview: string;
   previewTabWrite: string;
+  writePreviewToggle: string;
+  writePreviewHint: string;
   pageCountLabel: string;
   pageWord: string;
   zoomLabel: string;
@@ -1550,6 +1552,8 @@ const tr: Dictionary = {
     previewHeading: "Önizleme",
     previewTabPreview: "Önizleme",
     previewTabWrite: "✍️ Yaz",
+    writePreviewToggle: "Baskı önizleme",
+    writePreviewHint: "Sayfanın tam baskı halini yanda göster/gizle",
     pageCountLabel: "Toplam",
     pageWord: "sayfa",
     zoomLabel: "Yakınlaştır",
@@ -2650,6 +2654,8 @@ const en: Dictionary = {
     previewHeading: "Preview",
     previewTabPreview: "Preview",
     previewTabWrite: "✍️ Write",
+    writePreviewToggle: "Print preview",
+    writePreviewHint: "Show/hide the exact print result beside the page",
     pageCountLabel: "Total",
     pageWord: "pages",
     zoomLabel: "Zoom",

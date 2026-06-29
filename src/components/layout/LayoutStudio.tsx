@@ -41,6 +41,8 @@ import {
 } from "@/lib/layout/themes";
 import { ThemeThumbnail } from "@/lib/layout/themeThumbnail";
 import { parseDocx, type DocxMode } from "@/lib/layout/docx";
+import { blocksToMarkdown } from "@/lib/layout/blocksToMarkdown";
+import type { MediaMap } from "@/lib/layout/mediaTokens";
 import { exportBookPdf } from "@/lib/layout/pdf";
 import { exportBookPdfTypst, type TypstBookInput } from "@/lib/typst";
 import { ManuscriptEditor } from "@/components/editor/ManuscriptEditor";
@@ -135,6 +137,9 @@ export default function LayoutStudio({
   useMetaSync(projectId, { title, author, bio });
   useManuscriptSync(projectId, raw, "layout");
   const [importedBlocks, setImportedBlocks] = useState<Block[] | null>(null);
+  // Word'den gelen RESİM ikili verisi (markdown'a sığmaz) → jeton + harita.
+  // raw'daki "![](kitap-gorsel:ID)" jetonları buradan veriye bağlanır.
+  const [importMedia, setImportMedia] = useState<MediaMap>(() => new Map());
   const [importInfo, setImportInfo] = useState<string | null>(null);
   const [docxMode, setDocxMode] = useState<DocxMode>("kdy");
   const [importing, setImporting] = useState(false);
@@ -195,9 +200,11 @@ export default function LayoutStudio({
   const [pages, setPages] = useState<Page[]>([]);
   const [gutter, setGutter] = useState(0);
 
-  // Yazma görünümü: sağda canlı baskı önizlemeyle birlikte gerçek bir yazı
-  // editörü (yalnız elle-yaz modunda; Word içe-aktarımları blok-tabanlı kalır).
+  // Yazma görünümü: sayfanın içinde yazıyormuş gibi tek beyaz kâğıt yüzey.
+  // İsteğe bağlı, sağda canlı baskı önizleme (varsayılan kapalı → "ayrı panel"
+  // hissi olmasın; istenince açılır).
   const [writeMode, setWriteMode] = useState(false);
+  const [showWritePreview, setShowWritePreview] = useState(false);
 
   // PDF dışa aktarma.
   const [cropMarks, setCropMarks] = useState(true);
@@ -299,8 +306,8 @@ export default function LayoutStudio({
     () =>
       sourceMode === "word" && importedBlocks
         ? importedBlocks
-        : parseBlocks(raw, detectHeadings),
-    [sourceMode, importedBlocks, raw, detectHeadings],
+        : parseBlocks(raw, detectHeadings, importMedia),
+    [sourceMode, importedBlocks, raw, detectHeadings, importMedia],
   );
 
   // Canvasta düzenlenen blok indeksi (null = düzenleme yok).
@@ -403,7 +410,15 @@ export default function LayoutStudio({
       try {
         const buffer = await file.arrayBuffer();
         const res = parseDocx(buffer, docxMode);
-        setImportedBlocks(res.blocks);
+        // Word içeriğini DÜZENLENEBİLİR + KAYITLI tek kaynağa (markdown raw) çevir.
+        // Resim/tablo kaybolmaz (jeton + medya haritası); kullanıcı yazma
+        // görünümünde doğrudan metni düzenler, otomatik kaydolur.
+        const { markdown, media } = blocksToMarkdown(res.blocks);
+        setRaw(markdown);
+        setImportMedia(media);
+        setImportedBlocks(null);
+        setSourceMode("manual");
+        setWriteMode(true); // doğrudan "sayfada yaz" görünümüne geç
         setImportInfo(
           t.wordImportedInfo
             .replace("{paragraphs}", String(res.paragraphCount))
@@ -896,6 +911,19 @@ export default function LayoutStudio({
                 </button>
               </div>
             )}
+            {writeMode && sourceMode === "manual" && (
+              <button
+                onClick={() => setShowWritePreview((v) => !v)}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+                  showWritePreview
+                    ? "border-accent bg-accent-soft text-accent"
+                    : "border-border text-muted hover:text-foreground"
+                }`}
+                title={t.writePreviewHint}
+              >
+                {t.writePreviewToggle}
+              </button>
+            )}
             {standard === "kdy" ? (
               <label className="flex items-center gap-1.5 text-xs text-muted" title={t.cropMarksLabel}>
                 <input
@@ -979,12 +1007,14 @@ export default function LayoutStudio({
 
         {writeMode ? (
           <div className="flex min-h-0 flex-1">
-            <div className="min-w-0 flex-1 overflow-hidden border-r border-border p-3">
-              <ManuscriptEditor value={raw} onChange={setRaw} />
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <ManuscriptEditor value={raw} onChange={setRaw} media={importMedia} />
             </div>
-            <div className="hidden min-w-0 flex-1 lg:block">
-              <LiveTypstPreview input={typstInput} />
-            </div>
+            {showWritePreview && (
+              <div className="hidden min-w-0 flex-1 border-l border-border lg:block">
+                <LiveTypstPreview input={typstInput} />
+              </div>
+            )}
           </div>
         ) : (
         <div className="flex-1 overflow-auto p-6">

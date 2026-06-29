@@ -23,6 +23,8 @@ import {
 // Hem bu motor hem Typst motoru AYNI dönüşümleri uygular (yoksa ayrışır).
 import { cleanMetaValue, smartQuoteText, smartQuoteBlocks } from "./prepare";
 export { cleanMetaValue };
+// Word'den gelen resim/tablo jetonlarını markdown içinde tanı (kaybetmeden taşı).
+import { type MediaMap, matchImageToken, matchTableFence } from "./mediaTokens";
 
 // ── Biçimlendirme parçaları ────────────────────────────────────────────────
 export type Run = { text: string; bold: boolean; italic: boolean };
@@ -254,27 +256,40 @@ export function reapplyRuns(oldRuns: Run[], newText: string): Run[] {
 }
 
 // Ham markdown metni bloklara ayırır (manuel giriş yolu).
-export function parseBlocks(raw: string, detectHeadings: boolean): Block[] {
+export function parseBlocks(raw: string, detectHeadings: boolean, media?: MediaMap): Block[] {
   // Bozuk kaynak onarımı: noktalamadan sonra boşluksuz birleşmiş kelimeleri ayır.
   // Bu boşluksuz birleşmeler tek DEV/BÖLÜNEMEZ parça oluşturup yaslamada (Knuth-
   // Plass) çılgın boşluklara yol açıyordu. lookbehind/lookahead → harfler tüketilmez,
   // ardışık birleşmeler de düzelir. Açılış tırnakları (" ' « — U+201C/2018/00AB);
   // KAPANIŞ tırnağı (") kasıtlı dışarıda (öncesine boşluk konmamalı).
   const OQ = "\\u201C\\u2018\\u00AB"; // açılış tırnakları
-  const normalized = raw
-    .replace(/\r\n?/g, "\n")
-    // .!?… + BÜYÜK harf / açılış tırnağı. Küçük-harf öncesi → "3.5"/"T.C."/"v.b." korunur.
-    .replace(new RegExp(`(?<=\\p{Ll})([.!?…])(?=[\\p{Lu}${OQ}])`, "gu"), "$1 ")
-    // : + BÜYÜK harf / açılış tırnağı ("geliyordu:"Beni", "yatardık:Annem").
-    // Saat "10:30"/"http:" (rakam/işaret) korunur.
-    .replace(new RegExp(`(?<=\\p{Ll})(:)(?=[\\p{Lu}${OQ}])`, "gu"), "$1 ")
-    // , ; iki harf arası ya da harf + açılış tırnağı ("kaçıyorsun,saklanıyorsun").
-    // Ondalık "3,5" (rakam) korunur.
-    .replace(new RegExp(`(?<=\\p{L})([,;])(?=[\\p{L}${OQ}])`, "gu"), "$1 ");
-  const chunks = normalized.split(/\n{2,}/);
+  // Düz METİN chunk'larına uygulanır (resim/tablo JETONLARI bozulmasın diye chunk
+  // bazında — örn. tablo JSON'undaki virgüllere boşluk girmesin).
+  const normalizeProse = (s: string): string =>
+    s
+      // .!?… + BÜYÜK harf / açılış tırnağı. Küçük-harf öncesi → "3.5"/"T.C." korunur.
+      .replace(new RegExp(`(?<=\\p{Ll})([.!?…])(?=[\\p{Lu}${OQ}])`, "gu"), "$1 ")
+      // : + BÜYÜK harf / açılış tırnağı. Saat "10:30"/"http:" korunur.
+      .replace(new RegExp(`(?<=\\p{Ll})(:)(?=[\\p{Lu}${OQ}])`, "gu"), "$1 ")
+      // , ; iki harf arası. Ondalık "3,5" korunur.
+      .replace(new RegExp(`(?<=\\p{L})([,;])(?=[\\p{L}${OQ}])`, "gu"), "$1 ");
+  const chunks = raw.replace(/\r\n?/g, "\n").split(/\n{2,}/);
   const blocks: Block[] = [];
 
-  for (const chunk of chunks) {
+  for (const rawChunk of chunks) {
+    // Word'den taşınan resim/tablo jetonları — normalize EDİLMEDEN tanınır.
+    const table = matchTableFence(rawChunk);
+    if (table) {
+      blocks.push(table);
+      continue;
+    }
+    const imgId = matchImageToken(rawChunk);
+    if (imgId != null) {
+      const img = media?.get(imgId);
+      if (img) blocks.push(img); // veri yoksa (yeniden yükleme) sessizce atla → Faz 2 kalıcı
+      continue;
+    }
+    const chunk = normalizeProse(rawChunk);
     const rawLines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
     if (rawLines.length === 0) continue;
     const first = rawLines[0];

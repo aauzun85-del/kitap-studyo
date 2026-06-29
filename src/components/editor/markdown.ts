@@ -6,8 +6,13 @@
 // "*italik*", boş-satır ayraçlı paragraf. (v1: kalın+italik birlikte = kalın.)
 
 type TextNode = { type: "text"; text?: string; marks?: { type: string }[] };
-type Node = { type: string; attrs?: { level?: number }; content?: TextNode[] };
+type Node = { type: string; attrs?: { level?: number; id?: string; json?: string }; content?: TextNode[] };
 type Doc = { content?: Node[] };
+
+// HTML öznitelik değeri için kaçış (resim ID / tablo JSON'unu div'e gömerken).
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 // ── Markdown → HTML (editöre ilk içerik) ───────────────────────────────────
 function escapeHtml(s: string): string {
@@ -25,6 +30,14 @@ export function markdownToHtml(md: string): string {
     .map((b) => {
       const line = b.trim();
       if (!line) return "";
+      // Word'den gelen tablo (```kitap-tablo fence) → tablo kartı.
+      if (line.startsWith("```kitap-tablo")) {
+        const json = line.replace(/^```kitap-tablo\s*/, "").replace(/```\s*$/, "").trim();
+        return `<div data-table-embed data-json="${escapeAttr(json)}"></div>`;
+      }
+      // Word'den gelen resim jetonu → resim kartı.
+      const im = /^!\[[^\]]*\]\(kitap-gorsel:([^)]+)\)$/.exec(line);
+      if (im) return `<div data-image-embed data-id="${escapeAttr(im[1])}"></div>`;
       const h = /^(#{1,6})\s+(.*)$/.exec(line);
       if (h) {
         const level = Math.min(h[1].length, 3);
@@ -61,6 +74,13 @@ function wrapMark(t: string, mark: string): string {
 export function docToMarkdown(doc: Doc): string {
   const blocks = (doc.content ?? [])
     .map((node) => {
+      // Word kartları → jeton/fence (raw'a geri yazılır, motor geri okur).
+      if (node.type === "imageEmbed") {
+        return node.attrs?.id ? `![](kitap-gorsel:${node.attrs.id})` : "";
+      }
+      if (node.type === "tableEmbed") {
+        return node.attrs?.json ? "```kitap-tablo\n" + node.attrs.json + "\n```" : "";
+      }
       const inner = inlineToMd(node.content);
       if (node.type === "heading") {
         const level = Math.min(node.attrs?.level ?? 1, 3);
