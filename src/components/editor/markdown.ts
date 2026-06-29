@@ -5,8 +5,10 @@
 // Desteklenen (parseBlocks ile birebir): "# " başlık (1-3), "**kalın**",
 // "*italik*", boş-satır ayraçlı paragraf. (v1: kalın+italik birlikte = kalın.)
 
+import { matchPageBreak, matchSpacer, PAGEBREAK_TOKEN, spacerToken } from "@/lib/layout/mediaTokens";
+
 type TextNode = { type: "text"; text?: string; marks?: { type: string }[] };
-type Node = { type: string; attrs?: { level?: number; id?: string; json?: string }; content?: TextNode[] };
+type Node = { type: string; attrs?: { level?: number; id?: string; json?: string; mm?: number }; content?: TextNode[] };
 type Doc = { content?: Node[] };
 
 // HTML öznitelik değeri için kaçış (resim ID / tablo JSON'unu div'e gömerken).
@@ -30,6 +32,10 @@ export function markdownToHtml(md: string): string {
     .map((b) => {
       const line = b.trim();
       if (!line) return "";
+      // Sayfa düzeni: sayfa sonu / boşluk kartı.
+      if (matchPageBreak(line)) return `<div data-pagebreak></div>`;
+      const sp = matchSpacer(line);
+      if (sp != null) return `<div data-spacer data-mm="${sp}"></div>`;
       // Word'den gelen tablo (```kitap-tablo fence) → tablo kartı.
       if (line.startsWith("```kitap-tablo")) {
         const json = line.replace(/^```kitap-tablo\s*/, "").replace(/```\s*$/, "").trim();
@@ -81,6 +87,8 @@ export function docToMarkdown(doc: Doc): string {
       if (node.type === "tableEmbed") {
         return node.attrs?.json ? "```kitap-tablo\n" + node.attrs.json + "\n```" : "";
       }
+      if (node.type === "pageBreakEmbed") return PAGEBREAK_TOKEN;
+      if (node.type === "spacerEmbed") return spacerToken(node.attrs?.mm ?? 8);
       const inner = inlineToMd(node.content);
       if (node.type === "heading") {
         const level = Math.min(node.attrs?.level ?? 1, 3);

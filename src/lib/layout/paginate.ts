@@ -23,8 +23,14 @@ import {
 // Hem bu motor hem Typst motoru AYNI dönüşümleri uygular (yoksa ayrışır).
 import { cleanMetaValue, smartQuoteText, smartQuoteBlocks } from "./prepare";
 export { cleanMetaValue };
-// Word'den gelen resim/tablo jetonlarını markdown içinde tanı (kaybetmeden taşı).
-import { type MediaMap, matchImageToken, matchTableFence } from "./mediaTokens";
+// Word'den gelen resim/tablo + sayfa-sonu/boşluk jetonlarını markdown'da tanı.
+import {
+  type MediaMap,
+  matchImageToken,
+  matchTableFence,
+  matchPageBreak,
+  matchSpacer,
+} from "./mediaTokens";
 
 // ── Biçimlendirme parçaları ────────────────────────────────────────────────
 export type Run = { text: string; bold: boolean; italic: boolean };
@@ -125,7 +131,11 @@ export type Block =
   // edilir) + Word'deki doğal ölçü (mm). Typst dışı motorlar bu bloğu atlar.
   | { type: "image"; path: string; data: Uint8Array; widthMm?: number; heightMm?: number; align?: ParaAlign }
   // Tablo: satır × hücre × run. columns = sütun sayısı (w:tblGrid'den).
-  | { type: "table"; columns: number; rows: Run[][][] };
+  | { type: "table"; columns: number; rows: Run[][][] }
+  // Sayfa düzeni işaretleri (yazar Yaz görünümünden ekler): sonrasını yeni sayfaya
+  // iter / dikey boşluk bırakır. JS motoru atlar; Typst #pagebreak / #v üretir.
+  | { type: "pagebreak" }
+  | { type: "spacer"; mm: number };
 
 export const HEADING_KEYWORDS =
   /^(bölüm|bolum|kısım|kisim|chapter|part|önsöz|onsoz|giriş|giris|sonsöz|sonsoz|epilog|prolog|introduction|preface|epilogue)\b/i;
@@ -277,6 +287,16 @@ export function parseBlocks(raw: string, detectHeadings: boolean, media?: MediaM
   const blocks: Block[] = [];
 
   for (const rawChunk of chunks) {
+    // Sayfa düzeni işaretleri (Yaz: sayfa sonu / boşluk).
+    if (matchPageBreak(rawChunk)) {
+      blocks.push({ type: "pagebreak" });
+      continue;
+    }
+    const spacerMm = matchSpacer(rawChunk);
+    if (spacerMm != null) {
+      blocks.push({ type: "spacer", mm: spacerMm });
+      continue;
+    }
     // Word'den taşınan resim/tablo jetonları — normalize EDİLMEDEN tanınır.
     const table = matchTableFence(rawChunk);
     if (table) {
@@ -993,6 +1013,21 @@ export function paginate(input: PaginateInput): Page[] {
     // Görsel/tablo: bu (JS) motor render etmez — Typst yolu yapar. Sessizce atla
     // (eski davranış zaten düşürüyordu; çökme/karışma olmasın).
     if (block.type === "image" || block.type === "table") continue;
+    // Sayfa sonu: sonrasını yeni sayfaya it (mevcut sayfada içerik varsa; yoksa
+    // boş sayfa açma). pendingGap sıfırlanır.
+    if (block.type === "pagebreak") {
+      const cur = bodyPages[bodyPages.length - 1];
+      if (cur && cur.lines.length > 0) {
+        startPage("body");
+        pendingGapPx = 0;
+      }
+      continue;
+    }
+    // Boşluk: dikey boşluk ekle (JS önizlemesinde de görünsün).
+    if (block.type === "spacer") {
+      addGap(mmToPx(block.mm, dpi));
+      continue;
+    }
     if (block.type === "blank") {
       addGap(autoLeadingPx(settings.bodySizePt, settings.leadingPt, dpi));
       continue;

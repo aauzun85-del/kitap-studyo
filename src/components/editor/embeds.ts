@@ -53,6 +53,69 @@ export function createImageEmbed(getMediaUrl: (id: string) => string | undefined
   });
 }
 
+// Sayfa sonu kartı — sonrasını yeni sayfaya iter (Typst #pagebreak). Mod-Enter
+// (Word'deki Ctrl+Enter alışkanlığı) ile de eklenir.
+export const PageBreakEmbed = Node.create({
+  name: "pageBreakEmbed",
+  group: "block",
+  atom: true,
+  selectable: true,
+  parseHTML() {
+    return [{ tag: "div[data-pagebreak]" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["div", mergeAttributes(HTMLAttributes, { "data-pagebreak": "" })];
+  },
+  addNodeView() {
+    return () => {
+      const dom = document.createElement("div");
+      dom.className = "tiptap-embed tiptap-pagebreak";
+      dom.setAttribute("contenteditable", "false");
+      dom.textContent = "Sayfa sonu";
+      return { dom };
+    };
+  },
+  addKeyboardShortcuts() {
+    return {
+      "Mod-Enter": () => this.editor.commands.insertContent({ type: this.name }),
+    };
+  },
+});
+
+// Boşluk kartı — paragraftan sonra dikey boşluk (Typst #v). mm öznitelik.
+export const SpacerEmbed = Node.create({
+  name: "spacerEmbed",
+  group: "block",
+  atom: true,
+  selectable: true,
+  draggable: true,
+  addAttributes() {
+    return {
+      mm: {
+        default: 8,
+        parseHTML: (el) => Number(el.getAttribute("data-mm")) || 8,
+        renderHTML: (attrs) => ({ "data-mm": attrs.mm }),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "div[data-spacer]" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["div", mergeAttributes(HTMLAttributes, { "data-spacer": "" })];
+  },
+  addNodeView() {
+    return ({ node }) => {
+      const dom = document.createElement("div");
+      dom.className = "tiptap-embed tiptap-spacer";
+      dom.setAttribute("contenteditable", "false");
+      dom.style.height = `${Math.max(8, (node.attrs.mm as number) * 3.78)}px`; // mm→px
+      dom.textContent = "boşluk";
+      return { dom };
+    };
+  },
+});
+
 type Run = { text: string; bold?: boolean; italic?: boolean };
 
 // Tablo kartı. attrs.json → {columns, rows:Run[][][]} (markdown'a kalıcı yazılır).

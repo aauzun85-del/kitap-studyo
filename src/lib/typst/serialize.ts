@@ -59,6 +59,12 @@ function blockToTypst(b: Block, contentWidthMm: number): string {
       return `#block(inset: (x: ${KDY_RULES.blockquoteIndentMm}mm))[#emph[${runsToMarkup(b.runs)}]]`;
     case "blank":
       return "#v(0.8em)";
+    case "pagebreak":
+      // Yazar "sonraki sayfaya at" dedi → sonrasını yeni sayfaya it.
+      return "#pagebreak(weak: true)";
+    case "spacer":
+      // Yazar "boşluk ekle" dedi → dikey boşluk (sayfa kenarında erimesi için weak).
+      return `#v(${b.mm}mm, weak: true)`;
     case "image": {
       // Word'deki doğal genişlik; kolonu aşıyorsa ya da bilinmiyorsa kolona sığdır.
       const w =

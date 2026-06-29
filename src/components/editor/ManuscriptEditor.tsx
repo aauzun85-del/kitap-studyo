@@ -8,7 +8,7 @@ import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useMemo, useRef } from "react";
 import { markdownToHtml, docToMarkdown } from "./markdown";
-import { createImageEmbed, TableEmbed } from "./embeds";
+import { createImageEmbed, TableEmbed, PageBreakEmbed, SpacerEmbed } from "./embeds";
 import type { MediaMap } from "@/lib/layout/mediaTokens";
 
 // Uint8Array → base64 (parçalı: String.fromCharCode(...büyük dizi) yığın taşmasını
@@ -68,6 +68,20 @@ function Toolbar({ editor }: { editor: Editor }) {
       </Btn>
       <Btn title="Paragraf" active={editor.isActive("paragraph")} on={() => editor.chain().focus().setParagraph().run()}>
         ¶
+      </Btn>
+      <span className="mx-1 h-5 w-px bg-border" />
+      {/* Sayfa düzeni: imlecin olduğu yere sayfa sonu / boşluk ekle. */}
+      <Btn
+        title="Sayfa sonu — buradan sonrasını yeni sayfaya at (⌘⏎)"
+        on={() => editor.chain().focus().insertContent({ type: "pageBreakEmbed" }).run()}
+      >
+        ⤓ Sayfa sonu
+      </Btn>
+      <Btn
+        title="Boşluk — buraya dikey boşluk ekle"
+        on={() => editor.chain().focus().insertContent({ type: "spacerEmbed", attrs: { mm: 8 } }).run()}
+      >
+        ␣ Boşluk
       </Btn>
       <span className="mx-1 h-5 w-px bg-border" />
       <Btn title="Geri al (⌘Z)" on={() => editor.chain().focus().undo().run()}>
@@ -131,6 +145,8 @@ export function ManuscriptEditor({
       }),
       imageEmbed,
       TableEmbed,
+      PageBreakEmbed,
+      SpacerEmbed,
     ],
     content: markdownToHtml(value),
     immediatelyRender: false,
@@ -180,6 +196,8 @@ export function ManuscriptEditor({
         .tiptap-book .tiptap-table-embed table { margin: 0 auto; border-collapse: collapse; font-size: 0.9em; color: #1a1a1a; }
         .tiptap-book .tiptap-table-embed td, .tiptap-book .tiptap-table-embed th { border: 1px solid #d8d8d8; padding: 4px 10px; text-align: left; }
         .tiptap-book .tiptap-table-embed th { font-weight: 700; background: #f3f3f1; }
+        .tiptap-book .tiptap-pagebreak { margin: 1.2em auto; text-indent: 0; text-align: center; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: #b08968; border-top: 2px dashed #d9c3ad; padding-top: 6px; cursor: pointer; }
+        .tiptap-book .tiptap-spacer { margin: 0 auto; text-indent: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #bbb; background: repeating-linear-gradient(45deg, #f6f6f4, #f6f6f4 6px, #efefec 6px, #efefec 12px); border-radius: 3px; cursor: grab; }
         .tiptap-book .ProseMirror-selectednode { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
         .tiptap-book .is-editor-empty:first-child::before { content: attr(data-placeholder); color: #aaa; float: left; pointer-events: none; height: 0; }
       `}</style>

@@ -343,7 +343,7 @@ export default function LayoutStudio({
   const commitBlockFinal = useCallback((index: number, runs: Run[]) => {
     setBlocks((prev) => {
       const b = prev[index];
-      if (!b || b.type === "blank" || b.type === "image" || b.type === "table") return prev;
+      if (!b || b.type === "blank" || b.type === "image" || b.type === "table" || b.type === "pagebreak" || b.type === "spacer") return prev;
       const text = runs.map((r) => r.text).join("");
       if (text.trim().length === 0) {
         const next = [...prev];
@@ -365,7 +365,7 @@ export default function LayoutStudio({
   const commitBlockDraft = useCallback((index: number, runs: Run[]) => {
     setBlocks((prev) => {
       const b = prev[index];
-      if (!b || b.type === "blank" || b.type === "image" || b.type === "table") return prev;
+      if (!b || b.type === "blank" || b.type === "image" || b.type === "table" || b.type === "pagebreak" || b.type === "spacer") return prev;
       if (runs.length === 0 || runsEqual(b.runs, runs)) return prev;
       const next = [...prev];
       next[index] = { ...b, runs };
@@ -379,7 +379,7 @@ export default function LayoutStudio({
       setBlocks((prev) => {
         if (editingBlock == null) return prev;
         const b = prev[editingBlock];
-        if (!b || b.type === "blank" || b.type === "image" || b.type === "table") return prev;
+        if (!b || b.type === "blank" || b.type === "image" || b.type === "table" || b.type === "pagebreak" || b.type === "spacer") return prev;
         const next = [...prev];
         next[editingBlock] = fn(b);
         return next;
@@ -2182,7 +2182,10 @@ function FormatBar({
   // Kalın/italik vurgusu artık seçili metnin canlı durumundan gelir.
   const isBold = selBold;
   const isItalic = selItalic;
-  const curAlign = block.type === "blank" || block.type === "table" ? undefined : block.align;
+  const curAlign =
+    block.type === "blank" || block.type === "table" || block.type === "pagebreak" || block.type === "spacer"
+      ? undefined
+      : block.align;
   const aligns: { a: ParaAlign; label: string; sym: string }[] = [
     { a: "left", label: t.alignLeft, sym: "⯇" },
     { a: "center", label: "Orta", sym: "≡" },
