@@ -45,7 +45,7 @@ const HELPERS = String.raw`#set heading(numbering: none)
 #let _subhead(body) = { v(0.5em, weak: true); set par(first-line-indent: 0pt, justify: false); align(center, text(size: 13pt, weight: 700, body)); v(0.3em, weak: true) }
 #let _chapter(kicker: none, ornament: "none", right: true, top: 30mm, body) = {
   if right { pagebreak(to: "odd", weak: true) } else { pagebreak(weak: true) }
-  v(top, weak: true)
+  v(top)
   if kicker != none { set par(first-line-indent: 0pt, justify: false); align(center, text(size: 11pt, weight: 700, tracking: 0.12em)[#upper(kicker)]); v(0.5em) }
   body
   if ornament == "rule" { v(0.4em); align(center, line(length: 14%, stroke: 0.6pt + black)) }
@@ -72,6 +72,44 @@ const HELPERS = String.raw`#set heading(numbering: none)
     if tail != "" { box(width: 100%)[#set par(justify: true, first-line-indent: 0pt); #tail] }
   }
 })
+#set outline.entry(fill: repeat(gap: 2.5pt)[.])
+// Koşu başlığı/sayfa no'yu ön sayfada VE bölüm açılış sayfasında gizle.
+#let _suppress() = {
+  let p = here().page()
+  let bs = query(heading.where(level: 1)).filter(h => h.location().page() <= p)
+  bs.len() == 0 or bs.any(h => h.location().page() == p)
+}
+#let _runHead(bookTitle) = context if not _suppress() {
+  set text(size: 9pt, style: "italic")
+  if calc.odd(here().page()) {
+    let bs = query(heading.where(level: 1)).filter(h => h.location().page() <= here().page())
+    if bs.len() > 0 { align(right, bs.last().body) }
+  } else { align(left, bookTitle) }
+}
+#let _pageFoot() = context if not _suppress() {
+  set text(size: 9pt)
+  let n = counter(page).display()
+  if calc.odd(here().page()) { align(right, n) } else { align(left, n) }
+}
+#let _titlepage(title, author) = page(header: none, footer: none)[
+  #set par(first-line-indent: 0pt, justify: false)
+  #v(32%)
+  #align(center, text(size: 22pt, weight: 700, title))
+  #v(1.5em)
+  #align(center, text(size: 12pt, weight: 700, author))
+]
+#let _biopage(body) = page(header: none, footer: none)[
+  #set par(first-line-indent: 0pt, justify: true, leading: 0.6em)
+  #set text(size: 9pt)
+  #v(18%)
+  #body
+]
+#let _toc(title) = page(header: none, footer: none)[
+  #set par(first-line-indent: 0pt)
+  #align(center, text(size: 11pt, weight: 600, title))
+  #v(0.9em)
+  #outline(title: none, target: heading.where(level: 1))
+]
 `;
 
 export function buildPreamble(input: TypstBookInput): string {
@@ -96,19 +134,22 @@ export function buildPreamble(input: TypstBookInput): string {
   const linebreaks = s.lineBreak === "greedy" ? '"simple"' : '"optimized"';
 
   return `// otomatik üretilen — Block[] → Typst (mizanpaj motoru)
+${HELPERS}
 #set document(title: ${typstStr(meta.title)}, author: ${typstStr(meta.author)})
 #set page(
   width: ${pageW}mm,
   height: ${pageH}mm,
   margin: (top: ${mTop}mm, bottom: ${mBot}mm, inside: ${mIn}mm, outside: ${mOut}mm),
   binding: left,
-  numbering: ${s.showPageNumbers ? '"1"' : "none"},
+  numbering: none,
+  header: ${s.showRunningHeads ? `_runHead(${typstStr(meta.title)})` : "none"},
+  footer: ${s.showPageNumbers ? "_pageFoot()" : "none"},
   background: ${background},
 )
 #set text(font: ${fontExpr}, size: ${s.bodySizePt}pt, lang: "tr", region: "TR", hyphenate: ${s.hyphenate})
 #set par(justify: ${justify}, leading: ${leading}, first-line-indent: (amount: ${indent}mm, all: true), spacing: ${leading} + ${paraSpacing}mm, linebreaks: ${linebreaks})
 #set smartquote(enabled: false)
-${HELPERS}`;
+`;
 }
 
 // Typst string literali (çift tırnaklı; yalnız \ ve " kaçırılır — içerik kaçışı DEĞİL).

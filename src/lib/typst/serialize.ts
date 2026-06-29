@@ -10,7 +10,7 @@ import type { Block, BookMeta, LayoutSettings } from "@/lib/layout/paginate";
 import type { BookSize, Margins } from "@/lib/layout/page";
 import { smartQuoteBlocks, prepareMeta } from "@/lib/layout/prepare";
 import { KDY_RULES } from "@/lib/layout/kdy";
-import { runsToMarkup } from "./escape";
+import { runsToMarkup, escapeTypst } from "./escape";
 import { buildPreamble, typstStr } from "./template";
 
 export type TypstBookInput = {
@@ -98,9 +98,27 @@ export function bookToTypst(input: TypstBookInput): string {
     input.size.height - input.margins.top - input.margins.bottom,
   );
 
+  const out: string[] = [];
+
+  // Ön sayfa (showFrontMatter): başlık sayfası + biyografi + İÇİNDEKİLER. KDY ilk
+  // 2 sayfayı (logo+künye) kendi ekler → iç PDF başlık sayfasıyla başlar. Sayfa
+  // numarası ön sayfada gizli; gövdede 1'den başlasın diye sayaç sıfırlanır.
+  if (input.settings.showFrontMatter) {
+    if (meta.title || meta.author) {
+      out.push(`#_titlepage([${escapeTypst(meta.title)}], [${escapeTypst(meta.author)}])`);
+    }
+    const bioParas = meta.bio
+      .split(/\n{2,}/)
+      .map((p) => escapeTypst(p.replace(/\n/g, " ")).trim())
+      .filter(Boolean)
+      .join("\n\n");
+    if (bioParas) out.push(`#_biopage[${bioParas}]`);
+    out.push(`#_toc("İÇİNDEKİLER")`);
+    out.push("#counter(page).update(1)");
+  }
+
   // Durumlu gez: ana bölüm başlığı → açılış + drop-cap'i sıraya koy; sonraki ilk
   // paragraf drop-cap olur. Boş bloklar bekletmeyi bozmaz; diğerleri iptal eder.
-  const out: string[] = [];
   let pendingDropCap = false;
   for (const b of blocks) {
     if (b.type === "heading" && b.level === 1 && !b.subhead) {
