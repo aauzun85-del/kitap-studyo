@@ -478,6 +478,12 @@ type LayoutStudioCopy = {
   previewTabWrite: string;
   writePreviewToggle: string;
   writePreviewHint: string;
+  sendNextPage: string;
+  sendNextPageHint: string;
+  pullPrevPage: string;
+  pullPrevPageHint: string;
+  addSpace: string;
+  addSpaceHint: string;
   pageCountLabel: string;
   pageWord: string;
   zoomLabel: string;
@@ -1554,6 +1560,12 @@ const tr: Dictionary = {
     previewTabWrite: "✍️ Yaz",
     writePreviewToggle: "Baskı önizleme",
     writePreviewHint: "Sayfanın tam baskı halini yanda göster/gizle",
+    sendNextPage: "Sonraki sayfaya",
+    sendNextPageHint: "Bu paragrafı (ve sonrasını) sonraki sayfaya at",
+    pullPrevPage: "Önceki sayfaya",
+    pullPrevPageHint: "Bu paragrafı bir önceki sayfaya geri çek (sayfa sonunu kaldır)",
+    addSpace: "Boşluk",
+    addSpaceHint: "Bu paragrafın altına boşluk ekle",
     pageCountLabel: "Toplam",
     pageWord: "sayfa",
     zoomLabel: "Yakınlaştır",
@@ -2656,6 +2668,12 @@ const en: Dictionary = {
     previewTabWrite: "✍️ Write",
     writePreviewToggle: "Print preview",
     writePreviewHint: "Show/hide the exact print result beside the page",
+    sendNextPage: "Next page",
+    sendNextPageHint: "Push this paragraph (and what follows) to the next page",
+    pullPrevPage: "Previous page",
+    pullPrevPageHint: "Pull this paragraph back to the previous page (remove the page break)",
+    addSpace: "Space",
+    addSpaceHint: "Add vertical space below this paragraph",
     pageCountLabel: "Total",
     pageWord: "pages",
     zoomLabel: "Zoom",

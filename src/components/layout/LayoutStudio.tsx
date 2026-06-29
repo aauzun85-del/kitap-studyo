@@ -387,6 +387,33 @@ export default function LayoutStudio({
     },
     [editingBlock],
   );
+  // ── Sayfa düzeni eylemleri (önizlemede paragrafa tıklayınca biçim çubuğundan) ──
+  // Yazar GERÇEK SAYFADA bir paragrafı görüp tıklar; bu eylemler blocks'a
+  // pagebreak/spacer ekler/çıkarır → markdown'a serialize edip setRaw (KALICI +
+  // her iki motorda reflow). Word resim id'leri yeniden üretildiği için medya
+  // haritası da güncellenir.
+  const applyLayout = useCallback((next: Block[]) => {
+    const { markdown, media } = blocksToMarkdown(next);
+    setImportMedia(media);
+    setRaw(markdown);
+    setEditingBlock(null);
+  }, []);
+  const sendBlockToNextPage = useCallback(
+    (i: number) => applyLayout([...blocks.slice(0, i), { type: "pagebreak" }, ...blocks.slice(i)]),
+    [blocks, applyLayout],
+  );
+  const addSpaceAfterBlock = useCallback(
+    (i: number) => applyLayout([...blocks.slice(0, i + 1), { type: "spacer", mm: 8 }, ...blocks.slice(i + 1)]),
+    [blocks, applyLayout],
+  );
+  const pullBlockToPrevPage = useCallback(
+    (i: number) => {
+      if (i <= 0 || blocks[i - 1]?.type !== "pagebreak") return;
+      applyLayout([...blocks.slice(0, i - 1), ...blocks.slice(i)]);
+    },
+    [blocks, applyLayout],
+  );
+
   const setBlockFont = useCallback(
     (family: string) => mutateEditingBlock((b) => (b.type === "blank" ? b : { ...b, fontFamily: family })),
     [mutateEditingBlock],
@@ -1031,6 +1058,10 @@ export default function LayoutStudio({
               onAlign={setBlockAlign}
               onToggleBold={toggleSelBold}
               onToggleItalic={toggleSelItalic}
+              onSendNextPage={() => editingBlock != null && sendBlockToNextPage(editingBlock)}
+              onAddSpace={() => editingBlock != null && addSpaceAfterBlock(editingBlock)}
+              onPullPrevPage={() => editingBlock != null && pullBlockToPrevPage(editingBlock)}
+              canPullPrev={editingBlock != null && editingBlock > 0 && blocks[editingBlock - 1]?.type === "pagebreak"}
               onClose={() => editorApiRef.current?.commit()}
             />
           )}
@@ -2164,6 +2195,10 @@ function FormatBar({
   onAlign,
   onToggleBold,
   onToggleItalic,
+  onSendNextPage,
+  onAddSpace,
+  onPullPrevPage,
+  canPullPrev,
   onClose,
 }: {
   t: T;
@@ -2177,6 +2212,10 @@ function FormatBar({
   onAlign: (a: ParaAlign) => void;
   onToggleBold: () => void;
   onToggleItalic: () => void;
+  onSendNextPage: () => void;
+  onAddSpace: () => void;
+  onPullPrevPage: () => void;
+  canPullPrev: boolean;
   onClose: () => void;
 }) {
   // Kalın/italik vurgusu artık seçili metnin canlı durumundan gelir.
@@ -2248,6 +2287,22 @@ function FormatBar({
           {sym}
         </button>
       ))}
+
+      <div className="mx-1 h-5 w-px bg-border" />
+
+      {/* Sayfa düzeni: bu paragrafı sonraki sayfaya at / önceki sayfaya çek /
+          altına boşluk ekle. Yazar sayfadaki yerini görerek karar verir. */}
+      <button type="button" onMouseDown={keepFocus} onClick={onSendNextPage} className={btn} title={t.sendNextPageHint}>
+        ⤓ {t.sendNextPage}
+      </button>
+      {canPullPrev && (
+        <button type="button" onMouseDown={keepFocus} onClick={onPullPrevPage} className={btn} title={t.pullPrevPageHint}>
+          ⤒ {t.pullPrevPage}
+        </button>
+      )}
+      <button type="button" onMouseDown={keepFocus} onClick={onAddSpace} className={btn} title={t.addSpaceHint}>
+        ␣ {t.addSpace}
+      </button>
 
       <button type="button" onMouseDown={keepFocus} onClick={onClose} className={`${btn} ml-auto`} title="Bitti">
         ✕

@@ -6,7 +6,7 @@
 // haritasıyla). parseBlocks (paginate.ts) bu jetonları geri okur.
 
 import type { Block, Run } from "./paginate";
-import { type MediaMap, imageToken, tableToFence } from "./mediaTokens";
+import { type MediaMap, imageToken, tableToFence, PAGEBREAK_TOKEN, spacerToken } from "./mediaTokens";
 
 // Tek satıra inen kalın/italik markdown (inlineRuns'ın tersi). Boşluklar işaretin
 // DIŞINA taşınır (parseBlocks'taki inlineRuns "** x **" gibi şeyleri çözemez).
@@ -56,6 +56,12 @@ export function blocksToMarkdown(blocks: Block[]): { markdown: string; media: Me
       }
       case "table":
         parts.push(tableToFence(b));
+        break;
+      case "pagebreak":
+        parts.push(PAGEBREAK_TOKEN);
+        break;
+      case "spacer":
+        parts.push(spacerToken(b.mm));
         break;
     }
   });
