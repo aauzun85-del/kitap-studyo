@@ -625,10 +625,10 @@ export default function LayoutStudio({
     autoExportFiredRef.current = true;
     if (autoExportSafetyRef.current) window.clearTimeout(autoExportSafetyRef.current);
     void (async () => {
-      const ok = await handleExportPdf();
+      const ok = await handleExportPdfTypst(); // varsayılan = gördüğün baskı sayfası
       setAutoExportStatus(ok ? "done" : "error");
     })();
-  }, [autoExport, fontsReady, pages.length, handleExportPdf]);
+  }, [autoExport, fontsReady, pages.length, handleExportPdfTypst]);
 
   // SAFETY: yazı tipi/sayfalama asılı kalırsa overlay sonsuza dek "hazırlanıyor"
   // kalmasın → ~12 sn içinde tetiklenmediyse "error"a düş (elle "Tekrar dene").
@@ -794,7 +794,7 @@ export default function LayoutStudio({
           kind="ic"
           status={autoExportStatus}
           backHref={projectId ? `/${lang}/indir?project=${projectId}` : `/${lang}/projeler`}
-          onDownload={() => void handleExportPdf()}
+          onDownload={() => void handleExportPdfTypst()}
         />
       )}
       <aside className="w-full shrink-0 lg:w-[380px]">
@@ -1028,9 +1028,11 @@ export default function LayoutStudio({
                 ))}
               </select>
             </label>
+            {/* PDF indir: görüntülenen motorla AYNI çıktı (Typst varsayılan =
+                gördüğün baskı sayfası). "Hızlı" önizlemedeyse JS motoruyla iner. */}
             <button
-              onClick={handleExportPdf}
-              disabled={exporting || isEmpty || pages.length === 0}
+              onClick={() => void (previewEngine === "typst" ? handleExportPdfTypst() : handleExportPdf())}
+              disabled={exporting || isEmpty || blocks.length === 0}
               title={
                 standard === "kdy"
                   ? t.exportHint
@@ -1041,16 +1043,6 @@ export default function LayoutStudio({
               className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {exporting ? t.exportingLabel : t.exportPdfCta}
-            </button>
-            {/* DENEME — Typst motoru (yan yana karşılaştırma). Doğrulanınca
-                varsayılan olacak; ilk tıklamada ~28MB WASM yüklenir (birkaç sn). */}
-            <button
-              onClick={() => void handleExportPdfTypst()}
-              disabled={exporting || isEmpty || blocks.length === 0}
-              title="Typst (WASM) motoruyla — deneme. İlk sefer biraz yavaş."
-              className="rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              PDF · Typst ⚡
             </button>
           </div>
         </div>
