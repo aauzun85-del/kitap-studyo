@@ -52,6 +52,7 @@ export type LayoutSettings = {
   showRunningHeads: boolean;
   showPageNumbers: boolean;
   hyphenate: boolean; // satır sonlarında Türkçe hece bölme (tireleme)
+  lang?: "tr" | "en"; // tireleme/dil işleme dili (Typst); vars. "tr"
   dropCap: boolean; // bölüm başlarında büyük baş harf (drop cap)
   // Bölüm açılış stili (tema sistemi). Boş/eski taslaklarda makul varsayılanlar.
   chapterTopRatio?: number; // başlık sayfanın % kaçından başlar (vars. 0.12)

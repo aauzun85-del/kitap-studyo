@@ -92,11 +92,13 @@ const HELPERS = String.raw`#set heading(numbering: none)
   if calc.odd(here().page()) { align(right, n) } else { align(left, n) }
 }
 #let _titlepage(title, author) = page(header: none, footer: none)[
-  #set par(first-line-indent: 0pt, justify: false)
-  #v(32%)
-  #align(center, text(size: 22pt, weight: 700, title))
-  #v(1.5em)
-  #align(center, text(size: 12pt, weight: 700, author))
+  #set par(first-line-indent: 0pt, justify: false, leading: 0.4em)
+  // fr-tabanlı dikey ritim: başlık üst-üçte bir, yazar alta yakın, bol boşluk.
+  #v(1.4fr)
+  #align(center, text(size: 30pt, weight: 700, title))
+  #v(2.4fr)
+  #align(center, text(size: 12pt, weight: 600, tracking: 0.18em)[#upper(author)])
+  #v(1fr)
 ]
 #let _biopage(body) = page(header: none, footer: none)[
   #set par(first-line-indent: 0pt, justify: true, leading: 0.6em)
@@ -127,6 +129,9 @@ export function buildPreamble(input: TypstBookInput): string {
   const mOut = (to + m.outside).toFixed(3);
 
   const fontExpr = typstFontExpr(s.bodyFontFamily);
+  // Tireleme/dil işleme kitabın diline göre (EN kitap → İngilizce desenler).
+  const lang = s.lang === "en" ? "en" : "tr";
+  const region = s.lang === "en" ? "US" : "TR";
   const justify = s.align === "justify";
   const leading = leadingExpr(s.leadingPt, s.bodySizePt);
   const indent = s.firstLineIndentMm;
@@ -146,7 +151,7 @@ ${HELPERS}
   footer: ${s.showPageNumbers ? "_pageFoot()" : "none"},
   background: ${background},
 )
-#set text(font: ${fontExpr}, size: ${s.bodySizePt}pt, lang: "tr", region: "TR", hyphenate: ${s.hyphenate})
+#set text(font: ${fontExpr}, size: ${s.bodySizePt}pt, lang: "${lang}", region: "${region}", hyphenate: ${s.hyphenate}, costs: (widow: 100%, orphan: 100%), overhang: true, ligatures: true, discretionary-ligatures: false)
 #set par(justify: ${justify}, leading: ${leading}, first-line-indent: (amount: ${indent}mm, all: true), spacing: ${leading} + ${paraSpacing}mm, linebreaks: ${linebreaks})
 #set smartquote(enabled: false)
 `;

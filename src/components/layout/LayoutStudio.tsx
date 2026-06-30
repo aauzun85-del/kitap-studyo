@@ -253,6 +253,7 @@ export default function LayoutStudio({
       showRunningHeads: runningHeads,
       showPageNumbers: pageNumbers,
       hyphenate,
+      lang: lang === "en" ? "en" : "tr",
       dropCap,
       lineBreak,
       chapterTopRatio,
@@ -278,6 +279,7 @@ export default function LayoutStudio({
       chapterTopRatio,
       chapterOrnament,
       showChapterKicker,
+      lang,
     ],
   );
 
