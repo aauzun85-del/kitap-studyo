@@ -45,8 +45,6 @@ import { blocksToMarkdown } from "@/lib/layout/blocksToMarkdown";
 import type { MediaMap } from "@/lib/layout/mediaTokens";
 import { exportBookPdf } from "@/lib/layout/pdf";
 import { exportBookPdfTypst, type TypstBookInput } from "@/lib/typst";
-import { ManuscriptEditor } from "@/components/editor/ManuscriptEditor";
-import { LiveTypstPreview } from "@/components/editor/LiveTypstPreview";
 import { TypstPreviewCanvas } from "@/components/editor/TypstPreviewCanvas";
 import ExportOverlay from "@/components/app/ExportOverlay";
 import {
@@ -204,8 +202,6 @@ export default function LayoutStudio({
   // Yazma görünümü: sayfanın içinde yazıyormuş gibi tek beyaz kâğıt yüzey.
   // İsteğe bağlı, sağda canlı baskı önizleme (varsayılan kapalı → "ayrı panel"
   // hissi olmasın; istenince açılır).
-  const [writeMode, setWriteMode] = useState(false);
-  const [showWritePreview, setShowWritePreview] = useState(false);
   // Önizleme motoru: "typst" = gerçek baskı sayfası (=PDF), tıklanabilir bloklar;
   // "js" = hızlı yaklaşık önizleme (yedek).
   const [previewEngine, setPreviewEngine] = useState<"typst" | "js">("typst");
@@ -498,7 +494,6 @@ export default function LayoutStudio({
         setImportMedia(media);
         setImportedBlocks(null);
         setSourceMode("manual");
-        setWriteMode(true); // doğrudan "sayfada yaz" görünümüne geç
         setImportInfo(
           t.wordImportedInfo
             .replace("{paragraphs}", String(res.paragraphCount))
@@ -971,59 +966,24 @@ export default function LayoutStudio({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            {sourceMode === "manual" && (
-              <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
-                <button
-                  onClick={() => setWriteMode(false)}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                    !writeMode ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
-                  }`}
-                >
-                  {t.previewTabPreview}
-                </button>
-                <button
-                  onClick={() => setWriteMode(true)}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                    writeMode ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
-                  }`}
-                >
-                  {t.previewTabWrite}
-                </button>
-              </div>
-            )}
-            {!writeMode && (
-              <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5" title="Typst: gerçek baskı sayfası (=PDF), tıklanabilir. Hızlı: metin düzenleme.">
-                <button
-                  onClick={() => setPreviewEngine("typst")}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                    previewEngine === "typst" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
-                  }`}
-                >
-                  Typst
-                </button>
-                <button
-                  onClick={() => setPreviewEngine("js")}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                    previewEngine === "js" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
-                  }`}
-                >
-                  Hızlı
-                </button>
-              </div>
-            )}
-            {writeMode && sourceMode === "manual" && (
+            <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5" title="Typst: gerçek baskı sayfası (=PDF), üstüne tıklayıp düzenle. Hızlı: yedek önizleme.">
               <button
-                onClick={() => setShowWritePreview((v) => !v)}
-                className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
-                  showWritePreview
-                    ? "border-accent bg-accent-soft text-accent"
-                    : "border-border text-muted hover:text-foreground"
+                onClick={() => setPreviewEngine("typst")}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                  previewEngine === "typst" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
                 }`}
-                title={t.writePreviewHint}
               >
-                {t.writePreviewToggle}
+                Typst
               </button>
-            )}
+              <button
+                onClick={() => setPreviewEngine("js")}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                  previewEngine === "js" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
+                }`}
+              >
+                Hızlı
+              </button>
+            </div>
             {standard === "kdy" ? (
               <label className="flex items-center gap-1.5 text-xs text-muted" title={t.cropMarksLabel}>
                 <input
@@ -1105,18 +1065,6 @@ export default function LayoutStudio({
           </div>
         )}
 
-        {writeMode ? (
-          <div className="flex min-h-0 flex-1">
-            <div className="min-w-0 flex-1 overflow-hidden">
-              <ManuscriptEditor value={raw} onChange={setRaw} media={importMedia} />
-            </div>
-            {showWritePreview && (
-              <div className="hidden min-w-0 flex-1 border-l border-border lg:block">
-                <LiveTypstPreview input={typstInput} />
-              </div>
-            )}
-          </div>
-        ) : (
         <div className="flex-1 overflow-auto p-6">
           {editingBlockData && (
             <FormatBar
@@ -1250,7 +1198,6 @@ export default function LayoutStudio({
             </div>
           )}
         </div>
-        )}
       </main>
     </div>
   );
