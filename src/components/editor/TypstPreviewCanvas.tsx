@@ -23,7 +23,12 @@ export function TypstPreviewCanvas({
   input: TypstBookInput;
   editingBlock: number | null;
   onSelectBlock: (idx: number) => void;
-  renderBlockOverlay?: (idx: number, band: { topPct: number; heightPct: number }) => ReactNode;
+  // Düzenlenen blok için editör overlay'i. pxPerMm/renderDpi, SVG ölçeğine
+  // eşitlenir → editör metni Typst metniyle aynı boyda görünür.
+  renderBlockOverlay?: (
+    idx: number,
+    o: { topPct: number; heightPct: number; pxPerMm: number; renderDpi: number },
+  ) => ReactNode;
 }) {
   const [svg, setSvg] = useState("");
   const [positions, setPositions] = useState<BlockPos[]>([]);
@@ -32,6 +37,8 @@ export function TypstPreviewCanvas({
   const svgWrapRef = useRef<HTMLDivElement | null>(null);
   // SVG'nin toplam yüksekliği (pt) — viewBox'tan okunur (boşluksuz dikey yığın).
   const [totalHeightPt, setTotalHeightPt] = useState(0);
+  // Görüntülenen SVG'nin ölçeği: ekran-px / viewBox-pt (editör boyunu eşitlemek için).
+  const [scale, setScale] = useState(0);
 
   // Girdi değişince debounce'la derle + konumları al.
   useEffect(() => {
@@ -59,13 +66,34 @@ export function TypstPreviewCanvas({
     return () => clearTimeout(timer);
   }, [input]);
 
-  // SVG yerleşince viewBox yüksekliğini (toplam pt) oku.
+  // SVG yerleşince viewBox yüksekliğini (toplam pt) + ekran ölçeğini oku;
+  // kapsayıcı yeniden boyutlanınca ölçeği güncelle (ResizeObserver).
   useEffect(() => {
-    const el = svgWrapRef.current?.querySelector("svg");
-    if (el) {
-      const vb = el.viewBox.baseVal;
+    // toplam yükseklik viewBox'tan gelir → YERLEŞİM gerekmez, hemen oku (hotspot'lar
+    // bunu bekler). Ekran GENİŞLİĞİ (scale) yerleşim sonrası → rAF + ResizeObserver.
+    const svgEl = svgWrapRef.current?.querySelector("svg");
+    if (svgEl) {
+      const vb = svgEl.viewBox.baseVal;
       if (vb && vb.height > 0) setTotalHeightPt(vb.height);
     }
+    const measureScale = () => {
+      const el = svgWrapRef.current?.querySelector("svg");
+      if (!el) return;
+      const vb = el.viewBox.baseVal;
+      const w = el.getBoundingClientRect().width;
+      if (vb && vb.width > 0 && w > 0) setScale(w / vb.width);
+    };
+    const raf = requestAnimationFrame(() => {
+      measureScale();
+      requestAnimationFrame(measureScale);
+    });
+    const wrap = svgWrapRef.current;
+    const ro = wrap ? new ResizeObserver(measureScale) : null;
+    if (ro && wrap) ro.observe(wrap);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro?.disconnect();
+    };
   }, [svg]);
 
   // Geometri: kırpma/taşma payı dahil sayfa yüksekliği (pt).
@@ -124,13 +152,15 @@ export function TypstPreviewCanvas({
               />
             ))}
           </div>
-          {/* Düzenlenen bloğun editör overlay'i */}
-          {editBand && renderBlockOverlay && (
-            <div
-              className="absolute left-0 w-full"
-              style={{ top: `${editBand.topPct}%` }}
-            >
-              {renderBlockOverlay(editBand.idx, editBand)}
+          {/* Düzenlenen bloğun editör overlay'i (Typst ölçeğiyle eşit boyda) */}
+          {editBand && renderBlockOverlay && scale > 0 && (
+            <div className="absolute left-0 w-full" style={{ top: `${editBand.topPct}%` }}>
+              {renderBlockOverlay(editBand.idx, {
+                topPct: editBand.topPct,
+                heightPct: editBand.heightPct,
+                pxPerMm: (scale * 72) / 25.4,
+                renderDpi: scale * 72,
+              })}
             </div>
           )}
         </div>

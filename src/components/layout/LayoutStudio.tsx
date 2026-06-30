@@ -1143,7 +1143,60 @@ export default function LayoutStudio({
               {t.emptyPreview}
             </div>
           ) : previewEngine === "typst" ? (
-            <TypstPreviewCanvas input={typstInput} editingBlock={editingBlock} onSelectBlock={startEditBlock} />
+            <TypstPreviewCanvas
+              input={typstInput}
+              editingBlock={editingBlock}
+              onSelectBlock={startEditBlock}
+              renderBlockOverlay={(idx, o) => {
+                const blk = blocks[idx];
+                if (
+                  !blk ||
+                  blk.type === "blank" ||
+                  blk.type === "image" ||
+                  blk.type === "table" ||
+                  blk.type === "pagebreak" ||
+                  blk.type === "spacer"
+                )
+                  return null;
+                const isHeading = blk.type === "heading";
+                const sizePt = ("sizePt" in blk && blk.sizePt) || blockDefaultSizePt(blk, bodySizePt);
+                const line: Line = {
+                  segments: [],
+                  kind: isHeading ? "heading" : "body",
+                  sizePt,
+                  font: isHeading ? familyOf(headingFontId) : bodyFamily,
+                  weight: isHeading ? 700 : 400,
+                  italic: blk.type === "blockquote",
+                  align: "align" in blk && blk.align ? blk.align : "left",
+                  indentMm: 0,
+                  blockIndentMm: 0,
+                  justify: false,
+                  spaceBeforeMm: 0,
+                  heightMm: ((sizePt * 1.5) / 72) * 25.4,
+                  blockIndex: idx,
+                };
+                const padPx = Math.max(0, margins.inside * o.pxPerMm);
+                return (
+                  <div key={`tedit-${idx}`} style={{ paddingLeft: padPx, paddingRight: padPx }}>
+                    {/* Beyaz kapatma: altındaki Typst metni görünmesin (çift metin olmasın) */}
+                    <div className="rounded-sm bg-white text-[#1a1a1a] shadow-[0_1px_10px_rgba(0,0,0,0.18)]">
+                      <RichBlockEditor
+                        line={line}
+                        pxPerMm={o.pxPerMm}
+                        renderDpi={o.renderDpi}
+                        initialRuns={editingRuns}
+                        apiRef={editorApiRef}
+                        onCommitFinal={(runs) => commitBlockFinal(idx, runs)}
+                        onCommitDraft={(runs) => commitBlockDraft(idx, runs)}
+                        onEnd={() => setEditingBlock(null)}
+                        onCancel={() => setEditingBlock(null)}
+                        onSelection={setSelFmt}
+                      />
+                    </div>
+                  </div>
+                );
+              }}
+            />
           ) : (
             <div className="flex flex-col items-center gap-6">
               {(() => {
