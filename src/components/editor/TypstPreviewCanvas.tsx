@@ -1,18 +1,28 @@
 "use client";
 
-// Gerçek Typst sayfası (SVG) ÜSTÜNDE tıklanabilir blok bölgeleri. Typst
-// introspection (renderBookSvgWithBlocks) her bloğun {sayfa, y(pt)} konumunu
-// verir; bunları SVG kutusuna göre YÜZDE bantlara çevirip şeffaf hotspot div'leri
-// koyarız (ölçek hesabı gerekmez: overlay SVG ile aynı kutu). Tıklayınca
-// onSelectBlock(idx) → mevcut FormatBar + sayfa-düzeni araçları o bloğa bağlanır.
-// editingBlock için renderBlockOverlay ile editör overlay'i konumlanır.
+// Gerçek Typst sayfaları AÇIK-KİTAP (spread) düzeninde + üstlerinde tıklanabilir
+// blok bölgeleri. Typst tek SVG (paylaşılan defs + dikey yığılmış sayfa <g>'leri)
+// döndürür; sayfa <g> transform'larını yeniden yazıp 2 sütunlu ızgaraya
+// (sayfa 1 sağda tek; sonra verso|recto ikilileri) koyarız — tek SVG, glyph
+// referansları korunur. Introspection (renderBookSvgWithBlocks) her bloğun
+// {sayfa, yPt} konumunu verir → ızgara koordinatında yüzde hotspot bantları.
+// Tık → onSelectBlock(idx); editör overlay'i bloğun sayfası+konumunda.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { renderBookSvgWithBlocks, type TypstBookInput, type BlockPos } from "@/lib/typst";
 
 const PT_PER_MM = 72 / 25.4;
+const ROW_GAP_PT = 30; // açık-kitap ikilileri (satırlar) arası boşluk
 
-type Band = { idx: number; topPct: number; heightPct: number };
+// Sayfa index'inin (0-tabanlı) ızgara konumu: sayfa 0 sağda tek (recto), sonra
+// verso(sol)|recto(sağ) ikilileri.
+function pagePos(i: number): { col: 0 | 1; row: number } {
+  if (i === 0) return { col: 1, row: 0 };
+  const p = i - 1;
+  return { col: (p % 2) as 0 | 1, row: 1 + Math.floor(p / 2) };
+}
+
+type Band = { idx: number; leftPct: number; topPct: number; widthPct: number; heightPct: number };
 
 export function TypstPreviewCanvas({
   input,
@@ -23,11 +33,10 @@ export function TypstPreviewCanvas({
   input: TypstBookInput;
   editingBlock: number | null;
   onSelectBlock: (idx: number) => void;
-  // Düzenlenen blok için editör overlay'i. pxPerMm/renderDpi, SVG ölçeğine
-  // eşitlenir → editör metni Typst metniyle aynı boyda görünür.
+  // Düzenlenen blok için editör overlay'i. pxPerMm/renderDpi SVG ölçeğine eşitlenir.
   renderBlockOverlay?: (
     idx: number,
-    o: { topPct: number; heightPct: number; pxPerMm: number; renderDpi: number },
+    o: { leftPct: number; topPct: number; widthPct: number; heightPct: number; pxPerMm: number; renderDpi: number },
   ) => ReactNode;
 }) {
   const [svg, setSvg] = useState("");
@@ -35,12 +44,9 @@ export function TypstPreviewCanvas({
   const [status, setStatus] = useState<"idle" | "compiling" | "error">("idle");
   const reqId = useRef(0);
   const svgWrapRef = useRef<HTMLDivElement | null>(null);
-  // SVG'nin toplam yüksekliği (pt) — viewBox'tan okunur (boşluksuz dikey yığın).
-  const [totalHeightPt, setTotalHeightPt] = useState(0);
-  // Görüntülenen SVG'nin ölçeği: ekran-px / viewBox-pt (editör boyunu eşitlemek için).
+  // Görüntülenen SVG ölçeği: ekran-px / viewBox-pt (editör boyunu eşitlemek için).
   const [scale, setScale] = useState(0);
 
-  // Girdi değişince debounce'la derle + konumları al.
   useEffect(() => {
     if (input.blocks.length === 0) {
       setSvg("");
@@ -66,16 +72,44 @@ export function TypstPreviewCanvas({
     return () => clearTimeout(timer);
   }, [input]);
 
-  // SVG yerleşince viewBox yüksekliğini (toplam pt) + ekran ölçeğini oku;
-  // kapsayıcı yeniden boyutlanınca ölçeği güncelle (ResizeObserver).
+  // Dikey yığılmış SVG → açık-kitap ızgarası (sayfa <g> transform'larını yeniden
+  // yaz, viewBox'u güncelle). Paylaşılan defs/glyph referansları korunur.
+  const spread = useMemo(() => {
+    if (!svg) return null;
+    const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+    const root = doc.querySelector("svg");
+    if (!root || root.querySelector("parsererror")) return null;
+    const vb = (root.getAttribute("viewBox") || "").split(/\s+/).map(Number);
+    if (vb.length < 4 || !vb[2] || !vb[3]) return null;
+    const pages = [...root.children].filter((c) => c.tagName.toLowerCase() === "g");
+    const n = pages.length;
+    if (n === 0) return null;
+    const pageW = vb[2];
+    const pageH = vb[3] / n; // dikey yığında her sayfa eşit yükseklikte
+    const rows = pagePos(n - 1).row + 1;
+    const gridW = 2 * pageW;
+    const gridH = rows * pageH + Math.max(0, rows - 1) * ROW_GAP_PT;
+    const SVGNS = "http://www.w3.org/2000/svg";
+    pages.forEach((g, i) => {
+      const { col, row } = pagePos(i);
+      g.setAttribute("transform", `translate(${col * pageW}, ${row * (pageH + ROW_GAP_PT)})`);
+      // Beyaz kâğıt zemini (her sayfa için; boşluklar koyu kalır → ayrık sayfalar).
+      const rect = doc.createElementNS(SVGNS, "rect");
+      rect.setAttribute("x", "0");
+      rect.setAttribute("y", "0");
+      rect.setAttribute("width", String(pageW));
+      rect.setAttribute("height", String(pageH));
+      rect.setAttribute("fill", "#ffffff");
+      g.insertBefore(rect, g.firstChild);
+    });
+    root.setAttribute("viewBox", `0 0 ${gridW} ${gridH}`);
+    root.removeAttribute("width");
+    root.removeAttribute("height");
+    return { html: root.outerHTML, gridW, gridH, pageW, pageH };
+  }, [svg]);
+
+  // SVG yerleşince ekran ölçeğini oku (editör boyu için); rAF + ResizeObserver.
   useEffect(() => {
-    // toplam yükseklik viewBox'tan gelir → YERLEŞİM gerekmez, hemen oku (hotspot'lar
-    // bunu bekler). Ekran GENİŞLİĞİ (scale) yerleşim sonrası → rAF + ResizeObserver.
-    const svgEl = svgWrapRef.current?.querySelector("svg");
-    if (svgEl) {
-      const vb = svgEl.viewBox.baseVal;
-      if (vb && vb.height > 0) setTotalHeightPt(vb.height);
-    }
     const measureScale = () => {
       const el = svgWrapRef.current?.querySelector("svg");
       if (!el) return;
@@ -94,27 +128,29 @@ export function TypstPreviewCanvas({
       cancelAnimationFrame(raf);
       ro?.disconnect();
     };
-  }, [svg]);
+  }, [spread?.html]);
 
-  // Geometri: kırpma/taşma payı dahil sayfa yüksekliği (pt).
-  const to = input.cropMarks && input.bleedMm > 0 ? input.markOffsetMm : input.bleedMm;
-  const pageHeightPt = (input.size.height + 2 * to) * PT_PER_MM;
-
-  // Konumları → yüzde bantlara çevir. Her blok yığılmış-y'den bir sonraki bloğun
-  // yığılmış-y'sine kadar (paragrafı kaplar); aşırı boşluk (boş sayfa) sınırlanır.
+  // Blok konumları → ızgara koordinatında yüzde bantlar.
   const bands: Band[] = [];
-  if (totalHeightPt > 0 && positions.length > 0) {
+  if (spread && positions.length > 0) {
+    const { gridW, gridH, pageW, pageH } = spread;
     const sorted = [...positions].sort((a, b) => a.page - b.page || a.yPt - b.yPt);
-    const stackedY = (p: BlockPos) => (p.page - 1) * pageHeightPt + p.yPt;
+    const gx = (p: BlockPos) => pagePos(p.page - 1).col * pageW;
+    const gy = (p: BlockPos) => pagePos(p.page - 1).row * (pageH + ROW_GAP_PT) + p.yPt;
     for (let i = 0; i < sorted.length; i++) {
       const cur = sorted[i];
-      const top = stackedY(cur);
+      const top = gy(cur);
       const next = sorted[i + 1];
-      // Bandın altı: sonraki blok AYNI sayfadaysa onun tepesi, değilse bu sayfanın
-      // altı (band asla boş/sonraki sayfaya taşmasın).
-      const bottom = next && next.page === cur.page ? stackedY(next) : cur.page * pageHeightPt;
-      const h = Math.max(12, bottom - top);
-      bands.push({ idx: cur.idx, topPct: (top / totalHeightPt) * 100, heightPct: (h / totalHeightPt) * 100 });
+      // Bandın altı: sonraki blok AYNI sayfadaysa onun tepesi; değilse sayfa altı.
+      const pageBottom = pagePos(cur.page - 1).row * (pageH + ROW_GAP_PT) + pageH;
+      const bottom = next && next.page === cur.page ? gy(next) : pageBottom;
+      bands.push({
+        idx: cur.idx,
+        leftPct: (gx(cur) / gridW) * 100,
+        topPct: (top / gridH) * 100,
+        widthPct: (pageW / gridW) * 100,
+        heightPct: (Math.max(12, bottom - top) / gridH) * 100,
+      });
     }
   }
   const editBand = editingBlock != null ? bands.find((b) => b.idx === editingBlock) : undefined;
@@ -130,12 +166,12 @@ export function TypstPreviewCanvas({
         )}
       </div>
 
-      {svg ? (
-        <div ref={svgWrapRef} className="relative mx-auto max-w-[560px]">
-          {/* Gerçek Typst sayfaları (= PDF) */}
+      {spread ? (
+        <div ref={svgWrapRef} className="relative mx-auto max-w-[920px]">
+          {/* Gerçek Typst sayfaları (= PDF), açık-kitap düzeninde */}
           <div
-            className="[&_svg]:h-auto [&_svg]:w-full [&_svg]:rounded-sm [&_svg]:bg-white [&_svg]:shadow-[0_2px_16px_rgba(0,0,0,0.18)]"
-            dangerouslySetInnerHTML={{ __html: svg }}
+            className="[&_svg]:h-auto [&_svg]:w-full [&_svg]:overflow-visible"
+            dangerouslySetInnerHTML={{ __html: spread.html }}
           />
           {/* Tıklanabilir blok bölgeleri */}
           <div className="absolute inset-0">
@@ -145,18 +181,23 @@ export function TypstPreviewCanvas({
                 type="button"
                 onClick={() => onSelectBlock(b.idx)}
                 title="Düzenle / sayfa düzeni"
-                className={`absolute left-0 w-full cursor-pointer rounded-sm transition ${
+                className={`absolute cursor-pointer rounded-sm transition ${
                   editingBlock === b.idx ? "bg-accent/15 ring-1 ring-accent" : "hover:bg-accent/10"
                 }`}
-                style={{ top: `${b.topPct}%`, height: `${b.heightPct}%` }}
+                style={{ left: `${b.leftPct}%`, top: `${b.topPct}%`, width: `${b.widthPct}%`, height: `${b.heightPct}%` }}
               />
             ))}
           </div>
-          {/* Düzenlenen bloğun editör overlay'i (Typst ölçeğiyle eşit boyda) */}
+          {/* Düzenlenen bloğun editör overlay'i (sayfa sütununda, Typst boyunda) */}
           {editBand && renderBlockOverlay && scale > 0 && (
-            <div className="absolute left-0 w-full" style={{ top: `${editBand.topPct}%` }}>
+            <div
+              className="absolute"
+              style={{ left: `${editBand.leftPct}%`, top: `${editBand.topPct}%`, width: `${editBand.widthPct}%` }}
+            >
               {renderBlockOverlay(editBand.idx, {
+                leftPct: editBand.leftPct,
                 topPct: editBand.topPct,
+                widthPct: editBand.widthPct,
                 heightPct: editBand.heightPct,
                 pxPerMm: (scale * 72) / 25.4,
                 renderDpi: scale * 72,
