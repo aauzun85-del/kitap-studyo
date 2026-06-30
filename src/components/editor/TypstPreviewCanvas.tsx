@@ -130,21 +130,22 @@ export function TypstPreviewCanvas({
     };
   }, [spread?.html]);
 
-  // Blok konumları → ızgara koordinatında yüzde bantlar.
-  const bands: Band[] = [];
-  if (spread && positions.length > 0) {
+  // Blok konumları → ızgara koordinatında yüzde bantlar (memoize: seçimde
+  // yeniden hesaplanmasın).
+  const bands = useMemo<Band[]>(() => {
+    if (!spread || positions.length === 0) return [];
     const { gridW, gridH, pageW, pageH } = spread;
     const sorted = [...positions].sort((a, b) => a.page - b.page || a.yPt - b.yPt);
     const gx = (p: BlockPos) => pagePos(p.page - 1).col * pageW;
     const gy = (p: BlockPos) => pagePos(p.page - 1).row * (pageH + ROW_GAP_PT) + p.yPt;
+    const out: Band[] = [];
     for (let i = 0; i < sorted.length; i++) {
       const cur = sorted[i];
       const top = gy(cur);
       const next = sorted[i + 1];
-      // Bandın altı: sonraki blok AYNI sayfadaysa onun tepesi; değilse sayfa altı.
       const pageBottom = pagePos(cur.page - 1).row * (pageH + ROW_GAP_PT) + pageH;
       const bottom = next && next.page === cur.page ? gy(next) : pageBottom;
-      bands.push({
+      out.push({
         idx: cur.idx,
         leftPct: (gx(cur) / gridW) * 100,
         topPct: (top / gridH) * 100,
@@ -152,7 +153,26 @@ export function TypstPreviewCanvas({
         heightPct: (Math.max(12, bottom - top) / gridH) * 100,
       });
     }
-  }
+    return out;
+  }, [spread, positions]);
+
+  // Hotspot düğmeleri — editingBlock'a BAĞLI DEĞİL (seçim göstergesi editör
+  // kutusudur) → seçimde yeniden çizilmez (büyük kitapta hız). onSelectBlock
+  // sabittir (LayoutStudio'da ref tabanlı).
+  const hotspots = useMemo(
+    () =>
+      bands.map((b) => (
+        <button
+          key={b.idx}
+          type="button"
+          onClick={() => onSelectBlock(b.idx)}
+          title="Düzenle / sayfa düzeni"
+          className="absolute cursor-pointer rounded-sm transition hover:bg-accent/10"
+          style={{ left: `${b.leftPct}%`, top: `${b.topPct}%`, width: `${b.widthPct}%`, height: `${b.heightPct}%` }}
+        />
+      )),
+    [bands, onSelectBlock],
+  );
   const editBand = editingBlock != null ? bands.find((b) => b.idx === editingBlock) : undefined;
 
   return (
@@ -173,21 +193,8 @@ export function TypstPreviewCanvas({
             className="[&_svg]:h-auto [&_svg]:w-full [&_svg]:overflow-visible"
             dangerouslySetInnerHTML={{ __html: spread.html }}
           />
-          {/* Tıklanabilir blok bölgeleri */}
-          <div className="absolute inset-0">
-            {bands.map((b) => (
-              <button
-                key={b.idx}
-                type="button"
-                onClick={() => onSelectBlock(b.idx)}
-                title="Düzenle / sayfa düzeni"
-                className={`absolute cursor-pointer rounded-sm transition ${
-                  editingBlock === b.idx ? "bg-accent/15 ring-1 ring-accent" : "hover:bg-accent/10"
-                }`}
-                style={{ left: `${b.leftPct}%`, top: `${b.topPct}%`, width: `${b.widthPct}%`, height: `${b.heightPct}%` }}
-              />
-            ))}
-          </div>
+          {/* Tıklanabilir blok bölgeleri (memoize) */}
+          <div className="absolute inset-0">{hotspots}</div>
           {/* Düzenlenen bloğun editör overlay'i (sayfa sütununda, Typst boyunda) */}
           {editBand && renderBlockOverlay && scale > 0 && (
             <div

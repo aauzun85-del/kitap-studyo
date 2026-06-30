@@ -170,7 +170,8 @@ export default function LayoutStudio({
   // ilk-satır girintisiyle ayrılır, ekstra boşlukla değil. Boşluk eklemek tek
   // taban-çizgisi ızgarasını bozar (satır aralığı 15/20.7 pt karışır); bu yüzden
   // ızgara, gövde satırlarını leading'in katına hizalar (bkz. paginate snapBodyGap).
-  const [paragraphSpacingMm, setParagraphSpacingMm] = useState(0);
+  // Varsayılan: her paragraftan sonra ~1 satır boşluk (kullanıcı isteği).
+  const [paragraphSpacingMm, setParagraphSpacingMm] = useState(5);
   const [headingFontId, setHeadingFontId] = useState("sourceserif");
   const [detectHeadings, setDetectHeadings] = useState(true);
 
@@ -454,14 +455,19 @@ export default function LayoutStudio({
 
   // Bir bloğu düzenlemeye başla (JS önizleme satırı VEYA Typst sayfa hotspot'u).
   // Başka bloğa geçmeden ÖNCE mevcut düzenlemeyi commit'le (tıklama blur etmez).
-  const startEditBlock = useCallback(
-    (i: number) => {
-      if (editingBlock != null && editingBlock !== i) editorApiRef.current?.commit();
-      setSelFmt({ bold: false, italic: false });
-      setEditingBlock(i);
-    },
-    [editingBlock],
-  );
+  // editingBlock'u REF'ten okur → callback SABİT kalır (TypstPreviewCanvas
+  // hotspot'larını memoize edebilsin → her seçimde 100'lerce div yeniden
+  // çizilmesin = "işaretleyince yavaş" düzelir).
+  const editingBlockRef = useRef<number | null>(null);
+  useEffect(() => {
+    editingBlockRef.current = editingBlock;
+  }, [editingBlock]);
+  const startEditBlock = useCallback((i: number) => {
+    const cur = editingBlockRef.current;
+    if (cur != null && cur !== i) editorApiRef.current?.commit();
+    setSelFmt({ bold: false, italic: false });
+    setEditingBlock(i);
+  }, []);
 
   const setBlockFont = useCallback(
     (family: string) => mutateEditingBlock((b) => (b.type === "blank" ? b : { ...b, fontFamily: family })),
@@ -1061,14 +1067,8 @@ export default function LayoutStudio({
           {editingBlockData && (
             <FormatBar
               t={t}
-              block={editingBlockData}
-              fontId={"fontFamily" in editingBlockData && editingBlockData.fontFamily ? idOfFamily(editingBlockData.fontFamily) : blockDefaultFontId(editingBlockData, fontId, headingFontId)}
-              sizePt={("sizePt" in editingBlockData ? editingBlockData.sizePt : undefined) ?? blockDefaultSizePt(editingBlockData, bodySizePt)}
               selBold={selFmt.bold}
               selItalic={selFmt.italic}
-              onFont={(id) => setBlockFont(familyOf(id))}
-              onSize={setBlockSize}
-              onAlign={setBlockAlign}
               onToggleBold={toggleSelBold}
               onToggleItalic={toggleSelItalic}
               onSendNextPage={() => editingBlock != null && sendBlockToNextPage(editingBlock)}
@@ -1503,17 +1503,18 @@ function Toggle({
   );
 }
 
+// Typst motorunun GERÇEKTEN yüklediği/render ettiği gövde fontları (3 aile).
+// Diğer aileler Typst'te sessizce Source Serif'e düşerdi → "font değişmiyor"
+// görünürdü. Bu yüzden gövde/başlık seçicileri yalnız bunları sunar.
+const TYPST_FONTS = COVER_FONTS.filter((f) => ["sourceserif", "vollkorn", "arnopro"].includes(f.id));
+
 function FontSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} className={inputCls}>
-      {FONT_CATEGORY_ORDER.map((cat: FontCategory) => (
-        <optgroup key={cat} label={cat}>
-          {COVER_FONTS.filter((f) => f.category === cat).map((f) => (
-            <option key={f.id} value={f.id} style={{ fontFamily: fontFamilyOf(f.id) }}>
-              {f.label}
-            </option>
-          ))}
-        </optgroup>
+      {TYPST_FONTS.map((f) => (
+        <option key={f.id} value={f.id} style={{ fontFamily: fontFamilyOf(f.id) }}>
+          {f.label}
+        </option>
       ))}
     </select>
   );
@@ -2271,14 +2272,8 @@ function LineView({
 // data-fmtbar: editör odağı çubuğa geçince düzenleme kapanmasın diye işaret.
 function FormatBar({
   t,
-  block,
-  fontId,
-  sizePt,
   selBold,
   selItalic,
-  onFont,
-  onSize,
-  onAlign,
   onToggleBold,
   onToggleItalic,
   onSendNextPage,
@@ -2288,14 +2283,8 @@ function FormatBar({
   onClose,
 }: {
   t: T;
-  block: Block;
-  fontId: string;
-  sizePt: number;
   selBold: boolean;
   selItalic: boolean;
-  onFont: (id: string) => void;
-  onSize: (pt: number) => void;
-  onAlign: (a: ParaAlign) => void;
   onToggleBold: () => void;
   onToggleItalic: () => void;
   onSendNextPage: () => void;
@@ -2304,19 +2293,9 @@ function FormatBar({
   canPullPrev: boolean;
   onClose: () => void;
 }) {
-  // Kalın/italik vurgusu artık seçili metnin canlı durumundan gelir.
+  // Kalın/italik vurgusu seçili metnin canlı durumundan gelir.
   const isBold = selBold;
   const isItalic = selItalic;
-  const curAlign =
-    block.type === "blank" || block.type === "table" || block.type === "pagebreak" || block.type === "spacer"
-      ? undefined
-      : block.align;
-  const aligns: { a: ParaAlign; label: string; sym: string }[] = [
-    { a: "left", label: t.alignLeft, sym: "⯇" },
-    { a: "center", label: "Orta", sym: "≡" },
-    { a: "right", label: "Sağ", sym: "⯈" },
-    { a: "justify", label: t.alignJustify, sym: "▤" },
-  ];
   const btn = "flex h-8 min-w-8 items-center justify-center rounded-md border border-border bg-background px-2 text-sm text-foreground transition hover:border-accent";
   const btnOn = "border-accent bg-accent-soft text-accent";
   // Düğmeler odağı çalmasın (textarea odakta kalsın) diye mousedown'da preventDefault.
@@ -2326,53 +2305,12 @@ function FormatBar({
       data-fmtbar
       className="sticky top-0 z-10 mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface/95 px-3 py-2 shadow-sm backdrop-blur"
     >
-      <select
-        value={fontId}
-        onChange={(e) => onFont(e.target.value)}
-        className="h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-accent"
-      >
-        {FONT_CATEGORY_ORDER.map((cat: FontCategory) => (
-          <optgroup key={cat} label={cat}>
-            {COVER_FONTS.filter((f) => f.category === cat).map((f) => (
-              <option key={f.id} value={f.id} style={{ fontFamily: fontFamilyOf(f.id) }}>
-                {f.label}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-
-      <input
-        type="number"
-        min={6}
-        max={96}
-        step={0.5}
-        value={sizePt}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          if (Number.isFinite(v) && v >= 6 && v <= 96) onSize(v);
-        }}
-        className="h-8 w-16 rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-accent"
-        title={t.fontSizeLabel}
-      />
-      <span className="text-xs text-muted">{t.unitPt}</span>
-
-      <div className="mx-1 h-5 w-px bg-border" />
-
       <button type="button" onMouseDown={keepFocus} onClick={onToggleBold} className={`${btn} font-bold ${isBold ? btnOn : ""}`} title="Kalın">
         B
       </button>
       <button type="button" onMouseDown={keepFocus} onClick={onToggleItalic} className={`${btn} italic ${isItalic ? btnOn : ""}`} title="İtalik">
         I
       </button>
-
-      <div className="mx-1 h-5 w-px bg-border" />
-
-      {aligns.map(({ a, label, sym }) => (
-        <button key={a} type="button" onMouseDown={keepFocus} onClick={() => onAlign(a)} className={`${btn} ${curAlign === a ? btnOn : ""}`} title={label}>
-          {sym}
-        </button>
-      ))}
 
       <div className="mx-1 h-5 w-px bg-border" />
 
