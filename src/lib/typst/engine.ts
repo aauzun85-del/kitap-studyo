@@ -8,10 +8,20 @@ import { COMPILER_WASM_URL, RENDERER_WASM_URL, loadFontData } from "./assets";
 // Görsel varlığı: sanal yol → bayt (Typst VFS'e mapShadow edilir).
 export type TypstAsset = { path: string; data: Uint8Array };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyWorld = { compile: () => Promise<unknown>; query: (o: { selector: string; field?: string }) => Promise<unknown[]> };
 type Snippet = {
   pdf: (o: { mainContent: string }) => Promise<Uint8Array>;
   svg: (o: { mainContent: string }) => Promise<string>;
   mapShadow: (path: string, data: Uint8Array) => Promise<void>;
+  // Introspection için düşük seviye: snippet.query() compile ETMİYOR (paged doc
+  // yok → "not compiled"). Bu yüzden getCompileOptions + getCompiler.runWithWorld
+  // ile world.compile() SONRA world.query() yaparız.
+  getCompileOptions: (o: { mainContent: string }) => Promise<unknown>;
+  getCompiler: () => Promise<{
+    runWithWorld: (opts: unknown, cb: (w: AnyWorld) => Promise<unknown>) => Promise<unknown>;
+  }>;
+  removeTmp: (opts: unknown) => void;
 };
 
 let enginePromise: Promise<Snippet> | null = null;
@@ -34,7 +44,9 @@ async function init(): Promise<Snippet> {
     TypstSnippet.preloadFonts(fontData),
   );
 
-  return $typst as Snippet;
+  // unknown üzerinden: getCompileOptions TS'de private ama JS'de erişilebilir
+  // (introspection için runWithWorld+compile+query gerekiyor).
+  return $typst as unknown as Snippet;
 }
 
 export function getTypstEngine(): Promise<Snippet> {
@@ -59,6 +71,25 @@ export function compilePdf(src: string, assets: TypstAsset[] = []): Promise<Uint
 
 export function compileSvg(src: string, assets: TypstAsset[] = []): Promise<string> {
   return serialized(assets, (e) => e.svg({ mainContent: src }));
+}
+
+// Introspection: belgeyi derler ve selector'la eşleşen elemanları döndürür
+// (tıklanabilir önizleme için blok konumları). svg/pdf ile AYNI mutex → $typst
+// durumu bozulmaz.
+export function compileQuery(src: string, selector: string, assets: TypstAsset[] = [], field?: string): Promise<unknown[]> {
+  return serialized(assets, async (e) => {
+    const opts = await e.getCompileOptions({ mainContent: src });
+    const compiler = await e.getCompiler(); // RESET değil → mapShadow/font korunur
+    try {
+      const out = await compiler.runWithWorld(opts, async (world) => {
+        await world.compile(); // paged dökümanı derle (yoksa query "not compiled")
+        return world.query({ selector, field });
+      });
+      return (out as unknown[]) ?? [];
+    } finally {
+      e.removeTmp(opts);
+    }
+  });
 }
 
 // Mizanpaj açılışında çağrılır → 28MB WASM kullanıcı yazarken arkada ısınır.

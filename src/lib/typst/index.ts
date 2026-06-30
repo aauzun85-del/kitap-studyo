@@ -3,7 +3,7 @@
 // (WASM, tembel+mutex) → patchPdfBoxes (Trim/Bleed kutuları).
 
 import { bookToTypst, type TypstBookInput } from "./serialize";
-import { compilePdf, compileSvg, prewarmTypst } from "./engine";
+import { compilePdf, compileSvg, compileQuery, prewarmTypst } from "./engine";
 import { patchPdfBoxes } from "./patchBoxes";
 import { optimizeImagesForPrint } from "./optimizeImage";
 
@@ -29,4 +29,32 @@ export async function exportBookPdfTypst(input: TypstBookInput): Promise<Uint8Ar
 // İleride önizleme için: aynı serializer çıktısını SVG'ye derler (kayma biter).
 export async function renderBookSvgTypst(input: TypstBookInput): Promise<string> {
   return compileSvg(bookToTypst(input), collectAssets(input));
+}
+
+// Tıklanabilir önizleme: SVG + her bloğun (idx, sayfa, y) konumu (introspection).
+// AYNI src üzerinde compileSvg + compileQuery → konumlar SVG ile birebir.
+export type BlockPos = { idx: number; page: number; yPt: number };
+export async function renderBookSvgWithBlocks(
+  input: TypstBookInput,
+): Promise<{ svg: string; blocks: BlockPos[] }> {
+  const src = bookToTypst(input);
+  const assets = collectAssets(input);
+  const svg = await compileSvg(src, assets);
+  // Konum sorgusu (introspection) BAŞARISIZ olsa bile SVG'yi döndür → önizleme
+  // çalışır, yalnız tıklanabilir bölgeler olmaz.
+  let raw: unknown[] = [];
+  try {
+    raw = await compileQuery(src, "<blk>", assets);
+  } catch {
+    /* yok say */
+  }
+  const blocks: BlockPos[] = [];
+  for (const el of raw as Array<{ value?: { idx?: number; p?: number; y?: number } }>) {
+    const v = el?.value;
+    if (v && typeof v.idx === "number" && typeof v.p === "number" && typeof v.y === "number") {
+      blocks.push({ idx: v.idx, page: v.p, yPt: v.y });
+    }
+  }
+  blocks.sort((a, b) => a.idx - b.idx);
+  return { svg, blocks };
 }

@@ -47,6 +47,7 @@ import { exportBookPdf } from "@/lib/layout/pdf";
 import { exportBookPdfTypst, type TypstBookInput } from "@/lib/typst";
 import { ManuscriptEditor } from "@/components/editor/ManuscriptEditor";
 import { LiveTypstPreview } from "@/components/editor/LiveTypstPreview";
+import { TypstPreviewCanvas } from "@/components/editor/TypstPreviewCanvas";
 import ExportOverlay from "@/components/app/ExportOverlay";
 import {
   COVER_FONTS,
@@ -205,6 +206,9 @@ export default function LayoutStudio({
   // hissi olmasın; istenince açılır).
   const [writeMode, setWriteMode] = useState(false);
   const [showWritePreview, setShowWritePreview] = useState(false);
+  // Önizleme motoru: "typst" = gerçek baskı sayfası (=PDF), tıklanabilir bloklar;
+  // "js" = hızlı yaklaşık önizleme (yedek).
+  const [previewEngine, setPreviewEngine] = useState<"typst" | "js">("typst");
 
   // PDF dışa aktarma.
   const [cropMarks, setCropMarks] = useState(true);
@@ -450,6 +454,17 @@ export default function LayoutStudio({
       applyLayout([...blocks.slice(0, i - 1), ...blocks.slice(i)]);
     },
     [blocks, applyLayout],
+  );
+
+  // Bir bloğu düzenlemeye başla (JS önizleme satırı VEYA Typst sayfa hotspot'u).
+  // Başka bloğa geçmeden ÖNCE mevcut düzenlemeyi commit'le (tıklama blur etmez).
+  const startEditBlock = useCallback(
+    (i: number) => {
+      if (editingBlock != null && editingBlock !== i) editorApiRef.current?.commit();
+      setSelFmt({ bold: false, italic: false });
+      setEditingBlock(i);
+    },
+    [editingBlock],
   );
 
   const setBlockFont = useCallback(
@@ -976,6 +991,26 @@ export default function LayoutStudio({
                 </button>
               </div>
             )}
+            {!writeMode && (
+              <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5" title="Typst: gerçek baskı sayfası (=PDF), tıklanabilir. Hızlı: metin düzenleme.">
+                <button
+                  onClick={() => setPreviewEngine("typst")}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                    previewEngine === "typst" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  Typst
+                </button>
+                <button
+                  onClick={() => setPreviewEngine("js")}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                    previewEngine === "js" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  Hızlı
+                </button>
+              </div>
+            )}
             {writeMode && sourceMode === "manual" && (
               <button
                 onClick={() => setShowWritePreview((v) => !v)}
@@ -1107,6 +1142,8 @@ export default function LayoutStudio({
             <div className="flex h-full min-h-[300px] items-center justify-center text-center text-sm text-muted">
               {t.emptyPreview}
             </div>
+          ) : previewEngine === "typst" ? (
+            <TypstPreviewCanvas input={typstInput} editingBlock={editingBlock} onSelectBlock={startEditBlock} />
           ) : (
             <div className="flex flex-col items-center gap-6">
               {(() => {
@@ -1129,14 +1166,7 @@ export default function LayoutStudio({
                     showEditor={page.number === editingFirstPage}
                     editingRuns={editingRuns}
                     editorApiRef={editorApiRef}
-                    onStartEdit={(i) => {
-                      // Başka bloğa geçmeden ÖNCE mevcut düzenlemeyi commit'le:
-                      // satır tıklaması contentEditable'ı blur ETMEZ (div odaklanamaz)
-                      // → yoksa commitBlockFinal hiç çalışmaz, edit raw'a geçmez.
-                      if (editingBlock != null && editingBlock !== i) editorApiRef.current?.commit();
-                      setSelFmt({ bold: false, italic: false });
-                      setEditingBlock(i);
-                    }}
+                    onStartEdit={startEditBlock}
                     onCommitFinal={commitBlockFinal}
                     onCommitDraft={commitBlockDraft}
                     onEndEdit={() => setEditingBlock(null)}

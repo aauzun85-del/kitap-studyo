@@ -27,13 +27,15 @@ export type TypstBookInput = {
 
 // Bölüm açılışı (level-1 ana başlık): sağ-sayfa + üst boşluk + "BÖLÜM N" kicker +
 // başlık (gerçek #heading → içindekiler/koşu başlığı görür) + süs.
-function chapterOpen(b: Extract<Block, { type: "heading" }>, s: LayoutSettings, contentHeightMm: number): string {
+function chapterOpen(b: Extract<Block, { type: "heading" }>, marker: string, s: LayoutSettings, contentHeightMm: number): string {
   const right = s.chapterStartsOnRightPage;
   const topMm = ((s.chapterTopRatio ?? 0.12) * contentHeightMm).toFixed(2);
   const orn = s.chapterOrnament ?? "none";
   const showKick = s.showChapterKicker ?? true;
   const kick = showKick && b.kicker ? `kicker: ${typstStr(b.kicker)}, ` : "";
-  const title = `#heading(level: 1, outlined: true)[${runsToMarkup(b.runs)}]`;
+  // marker (blok jetonu) sayfa kırılışından SONRA, başlığın yanında → konumu bölüm
+  // sayfasını verir (kırılıştan önce olsa önceki sayfayı gösterirdi).
+  const title = `${marker} #heading(level: 1, outlined: true)[${runsToMarkup(b.runs)}]`;
   return `#_chapter(${kick}ornament: "${orn}", right: ${right}, top: ${topMm}mm)[${title}]`;
 }
 
@@ -125,21 +127,31 @@ export function bookToTypst(input: TypstBookInput): string {
 
   // Durumlu gez: ana bölüm başlığı → açılış + drop-cap'i sıraya koy; sonraki ilk
   // paragraf drop-cap olur. Boş bloklar bekletmeyi bozmaz; diğerleri iptal eder.
+  // Her GÖRÜNÜR bloğa konum-yakalayan görünmez işaret: context ile sayfa + y
+  // (pt) bloğun değerine gömülür → query("<blk>") indeks+konum döndürür. idx ===
+  // blocks[] dizini (tıklanabilir önizleme overlay'i için). Görünmez+sıfır
+  // yükseklik → PDF dizgisini değiştirmez.
+  const tag = (i: number) =>
+    `#context [#metadata((idx: ${i}, p: here().page(), y: here().position().y / 1pt)) <blk>]`;
+  const taggable = (b: Block) =>
+    b.type === "heading" || b.type === "paragraph" || b.type === "blockquote" || b.type === "image" || b.type === "table";
+
   let pendingDropCap = false;
-  for (const b of blocks) {
+  blocks.forEach((b, i) => {
+    const mk = taggable(b) ? tag(i) + "\n" : "";
     if (b.type === "heading" && b.level === 1 && !b.subhead) {
-      out.push(chapterOpen(b, input.settings, contentHeightMm));
+      out.push(chapterOpen(b, tag(i), input.settings, contentHeightMm));
       pendingDropCap = input.settings.dropCap;
-      continue;
+      return;
     }
     if (b.type === "paragraph" && pendingDropCap) {
-      out.push(dropCapPara(b));
+      out.push(mk + dropCapPara(b));
       pendingDropCap = false;
-      continue;
+      return;
     }
     if (b.type !== "blank") pendingDropCap = false;
-    out.push(blockToTypst(b, contentWidthMm));
-  }
+    out.push(mk + blockToTypst(b, contentWidthMm));
+  });
   const body = out.filter((s) => s.length > 0).join("\n\n");
 
   return `${preamble}\n${body}\n`;
