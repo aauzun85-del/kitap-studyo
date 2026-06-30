@@ -45,6 +45,7 @@ import { blocksToMarkdown } from "@/lib/layout/blocksToMarkdown";
 import type { MediaMap } from "@/lib/layout/mediaTokens";
 import { exportBookPdf } from "@/lib/layout/pdf";
 import { exportBookPdfTypst, type TypstBookInput } from "@/lib/typst";
+import { preflightPdf, type PreflightReport } from "@/lib/publishing/preflight";
 import { TypstPreviewCanvas } from "@/components/editor/TypstPreviewCanvas";
 import ExportOverlay from "@/components/app/ExportOverlay";
 import {
@@ -623,6 +624,43 @@ export default function LayoutStudio({
     }
   }, [blocks, meta, settings, sizeId, margins, gutter, cropMarks, standard, bleedOn, title]);
 
+  // Baskı denetimi (preflight): Typst PDF'ini üret + yapısal baskı kontrolleri.
+  const [preflightReport, setPreflightReport] = useState<PreflightReport | null>(null);
+  const [preflightRunning, setPreflightRunning] = useState(false);
+  const handlePreflight = useCallback(async () => {
+    if (blocks.length === 0) return;
+    setPreflightRunning(true);
+    setPreflightReport(null);
+    try {
+      const profile = STANDARD_PROFILES[standard];
+      const bleedMm = effectiveBleedMm(standard, bleedOn);
+      const cropOn = profile.cropMarksAllowed ? cropMarks : false;
+      const bytes = await exportBookPdfTypst({
+        meta,
+        blocks,
+        settings,
+        size: getSize(sizeId),
+        margins,
+        gutter,
+        bleedMm,
+        markOffsetMm: profile.markOffsetMm,
+        cropMarks: cropOn,
+      });
+      const to = cropOn && bleedMm > 0 ? profile.markOffsetMm : bleedMm;
+      const report = await preflightPdf(bytes, { sizeMm: getSize(sizeId), toMm: to, bleedMm });
+      setPreflightReport(report);
+    } catch (e) {
+      setPreflightReport({
+        items: [{ level: "error", label: "Denetim başarısız", detail: String(e) }],
+        errorCount: 1,
+        warnCount: 0,
+        ready: false,
+      });
+    } finally {
+      setPreflightRunning(false);
+    }
+  }, [blocks, meta, settings, sizeId, margins, gutter, cropMarks, standard, bleedOn]);
+
   // Export modu: yazı tipleri yüklenip sayfalama hazır olunca İç sayfa PDF'ini
   // bir kez otomatik indir (indirme ekranındaki tuştan gelindi). Metin
   // initialProject'ten SENKRON gelir (cover'ın aksine ağ beklemesi yok), ayrıca
@@ -804,6 +842,9 @@ export default function LayoutStudio({
           backHref={projectId ? `/${lang}/indir?project=${projectId}` : `/${lang}/projeler`}
           onDownload={() => void handleExportPdfTypst()}
         />
+      )}
+      {preflightReport && (
+        <PreflightDialog report={preflightReport} onClose={() => setPreflightReport(null)} />
       )}
       <aside className="w-full shrink-0 lg:w-[380px]">
         <div className="grid grid-cols-5 gap-1 rounded-xl border border-border bg-surface p-1">
@@ -1051,6 +1092,14 @@ export default function LayoutStudio({
               className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {exporting ? t.exportingLabel : t.exportPdfCta}
+            </button>
+            <button
+              onClick={() => void handlePreflight()}
+              disabled={preflightRunning || blocks.length === 0}
+              title="Üretilen PDF'i baskı kurallarına göre denetle (sayfa boyutu, TrimBox, font gömme…)"
+              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {preflightRunning ? "Denetleniyor…" : "Baskı Denetimi"}
             </button>
           </div>
         </div>
@@ -1367,6 +1416,62 @@ function buildQualityChecks({
   // isteğe-bağlı kapalı kitap "hazır değil" yanılgısı vermesin.
   const score = Math.max(0, Math.min(100, 100 - errorCount * 18 - warningCount * 5));
   return { score, checks, errorCount, warningCount, successCount };
+}
+
+function PreflightDialog({ report, onClose }: { report: PreflightReport; onClose: () => void }) {
+  const levelIcon = (level: "ok" | "warn" | "error") =>
+    level === "ok" ? "✅" : level === "warn" ? "⚠️" : "❌";
+  const summary = report.ready
+    ? "Baskıya hazır"
+    : `${report.errorCount} hata${report.warnCount > 0 ? `, ${report.warnCount} uyarı` : ""}`;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-md rounded-2xl border border-border bg-surface shadow-2xl">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Baskı Denetimi</h2>
+            <p className={`mt-0.5 text-xs font-medium ${report.ready ? "text-emerald-600" : "text-red-600"}`}>
+              {summary}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-muted transition hover:bg-foreground/10 hover:text-foreground"
+            aria-label="Kapat"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto px-5 py-4">
+          <div className="space-y-2">
+            {report.items.map((item, i) => (
+              <div key={i} className="rounded-lg border border-border bg-background px-3 py-2.5">
+                <div className="flex items-start gap-2.5">
+                  <span className="mt-0.5 text-sm leading-none">{levelIcon(item.level)}</span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-foreground">{item.label}</div>
+                    {item.detail && (
+                      <div className="mt-0.5 text-[11px] leading-relaxed text-muted">{item.detail}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="border-t border-border px-5 py-3">
+          <p className="text-[11px] text-muted">
+            Yapısal PDF denetimi (şifreleme, boyut, TrimBox, gömülü font). DPI/CMYK kontrolü için baskıevi aracını kullanın.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
