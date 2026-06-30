@@ -414,12 +414,34 @@ export default function LayoutStudio({
     setRaw(markdown);
     setEditingBlock(null);
   }, []);
+  // İmleç paragrafın ortasındaysa oradan böl (cümle-bazlı); değilse tüm bloğa
+  // uygula. İki yarı arasına ayraç (pagebreak/spacer) girer.
   const sendBlockToNextPage = useCallback(
-    (i: number) => applyLayout([...blocks.slice(0, i), { type: "pagebreak" }, ...blocks.slice(i)]),
+    (i: number) => {
+      const blk = blocks[i];
+      if (blk?.type === "paragraph") {
+        const s = editorApiRef.current?.splitAtCaret?.();
+        if (s && s.before.length && s.after.length) {
+          applyLayout([...blocks.slice(0, i), { ...blk, runs: s.before }, { type: "pagebreak" }, { ...blk, runs: s.after }, ...blocks.slice(i + 1)]);
+          return;
+        }
+      }
+      applyLayout([...blocks.slice(0, i), { type: "pagebreak" }, ...blocks.slice(i)]);
+    },
     [blocks, applyLayout],
   );
   const addSpaceAfterBlock = useCallback(
-    (i: number) => applyLayout([...blocks.slice(0, i + 1), { type: "spacer", mm: 8 }, ...blocks.slice(i + 1)]),
+    (i: number) => {
+      const blk = blocks[i];
+      if (blk?.type === "paragraph") {
+        const s = editorApiRef.current?.splitAtCaret?.();
+        if (s && s.before.length && s.after.length) {
+          applyLayout([...blocks.slice(0, i), { ...blk, runs: s.before }, { type: "spacer", mm: 8 }, { ...blk, runs: s.after }, ...blocks.slice(i + 1)]);
+          return;
+        }
+      }
+      applyLayout([...blocks.slice(0, i + 1), { type: "spacer", mm: 8 }, ...blocks.slice(i + 1)]);
+    },
     [blocks, applyLayout],
   );
   const pullBlockToPrevPage = useCallback(
@@ -2062,7 +2084,29 @@ type EditorApi = {
   toggleBold: () => void;
   toggleItalic: () => void;
   commit: () => void; // ✕ düğmesi: kaydet ve düzenlemeyi bitir.
+  // İmleç paragrafın ORTASINDAYSA run'ları imleçten ikiye böler (cümle-bazlı
+  // sayfa-sonu/boşluk için). Başta/sonda ya da seçim yoksa null.
+  splitAtCaret: () => { before: Run[]; after: Run[] } | null;
 };
+
+// run dizisini karakter ofsetinden ikiye böler (imleçten paragraf bölme).
+function splitRunsAt(runs: Run[], offset: number): { before: Run[]; after: Run[] } {
+  const before: Run[] = [];
+  const after: Run[] = [];
+  let pos = 0;
+  for (const r of runs) {
+    const len = r.text.length;
+    if (pos + len <= offset) before.push(r);
+    else if (pos >= offset) after.push(r);
+    else {
+      const cut = offset - pos;
+      before.push({ ...r, text: r.text.slice(0, cut) });
+      after.push({ ...r, text: r.text.slice(cut) });
+    }
+    pos += len;
+  }
+  return { before: before.filter((r) => r.text.length > 0), after: after.filter((r) => r.text.length > 0) };
+}
 
 function runsEqual(a: Run[], b: Run[]): boolean {
   if (a.length !== b.length) return false;
@@ -2413,6 +2457,22 @@ function RichBlockEditor({
         committedRef.current = true;
         onCommitFinal(read());
         onEnd();
+      },
+      splitAtCaret: () => {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0 || !node) return null;
+        const r = sel.getRangeAt(0);
+        if (!node.contains(r.startContainer)) return null;
+        // İmlecin metin başından karakter ofsetini ölç.
+        const pre = document.createRange();
+        pre.selectNodeContents(node);
+        pre.setEnd(r.startContainer, r.startOffset);
+        const offset = pre.toString().length;
+        const runs = read();
+        const total = runs.reduce((n, x) => n + x.text.length, 0);
+        if (offset <= 0 || offset >= total) return null; // başta/sonda → bölme yok
+        committedRef.current = true; // bölme uygulanacak → unmount draft'ı bastır
+        return splitRunsAt(runs, offset);
       },
     };
     apiRef.current = api;
