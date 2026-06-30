@@ -10,11 +10,10 @@
 // (IntersectionObserver); ekran dışı sayfa = boş beyaz kutu. Böylece 400 sayfalık
 // kitapta bile DOM'da ~birkaç sayfa kalır.
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { renderBookSvgWithBlocks, type TypstBookInput, type BlockPos } from "@/lib/typst";
 
 const SVGNS = "http://www.w3.org/2000/svg";
-const PT_PER_MM = 72 / 25.4;
 const ROW_GAP_PX = 22; // açık-kitap ikilileri (satırlar) arası boşluk
 
 // Sayfa index'inin (0-tabanlı) ızgara konumu: sayfa 0 sağda tek (recto), sonra
@@ -25,18 +24,14 @@ function pagePos(i: number): { col: 0 | 1; row: number } {
   return { col: (p % 2) as 0 | 1, row: 1 + Math.floor(p / 2) };
 }
 
-type OverlayInfo = { topPct: number; heightPct: number; pxPerMm: number; renderDpi: number };
-
 export function TypstPreviewCanvas({
   input,
   editingBlock,
   onSelectBlock,
-  renderBlockOverlay,
 }: {
   input: TypstBookInput;
   editingBlock: number | null;
   onSelectBlock: (idx: number) => void;
-  renderBlockOverlay?: (idx: number, o: OverlayInfo) => ReactNode;
 }) {
   const [svg, setSvg] = useState("");
   const [positions, setPositions] = useState<BlockPos[]>([]);
@@ -170,7 +165,6 @@ export function TypstPreviewCanvas({
                   return (
                     <PageBox
                       key={col}
-                      pageIdx={idx}
                       pageHtml={doc.pages[idx]}
                       styleHtml={doc.styleHtml}
                       pageW={doc.pageW}
@@ -180,7 +174,6 @@ export function TypstPreviewCanvas({
                       scrollRoot={scrollEl}
                       editingBlock={editingBlock}
                       onSelectBlock={onSelectBlock}
-                      renderBlockOverlay={renderBlockOverlay}
                     />
                   );
                 })}
@@ -200,7 +193,6 @@ export function TypstPreviewCanvas({
 // Tek sayfa kutusu — görünür olunca (IntersectionObserver) içeriğini basar, değilse
 // boş beyaz kutu (doğru boyutta). Bloklar bu sayfanın konumlarından.
 function PageBox({
-  pageIdx,
   pageHtml,
   styleHtml,
   pageW,
@@ -210,9 +202,7 @@ function PageBox({
   scrollRoot,
   editingBlock,
   onSelectBlock,
-  renderBlockOverlay,
 }: {
-  pageIdx: number;
   pageHtml: string;
   styleHtml: string;
   pageW: number;
@@ -222,11 +212,9 @@ function PageBox({
   scrollRoot: HTMLElement | null;
   editingBlock: number | null;
   onSelectBlock: (idx: number) => void;
-  renderBlockOverlay?: (idx: number, o: OverlayInfo) => ReactNode;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(false);
-  const [boxW, setBoxW] = useState(0);
 
   useEffect(() => {
     const el = ref.current;
@@ -237,13 +225,7 @@ function PageBox({
       rootMargin: "1000px 0px", // görünür alan çevresinde tampon (önden yükle)
     });
     io.observe(el);
-    const ro = new ResizeObserver(() => setBoxW(el.getBoundingClientRect().width));
-    ro.observe(el);
-    setBoxW(el.getBoundingClientRect().width);
-    return () => {
-      io.disconnect();
-      ro.disconnect();
-    };
+    return () => io.disconnect();
   }, [scrollRoot]);
 
   // Bu sayfadaki tıklanabilir blok bantları (sayfa kutusunun yüzdesi). Bantlar
@@ -265,15 +247,6 @@ function PageBox({
     });
   }, [blocks, fallbackIdx, pageH]);
 
-  // Düzenleme overlay'i bloğun GERÇEK y'sine oturur (tıklama bandı tepeye uzatılmış
-  // olsa da editör, kâğıttaki metnin tam üstüne gelmeli — yoksa çift metin/kayma).
-  // İşaret bu sayfadaysa onu kullan; yoksa (taşma) overlay başlangıç sayfasında çıkar.
-  const editPos = editingBlock != null ? blocks.find((b) => b.idx === editingBlock) : undefined;
-  const editBand = editPos
-    ? { idx: editPos.idx, topPct: (editPos.yPt / pageH) * 100, heightPct: Math.max(8, (pageH - editPos.yPt) / pageH * 100) }
-    : undefined;
-  const scale = boxW > 0 ? boxW / pageW : 0;
-
   return (
     <div
       ref={ref}
@@ -288,30 +261,26 @@ function PageBox({
           }}
         />
       )}
-      {/* Tıklanabilir blok bölgeleri */}
+      {/* Tıklanabilir blok bölgeleri — düzenlenen blok vurgulanır (altta panel açık). */}
       <div className="absolute inset-0">
-        {bands.map((b) => (
-          <button
-            key={b.idx}
-            type="button"
-            onClick={() => onSelectBlock(b.idx)}
-            title="Düzenle / sayfa düzeni"
-            className="absolute left-0 w-full cursor-pointer rounded-sm transition hover:bg-accent/10"
-            style={{ top: `${b.topPct}%`, height: `${b.heightPct}%` }}
-          />
-        ))}
+        {bands.map((b) => {
+          const active = editingBlock != null && b.idx === editingBlock;
+          return (
+            <button
+              key={b.idx}
+              type="button"
+              onClick={() => onSelectBlock(b.idx)}
+              title="Düzenlemek için tıkla"
+              className={`absolute left-0 w-full cursor-pointer rounded-sm transition ${
+                active
+                  ? "bg-accent/15 outline outline-2 outline-accent/70"
+                  : "hover:bg-accent/10"
+              }`}
+              style={{ top: `${b.topPct}%`, height: `${b.heightPct}%` }}
+            />
+          );
+        })}
       </div>
-      {/* Düzenlenen blok bu sayfadaysa editör overlay'i */}
-      {editBand && renderBlockOverlay && scale > 0 && (
-        <div className="absolute left-0 w-full" style={{ top: `${editBand.topPct}%` }}>
-          {renderBlockOverlay(editBand.idx, {
-            topPct: editBand.topPct,
-            heightPct: editBand.heightPct,
-            pxPerMm: scale * PT_PER_MM,
-            renderDpi: scale * 72,
-          })}
-        </div>
-      )}
     </div>
   );
 }

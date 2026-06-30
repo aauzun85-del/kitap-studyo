@@ -104,6 +104,11 @@ function ptToPx(pt: number, dpi: number): number {
   return (pt / 72) * dpi;
 }
 
+// Düzenleme panelinde metin RAHAT OKUNUR boyutta görünür (sayfanın küçültülmüş
+// ölçeğinde değil). ~110 DPI → 11pt gövde ≈ 17px. Uzun metin panel içinde kaydırılır.
+const READ_DPI = 110;
+const READ_PXPERMM = READ_DPI / 25.4;
+
 export default function LayoutStudio({
   lang,
   dict,
@@ -821,6 +826,50 @@ export default function LayoutStudio({
     editingBlock != null && blocks[editingBlock] && blocks[editingBlock].type !== "blank"
       ? blocks[editingBlock]
       : null;
+  // Düzenleme panelindeki editörün biçimi (okunur ölçek). Metin türünü yansıtır
+  // (başlık daha büyük/kalın) ama her zaman RAHAT okunur boyutta — sayfa ölçeği değil.
+  const editingLine = useMemo<Line | null>(() => {
+    if (editingBlock == null) return null;
+    const blk = blocks[editingBlock];
+    if (
+      !blk ||
+      blk.type === "blank" ||
+      blk.type === "image" ||
+      blk.type === "table" ||
+      blk.type === "pagebreak" ||
+      blk.type === "spacer"
+    )
+      return null;
+    const isHeading = blk.type === "heading";
+    const sizePt = ("sizePt" in blk && blk.sizePt) || blockDefaultSizePt(blk, bodySizePt);
+    return {
+      segments: [],
+      kind: isHeading ? "heading" : "body",
+      sizePt,
+      font: isHeading ? familyOf(headingFontId) : bodyFamily,
+      weight: isHeading ? 700 : 400,
+      italic: blk.type === "blockquote",
+      align: "align" in blk && blk.align ? blk.align : "left",
+      indentMm: 0,
+      blockIndentMm: 0,
+      justify: false,
+      spaceBeforeMm: 0,
+      heightMm: ((sizePt * 1.5) / 72) * 25.4,
+      blockIndex: editingBlock,
+    };
+  }, [editingBlock, blocks, bodySizePt, headingFontId, bodyFamily]);
+  // Düzenlenen bloğun okunur tür etiketi (panel başlığı).
+  const editingTypeLabel = useMemo(() => {
+    if (!editingBlockData) return "";
+    switch (editingBlockData.type) {
+      case "heading":
+        return "Başlık";
+      case "blockquote":
+        return "Alıntı";
+      default:
+        return "Paragraf";
+    }
+  }, [editingBlockData]);
 
   const navItems: { id: PanelId; label: string; Icon: typeof TextTIcon }[] = [
     { id: "book", label: t.navBook, Icon: StackIcon },
@@ -1115,20 +1164,6 @@ export default function LayoutStudio({
         )}
 
         <div className="flex-1 overflow-auto p-6">
-          {editingBlockData && (
-            <FormatBar
-              t={t}
-              selBold={selFmt.bold}
-              selItalic={selFmt.italic}
-              onToggleBold={toggleSelBold}
-              onToggleItalic={toggleSelItalic}
-              onSendNextPage={() => editingBlock != null && sendBlockToNextPage(editingBlock)}
-              onAddSpace={() => editingBlock != null && addSpaceAfterBlock(editingBlock)}
-              onPullPrevPage={() => editingBlock != null && pullBlockToPrevPage(editingBlock)}
-              canPullPrev={editingBlock != null && editingBlock > 0 && blocks[editingBlock - 1]?.type === "pagebreak"}
-              onClose={() => editorApiRef.current?.commit()}
-            />
-          )}
           {isEmpty ? (
             <div className="flex h-full min-h-[300px] items-center justify-center text-center text-sm text-muted">
               {t.emptyPreview}
@@ -1138,55 +1173,6 @@ export default function LayoutStudio({
               input={typstInput}
               editingBlock={editingBlock}
               onSelectBlock={startEditBlock}
-              renderBlockOverlay={(idx, o) => {
-                const blk = blocks[idx];
-                if (
-                  !blk ||
-                  blk.type === "blank" ||
-                  blk.type === "image" ||
-                  blk.type === "table" ||
-                  blk.type === "pagebreak" ||
-                  blk.type === "spacer"
-                )
-                  return null;
-                const isHeading = blk.type === "heading";
-                const sizePt = ("sizePt" in blk && blk.sizePt) || blockDefaultSizePt(blk, bodySizePt);
-                const line: Line = {
-                  segments: [],
-                  kind: isHeading ? "heading" : "body",
-                  sizePt,
-                  font: isHeading ? familyOf(headingFontId) : bodyFamily,
-                  weight: isHeading ? 700 : 400,
-                  italic: blk.type === "blockquote",
-                  align: "align" in blk && blk.align ? blk.align : "left",
-                  indentMm: 0,
-                  blockIndentMm: 0,
-                  justify: false,
-                  spaceBeforeMm: 0,
-                  heightMm: ((sizePt * 1.5) / 72) * 25.4,
-                  blockIndex: idx,
-                };
-                const padPx = Math.max(0, margins.inside * o.pxPerMm);
-                return (
-                  <div key={`tedit-${idx}`} style={{ paddingLeft: padPx, paddingRight: padPx }}>
-                    {/* Beyaz kapatma: altındaki Typst metni görünmesin (çift metin olmasın) */}
-                    <div className="rounded-sm bg-white text-[#1a1a1a] shadow-[0_1px_10px_rgba(0,0,0,0.18)]">
-                      <RichBlockEditor
-                        line={line}
-                        pxPerMm={o.pxPerMm}
-                        renderDpi={o.renderDpi}
-                        initialRuns={editingRuns}
-                        apiRef={editorApiRef}
-                        onCommitFinal={(runs) => commitBlockFinal(idx, runs)}
-                        onCommitDraft={(runs) => commitBlockDraft(idx, runs)}
-                        onEnd={() => setEditingBlock(null)}
-                        onCancel={() => setEditingBlock(null)}
-                        onSelection={setSelFmt}
-                      />
-                    </div>
-                  </div>
-                );
-              }}
             />
           ) : (
             <div className="flex flex-col items-center gap-6">
@@ -1241,6 +1227,45 @@ export default function LayoutStudio({
             </div>
           )}
         </div>
+
+        {/* Düzenleme paneli — sayfaya tıklayınca altta açılır. Metin OKUNUR boyutta
+            ve panel kendi içinde kaydırılır → uzun paragraflar da rahat düzenlenir
+            (sayfanın küçültülmüş ölçeğine sıkışmaz). Sayfa yukarıda görünür kalır. */}
+        {editingBlockData && editingLine && (
+          <div className="shrink-0 border-t border-border bg-surface shadow-[0_-6px_24px_rgba(0,0,0,0.07)]">
+            <FormatBar
+              t={t}
+              typeLabel={editingTypeLabel}
+              selBold={selFmt.bold}
+              selItalic={selFmt.italic}
+              onToggleBold={toggleSelBold}
+              onToggleItalic={toggleSelItalic}
+              onSendNextPage={() => editingBlock != null && sendBlockToNextPage(editingBlock)}
+              onAddSpace={() => editingBlock != null && addSpaceAfterBlock(editingBlock)}
+              onPullPrevPage={() => editingBlock != null && pullBlockToPrevPage(editingBlock)}
+              canPullPrev={editingBlock != null && editingBlock > 0 && blocks[editingBlock - 1]?.type === "pagebreak"}
+              onCancel={() => setEditingBlock(null)}
+              onClose={() => editorApiRef.current?.commit()}
+            />
+            <div className="max-h-[42vh] overflow-y-auto px-5 py-4">
+              <div className="mx-auto max-w-[680px] text-[#1a1a1a]">
+                <RichBlockEditor
+                  key={editingBlock}
+                  line={editingLine}
+                  pxPerMm={READ_PXPERMM}
+                  renderDpi={READ_DPI}
+                  initialRuns={editingRuns}
+                  apiRef={editorApiRef}
+                  onCommitFinal={(runs) => editingBlock != null && commitBlockFinal(editingBlock, runs)}
+                  onCommitDraft={(runs) => editingBlock != null && commitBlockDraft(editingBlock, runs)}
+                  onEnd={() => setEditingBlock(null)}
+                  onCancel={() => setEditingBlock(null)}
+                  onSelection={setSelFmt}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
@@ -2379,6 +2404,7 @@ function LineView({
 // data-fmtbar: editör odağı çubuğa geçince düzenleme kapanmasın diye işaret.
 function FormatBar({
   t,
+  typeLabel,
   selBold,
   selItalic,
   onToggleBold,
@@ -2387,9 +2413,11 @@ function FormatBar({
   onAddSpace,
   onPullPrevPage,
   canPullPrev,
+  onCancel,
   onClose,
 }: {
   t: T;
+  typeLabel?: string;
   selBold: boolean;
   selItalic: boolean;
   onToggleBold: () => void;
@@ -2398,6 +2426,7 @@ function FormatBar({
   onAddSpace: () => void;
   onPullPrevPage: () => void;
   canPullPrev: boolean;
+  onCancel?: () => void;
   onClose: () => void;
 }) {
   // Kalın/italik vurgusu seçili metnin canlı durumundan gelir.
@@ -2405,13 +2434,21 @@ function FormatBar({
   const isItalic = selItalic;
   const btn = "flex h-8 min-w-8 items-center justify-center rounded-md border border-border bg-background px-2 text-sm text-foreground transition hover:border-accent";
   const btnOn = "border-accent bg-accent-soft text-accent";
-  // Düğmeler odağı çalmasın (textarea odakta kalsın) diye mousedown'da preventDefault.
+  // Düğmeler odağı çalmasın (editör odakta kalsın) diye mousedown'da preventDefault.
   const keepFocus = (e: { preventDefault: () => void }) => e.preventDefault();
   return (
     <div
       data-fmtbar
-      className="sticky top-0 z-10 mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface/95 px-3 py-2 shadow-sm backdrop-blur"
+      className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2"
     >
+      {typeLabel && (
+        <>
+          <span className="font-mono text-[11px] font-medium uppercase tracking-[0.15em] text-muted">
+            {typeLabel}
+          </span>
+          <div className="mx-1 h-5 w-px bg-border" />
+        </>
+      )}
       <button type="button" onMouseDown={keepFocus} onClick={onToggleBold} className={`${btn} font-bold ${isBold ? btnOn : ""}`} title="Kalın">
         B
       </button>
@@ -2435,9 +2472,28 @@ function FormatBar({
         ␣ {t.addSpace}
       </button>
 
-      <button type="button" onMouseDown={keepFocus} onClick={onClose} className={`${btn} ml-auto`} title="Bitti">
-        ✕
-      </button>
+      <div className="ml-auto flex items-center gap-2">
+        {onCancel && (
+          <button
+            type="button"
+            onMouseDown={keepFocus}
+            onClick={onCancel}
+            className="flex h-8 items-center justify-center rounded-md px-3 text-sm text-muted transition hover:text-foreground"
+            title="Değişiklikleri at (Esc)"
+          >
+            İptal
+          </button>
+        )}
+        <button
+          type="button"
+          onMouseDown={keepFocus}
+          onClick={onClose}
+          className="flex h-8 items-center justify-center rounded-md bg-accent px-4 text-sm font-semibold text-white transition hover:opacity-90"
+          title="Kaydet ve kapat"
+        >
+          Kaydet
+        </button>
+      </div>
     </div>
   );
 }
