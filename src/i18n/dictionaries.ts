@@ -807,6 +807,10 @@ type TanitimStudioCopy = {
   tones: { id: string; name: string }[];
   sampleCta: string;
   clearCta: string;
+  // Kitaptan bilgi aktarma.
+  pullCta: string;
+  pullHint: string;
+  pulledNote: string;
   // Malzeme seçimi paneli.
   materialsHeading: string;
   materialsHint: string;
@@ -1972,6 +1976,9 @@ const tr: Dictionary = {
     ],
     sampleCta: "Örnek bilgi koy",
     clearCta: "Temizle",
+    pullCta: "Kitaptan bilgileri getir",
+    pullHint: "Giriş yapıp bir kitabını açarsan başlık, yazar, tür ve özet buraya otomatik gelir.",
+    pulledNote: "Bilgiler kitabından getirildi. Özet, kitabının başlangıcından alındı; dilediğin gibi kısaltıp düzenleyebilirsin.",
     materialsHeading: "Üretilecek malzemeler",
     materialsHint: "İstediklerini seç; yapay zekâ yalnızca işaretlediklerini üretir.",
     matSocial: "Sosyal medya gönderileri",
@@ -3080,6 +3087,9 @@ const en: Dictionary = {
     ],
     sampleCta: "Insert sample info",
     clearCta: "Clear",
+    pullCta: "Pull info from my book",
+    pullHint: "Sign in and open one of your books to auto-fill the title, author, genre and summary.",
+    pulledNote: "Filled from your book. The summary was taken from the start of your book; feel free to shorten and edit it.",
     materialsHeading: "Materials to generate",
     materialsHint: "Pick what you want; the AI generates only what you check.",
     matSocial: "Social media posts",

@@ -73,6 +73,9 @@ export default function TanitimStudio({
   const [imageError, setImageError] = useState<string | null>(null);
   const [image, setImage] = useState<string | null>(null);
 
+  // Bilgiler kitaptan getirildi mi (kullanıcıya bilgi notu için).
+  const [pulled, setPulled] = useState(false);
+
   // Bulut projesi: paylaşılan başlık/yazarı projeye yaz (tanıtım formu alanları
   // genre/audience/summary/tone Aşama 2'de eklenecek).
   useMetaSync(projectId, { title, author });
@@ -88,6 +91,7 @@ export default function TanitimStudio({
     setSummary(SAMPLE.summary);
     setTone(SAMPLE.tone);
     setError(null);
+    setPulled(false);
   }
 
   function clearAll() {
@@ -103,6 +107,33 @@ export default function TanitimStudio({
     setResult(null);
     setImage(null);
     setImageError(null);
+    setPulled(false);
+  }
+
+  // Kitaptan özet taslağı: metnin başını cümle sonunda kesip getirir (kapak deseni).
+  function summaryFromManuscript(text: string): string {
+    const clean = text.trim().replace(/\s+/g, " ");
+    if (clean.length <= 1200) return clean;
+    const cut = clean.slice(0, 1200);
+    const lastStop = Math.max(
+      cut.lastIndexOf(". "),
+      cut.lastIndexOf("! "),
+      cut.lastIndexOf("? "),
+    );
+    return (lastStop > 400 ? cut.slice(0, lastStop + 1) : cut).trim();
+  }
+
+  // Açık projedeki kitap bilgilerini forma getirir.
+  function pullFromBook() {
+    if (!seed) return;
+    setTitle(seed.meta.title ?? "");
+    setAuthor(seed.meta.author ?? "");
+    setGenre(seed.meta.genre ?? "");
+    const bio = (seed.meta.bio ?? "").trim();
+    const manuscript = seed.manuscript?.text ?? "";
+    setSummary(bio || summaryFromManuscript(manuscript));
+    setError(null);
+    setPulled(true);
   }
 
   const MATERIALS: { id: Material; title: string; desc: string; soon: boolean }[] = [
@@ -228,6 +259,27 @@ export default function TanitimStudio({
             <BookIcon className="h-5 w-5 text-accent" />
             {t.infoHeading}
           </div>
+
+          {/* Kitaptan bilgi aktarma: proje açıksa düğme, değilse ipucu. */}
+          {seed ? (
+            <button
+              onClick={pullFromBook}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-accent/40 bg-accent-soft px-3 py-2 text-sm font-medium text-accent transition hover:bg-accent/10"
+            >
+              <BookIcon className="h-4 w-4" />
+              {t.pullCta}
+            </button>
+          ) : (
+            <p className="mt-3 rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted">
+              {t.pullHint}
+            </p>
+          )}
+          {pulled && (
+            <p className="mt-2 flex items-start gap-1.5 text-xs text-accent">
+              <CheckCircleIcon className="mt-0.5 h-4 w-4 shrink-0" />
+              {t.pulledNote}
+            </p>
+          )}
 
           <label className="mt-3 block text-xs font-medium text-muted">{t.bookTitleLabel}</label>
           <input

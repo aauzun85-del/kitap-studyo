@@ -323,9 +323,13 @@ export default function LayoutStudio({
   // yapılan düzenlemeler bir sonraki kaynak değişimine kadar burada yaşar.
   const [blocks, setBlocks] = useState<Block[]>(derivedBlocks);
   useEffect(() => {
+    // Düzenleme sürerken (editingBlock != null) canvas'ı yeniden tohumlama:
+    // commitBlockFinal raw'a yazınca derivedBlocks değişir; burada reseed yapmak
+    // yeni açılan editörü kapatır ve anlık düzenlemeyi ezerdi. Düzenleme bitince
+    // (null) raw'dan tazele — raw artık düzenlemeyi içerdiği için kayıp olmaz.
+    if (editingBlock != null) return;
     setBlocks(derivedBlocks);
-    setEditingBlock(null);
-  }, [derivedBlocks]);
+  }, [derivedBlocks, editingBlock]);
 
   // İçindekiler'e girecek bölümlerin (1. seviye başlık) sıralı başlıkları.
   // paginate ile AYNI süzgeç; İçindekiler düzenleme listesi bunları gösterir.
@@ -340,24 +344,36 @@ export default function LayoutStudio({
   // Düzenleme bitince (blur / ✕ / başka yere tıklama) çağrılır: yeni run'ları
   // yazar, blok boşaldıysa siler. Başlık silinince içindekiler de düşer (blok
   // indeksleri konumsaldır; sayfalama yeniden numaralandırır).
-  const commitBlockFinal = useCallback((index: number, runs: Run[]) => {
-    setBlocks((prev) => {
-      const b = prev[index];
-      if (!b || b.type === "blank" || b.type === "image" || b.type === "table" || b.type === "pagebreak" || b.type === "spacer") return prev;
-      const text = runs.map((r) => r.text).join("");
-      if (text.trim().length === 0) {
-        const next = [...prev];
-        next.splice(index, 1);
-        return next;
+  const commitBlockFinal = useCallback(
+    (index: number, runs: Run[]) => {
+      const b = blocks[index];
+      if (!b || b.type === "blank" || b.type === "image" || b.type === "table" || b.type === "pagebreak" || b.type === "spacer") {
+        setEditingBlock(null);
+        return;
       }
-      // İçerik aynıysa dokunma (gereksiz yeniden sayfalama olmasın).
-      if (runsEqual(b.runs, runs)) return prev;
-      const next = [...prev];
-      next[index] = { ...b, runs };
-      return next;
-    });
-    setEditingBlock(null);
-  }, []);
+      const text = runs.map((r) => r.text).join("");
+      let next: Block[];
+      if (text.trim().length === 0) {
+        next = [...blocks.slice(0, index), ...blocks.slice(index + 1)]; // boşaldı → sil
+      } else if (runsEqual(b.runs, runs)) {
+        setEditingBlock(null); // değişiklik yok → dokunma
+        return;
+      } else {
+        next = [...blocks];
+        next[index] = { ...b, runs };
+      }
+      // TEK KAYNAK = raw: canvas düzenlemesini hem blocks'a (anında önizleme) hem
+      // markdown'a YAZ → yan metin (textarea), otomatik kayıt ve PDF hepsi aynı
+      // kaynaktan okur. (Eskiden yalnız blocks güncellenip raw bayat kalıyordu →
+      // düzenleme ne kaydoluyor ne PDF'e geçiyordu.)
+      setBlocks(next);
+      const { markdown, media } = blocksToMarkdown(next);
+      setImportMedia(media);
+      setRaw(markdown);
+      setEditingBlock(null);
+    },
+    [blocks],
+  );
 
   // Düzenleme sürerken (örn. blok-seviyesi punto değişince yeniden sayfalama
   // editörü taşıyabilir) ara kayıt: yalnızca run'ları günceller, düzenlemeyi
@@ -1092,6 +1108,10 @@ export default function LayoutStudio({
                     editingRuns={editingRuns}
                     editorApiRef={editorApiRef}
                     onStartEdit={(i) => {
+                      // Başka bloğa geçmeden ÖNCE mevcut düzenlemeyi commit'le:
+                      // satır tıklaması contentEditable'ı blur ETMEZ (div odaklanamaz)
+                      // → yoksa commitBlockFinal hiç çalışmaz, edit raw'a geçmez.
+                      if (editingBlock != null && editingBlock !== i) editorApiRef.current?.commit();
                       setSelFmt({ bold: false, italic: false });
                       setEditingBlock(i);
                     }}

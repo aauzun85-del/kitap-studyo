@@ -679,6 +679,83 @@ function StructureView({
   );
 }
 
+// ——— Esnek pasaj eşleştirme (Yerini göster / context için) ———
+// AI'nin verdiği pasaj metinle birebir aynı olmayabilir: tırnak (" ↔ “ ”),
+// tire (- ↔ – ↔ —), üç nokta (... ↔ …) ve boşluk/satır-sonu farkları olur.
+// Bu yüzden eşleştirmeyi bu farklara toleranslı yaparız.
+const QUOTE_CHARS = "\"'‘’“”«»„‚‹›`´";
+const DASH_CHARS = "-‐‑‒–—―−";
+
+function escapeReChar(ch: string): string {
+  return ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Bir karakter sınıfı için içeriği güvenli hâle getirir ([ ] \ ^ - kaçışlanır).
+function classBody(chars: string): string {
+  return chars.replace(/[\]\\^-]/g, "\\$&");
+}
+
+// Pasajı, karakter farklarına toleranslı bir düzenli ifadeye çevirir.
+function buildFuzzyRegex(needle: string): RegExp | null {
+  const n = needle.trim();
+  let out = "";
+  let i = 0;
+  while (i < n.length) {
+    const ch = n[i];
+    if (/\s/.test(ch)) {
+      out += "\\s+";
+      while (i < n.length && /\s/.test(n[i])) i++;
+      continue;
+    }
+    if (QUOTE_CHARS.includes(ch)) {
+      out += `[${classBody(QUOTE_CHARS)}]`;
+      i++;
+      continue;
+    }
+    if (DASH_CHARS.includes(ch)) {
+      out += `[${classBody(DASH_CHARS)}]`;
+      i++;
+      continue;
+    }
+    // Nokta/üç nokta dizisi: "…" ↔ "..." ↔ ".." hepsi eşleşsin; tek nokta normal.
+    if (ch === "…" || ch === ".") {
+      let dots = 0;
+      let hasEllipsisChar = false;
+      while (i < n.length && (n[i] === "." || n[i] === "…")) {
+        if (n[i] === "…") hasEllipsisChar = true;
+        else dots++;
+        i++;
+      }
+      out += hasEllipsisChar || dots >= 2 ? "(?:\\u2026|\\.{2,})" : "\\.";
+      continue;
+    }
+    out += escapeReChar(ch);
+    i++;
+  }
+  try {
+    return new RegExp(out);
+  } catch {
+    return null;
+  }
+}
+
+// Pasajı metin içinde bulur: önce birebir, olmazsa karakter-toleranslı.
+function fuzzyFind(
+  haystack: string,
+  needle: string,
+): { at: number; len: number } | null {
+  const t = needle.trim();
+  if (!t) return null;
+  const direct = haystack.indexOf(t);
+  if (direct !== -1) return { at: direct, len: t.length };
+  const re = buildFuzzyRegex(t);
+  if (re) {
+    const m = re.exec(haystack);
+    if (m) return { at: m.index, len: m[0].length };
+  }
+  return null;
+}
+
 export default function EditorStudio({
   lang,
   dict,
@@ -756,31 +833,32 @@ export default function EditorStudio({
   function contextFor(original: string): { before: string; match: string; after: string } | null {
     const src = checkedText;
     if (!src) return null;
-    const at = src.indexOf(original);
-    if (at === -1) return null;
+    const hit = fuzzyFind(src, original);
+    if (!hit) return null;
+    const { at, len } = hit;
     const PAD = 45;
     const start = Math.max(0, at - PAD);
-    const end = Math.min(src.length, at + original.length + PAD);
+    const end = Math.min(src.length, at + len + PAD);
     const before = (start > 0 ? "…" : "") + src.slice(start, at).replace(/\s+/g, " ");
-    const after = src.slice(at + original.length, end).replace(/\s+/g, " ") + (end < src.length ? "…" : "");
-    return { before, match: original, after };
+    const match = src.slice(at, at + len).replace(/\s+/g, " ");
+    const after = src.slice(at + len, end).replace(/\s+/g, " ") + (end < src.length ? "…" : "");
+    return { before, match, after };
   }
 
-  // Bir pasajı `raw` içinde bulur. Önce birebir, olmazsa boşluk/satır sonu
-  // farklarına toleranslı (her boşluk dizisi = \s+) arar. [konum, uzunluk] verir.
+  // Bir pasajı `raw` içinde bulur. Karakter (tırnak/tire/üç nokta) + boşluk
+  // farklarına toleranslı. Tam pasaj bulunamazsa, en azından yakınına götürmek
+  // için baştan birkaç kelimelik bir "çapa" ile dener.
   function findInRaw(needle: string): { at: number; len: number } | null {
     const trimmed = needle.trim();
     if (!trimmed) return null;
-    const direct = raw.indexOf(trimmed);
-    if (direct !== -1) return { at: direct, len: trimmed.length };
-    const esc = trimmed
-      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-      .replace(/\s+/g, "\\s+");
-    try {
-      const m = new RegExp(esc).exec(raw);
-      if (m) return { at: m.index, len: m[0].length };
-    } catch {
-      // geçersiz regex olursa sessizce vazgeç
+    const full = fuzzyFind(raw, trimmed);
+    if (full) return full;
+    // Çapa: ilk 6 kelime (kısa pasajlarda anlamsız, atla).
+    const words = trimmed.split(/\s+/);
+    if (words.length > 4) {
+      const anchor = words.slice(0, 6).join(" ");
+      const a = fuzzyFind(raw, anchor);
+      if (a) return a;
     }
     return null;
   }
