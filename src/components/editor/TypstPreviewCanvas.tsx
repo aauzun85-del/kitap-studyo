@@ -109,6 +109,25 @@ export function TypstPreviewCanvas({
     return m;
   }, [positions]);
 
+  // Her sayfa için "taşma sahibi": o sayfada hiç işaret yoksa (sayfa, önceki uzun
+  // bloğun DEVAMIYLA dolu) tüm sayfayı bu bloğa bağla → ölü sayfa kalmaz. Yedek =
+  // bu sayfadan ÖNCE başlayan son blok (okuma sırası = idx artışı).
+  const pageFallback = useMemo(() => {
+    const m = new Map<number, number>();
+    const sorted = [...positions].sort((a, b) => a.page - b.page || a.idx - b.idx);
+    const count = doc?.pageCount ?? 0;
+    let last = -1;
+    let cursor = 0;
+    for (let pg = 1; pg <= count; pg++) {
+      while (cursor < sorted.length && sorted[cursor].page < pg) {
+        last = sorted[cursor].idx;
+        cursor++;
+      }
+      m.set(pg, last);
+    }
+    return m;
+  }, [positions, doc]);
+
   // Açık-kitap satırları: her satır [versoPageIdx|null, rectoPageIdx|null] (0-tabanlı).
   const rows = useMemo(() => {
     if (!doc) return [];
@@ -157,6 +176,7 @@ export function TypstPreviewCanvas({
                       pageW={doc.pageW}
                       pageH={doc.pageH}
                       blocks={byPage.get(idx + 1) ?? []}
+                      fallbackIdx={pageFallback.get(idx + 1) ?? -1}
                       scrollRoot={scrollEl}
                       editingBlock={editingBlock}
                       onSelectBlock={onSelectBlock}
@@ -186,6 +206,7 @@ function PageBox({
   pageW,
   pageH,
   blocks,
+  fallbackIdx,
   scrollRoot,
   editingBlock,
   onSelectBlock,
@@ -197,6 +218,7 @@ function PageBox({
   pageW: number;
   pageH: number;
   blocks: BlockPos[];
+  fallbackIdx: number;
   scrollRoot: HTMLElement | null;
   editingBlock: number | null;
   onSelectBlock: (idx: number) => void;
@@ -224,17 +246,32 @@ function PageBox({
     };
   }, [scrollRoot]);
 
-  // Bu sayfadaki blok bantları (sayfa kutusunun yüzdesi).
+  // Bu sayfadaki tıklanabilir blok bantları (sayfa kutusunun yüzdesi). Bantlar
+  // sayfayı TEPEDEN TABANA boşluksuz döşer (ölü bölge olmaz):
+  //  • İlk bant tepeye (0) kadar uzar → üst marj/başlık/önceki bloğun taşması da
+  //    tıklanır (kullanıcı şikâyeti: "üst taraflar aktif değil").
+  //  • Her bant bir sonrakinin y'sine, son bant sayfa tabanına iner.
+  //  • Sayfada hiç işaret yoksa (uzun bloğun ortası) tüm sayfa = taşan blok.
   const bands = useMemo(() => {
+    const pct = (v: number) => (v / pageH) * 100;
+    if (blocks.length === 0) {
+      return fallbackIdx >= 0 ? [{ idx: fallbackIdx, topPct: 0, heightPct: 100 }] : [];
+    }
     return blocks.map((b, i) => {
-      const top = b.yPt;
       const next = blocks[i + 1];
+      const top = i === 0 ? 0 : b.yPt; // ilk bandı tepeye kadar uzat
       const bottom = next ? next.yPt : pageH;
-      return { idx: b.idx, topPct: (top / pageH) * 100, heightPct: (Math.max(10, bottom - top) / pageH) * 100 };
+      return { idx: b.idx, topPct: pct(top), heightPct: pct(Math.max(8, bottom - top)) };
     });
-  }, [blocks, pageH]);
+  }, [blocks, fallbackIdx, pageH]);
 
-  const editBand = editingBlock != null ? bands.find((b) => b.idx === editingBlock) : undefined;
+  // Düzenleme overlay'i bloğun GERÇEK y'sine oturur (tıklama bandı tepeye uzatılmış
+  // olsa da editör, kâğıttaki metnin tam üstüne gelmeli — yoksa çift metin/kayma).
+  // İşaret bu sayfadaysa onu kullan; yoksa (taşma) overlay başlangıç sayfasında çıkar.
+  const editPos = editingBlock != null ? blocks.find((b) => b.idx === editingBlock) : undefined;
+  const editBand = editPos
+    ? { idx: editPos.idx, topPct: (editPos.yPt / pageH) * 100, heightPct: Math.max(8, (pageH - editPos.yPt) / pageH * 100) }
+    : undefined;
   const scale = boxW > 0 ? boxW / pageW : 0;
 
   return (
