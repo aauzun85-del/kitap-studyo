@@ -882,7 +882,7 @@ export default function LayoutStudio({
   const isEmpty = blocks.length === 0 && !title.trim();
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-[1400px] flex-col gap-4 px-4 py-6 lg:flex-row">
+    <div className="mx-auto flex min-h-full w-full max-w-[1760px] flex-col gap-4 px-4 py-6 lg:flex-row">
       {autoExport && (
         <ExportOverlay
           lang={lang}

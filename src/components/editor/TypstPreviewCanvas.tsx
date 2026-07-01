@@ -156,7 +156,7 @@ export function TypstPreviewCanvas({
             style={{ position: "absolute" }}
             dangerouslySetInnerHTML={{ __html: doc.defsHtml }}
           />
-          <div className="mx-auto flex w-full max-w-[920px] flex-col" style={{ gap: ROW_GAP_PX }}>
+          <div className="mx-auto flex w-full max-w-[1180px] flex-col" style={{ gap: ROW_GAP_PX }}>
             {rows.map((row, ri) => (
               <div key={ri} className="flex items-start justify-center">
                 {[0, 1].map((col) => {
