@@ -38,15 +38,18 @@ function cropMarksBg(pw: number, ph: number, to: number, bleedMm: number): strin
 // başlık). String.raw → drop-cap ölçümündeki "\" satır-sonu kaçmasın. JS
 // interpolasyonu YOK (hepsi sabit).
 const HELPERS = String.raw`#set heading(numbering: none)
-#show heading.where(level: 1): it => align(center, text(size: 20pt, weight: 700, it.body))
-#show heading.where(level: 2): it => { v(0.7em, weak: true); set par(first-line-indent: 0pt, justify: false); align(center, text(size: 16pt, weight: 700, it.body)); v(14mm, weak: true) }
-#show heading.where(level: 3): it => { v(0.6em, weak: true); set par(first-line-indent: 0pt, justify: false); text(size: 14pt, weight: 700, it.body); v(14mm, weak: true) }
-#show heading.where(level: 4): it => { v(0.5em, weak: true); set par(first-line-indent: 0pt, justify: false); text(size: 12pt, weight: 700, it.body); v(14mm, weak: true) }
-#let _subhead(body) = { v(0.5em, weak: true); set par(first-line-indent: 0pt, justify: false); align(center, text(size: 11pt, weight: 700, body)); v(14mm, weak: true) }
+// Başlıklar ASLA yaslanmaz + hecelenmez (dizgi kuralı): gövdenin justify/
+// hyphenate ayarı başlığa sızarsa kelime araları açılır ve "YÖN-TEMİ" gibi
+// heceden bölünmeler çıkar.
+#show heading.where(level: 1): it => { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(center, text(size: 20pt, weight: 700, it.body)) }
+#show heading.where(level: 2): it => { v(0.7em, weak: true); set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(center, text(size: 16pt, weight: 700, it.body)); v(14mm, weak: true) }
+#show heading.where(level: 3): it => { v(0.6em, weak: true); set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); text(size: 14pt, weight: 700, it.body); v(14mm, weak: true) }
+#show heading.where(level: 4): it => { v(0.5em, weak: true); set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); text(size: 12pt, weight: 700, it.body); v(14mm, weak: true) }
+#let _subhead(body) = { v(0.5em, weak: true); set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(center, text(size: 11pt, weight: 700, body)); v(14mm, weak: true) }
 #let _chapter(kicker: none, ornament: "none", right: true, top: 30mm, body) = {
   if right { pagebreak(to: "odd", weak: true) } else { pagebreak(weak: true) }
   v(top)
-  if kicker != none { set par(first-line-indent: 0pt, justify: false); align(center, text(size: 11pt, weight: 700, tracking: 0.12em)[#upper(kicker)]); v(0.5em) }
+  if kicker != none { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(center, text(size: 11pt, weight: 700, tracking: 0.12em)[#upper(kicker)]); v(0.5em) }
   body
   if ornament == "rule" { v(0.4em); align(center, line(length: 14%, stroke: 0.6pt + black)) }
   if ornament == "dots" { v(0.3em); align(center, text(size: 13pt)[• • •]) }
@@ -93,6 +96,7 @@ const HELPERS = String.raw`#set heading(numbering: none)
 }
 #let _titlepage(title, subtitle, author, publisher) = page(header: none, footer: none)[
   #set par(first-line-indent: 0pt, justify: false, leading: 0.4em)
+  #set text(hyphenate: false)
   // fr-tabanlı dikey ritim: başlık üst-üçte bir, yazar alta yakın, bol boşluk.
   // Alt başlık (varsa) başlığın hemen altında; yayınevi sayfanın en altında.
   #v(1.4fr)
