@@ -95,5 +95,7 @@ export function prepareMeta(meta: BookMeta): BookMeta {
     title: smartQuoteText(cleanMetaValue(meta.title)),
     author: smartQuoteText(cleanMetaValue(meta.author)),
     bio: smartQuoteText(meta.bio),
+    subtitle: smartQuoteText(cleanMetaValue(meta.subtitle ?? "")),
+    publisher: smartQuoteText(cleanMetaValue(meta.publisher ?? "")),
   };
 }

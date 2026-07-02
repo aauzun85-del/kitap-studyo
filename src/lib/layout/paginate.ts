@@ -66,7 +66,7 @@ export type LayoutSettings = {
   lineBreak: "balanced" | "greedy";
 };
 
-export type BookMeta = { title: string; author: string; bio: string };
+export type BookMeta = { title: string; author: string; bio: string; subtitle?: string; publisher?: string };
 
 // (akıllı tırnak / tire / cleanMetaValue → prepare.ts'e taşındı; üstte import edildi)
 
@@ -810,6 +810,8 @@ export function paginate(input: PaginateInput): Page[] {
     title: smartQuoteText(cleanMetaValue(input.meta.title)),
     author: smartQuoteText(cleanMetaValue(input.meta.author)),
     bio: smartQuoteText(input.meta.bio),
+    subtitle: smartQuoteText(cleanMetaValue(input.meta.subtitle ?? "")),
+    publisher: smartQuoteText(cleanMetaValue(input.meta.publisher ?? "")),
   };
 
   const contentWidthPx = mmToPx(contentWidthMm, dpi);
@@ -1402,6 +1404,22 @@ export function paginate(input: PaginateInput): Page[] {
         heightMm: pxToMm(titleLeadPx, dpi),
       });
     });
+    if (meta.subtitle?.trim()) {
+      page.lines.push({
+        segments: plainSegments(meta.subtitle),
+        kind: "author",
+        sizePt: 14,
+        font: KDY_TITLE.font,
+        weight: 400,
+        italic: true,
+        align: "center",
+        indentMm: 0,
+        blockIndentMm: 0,
+        justify: false,
+        spaceBeforeMm: pxToMm(titleLeadPx * 0.35, dpi),
+        heightMm: pxToMm(autoLeadingPx(14, 0, dpi), dpi),
+      });
+    }
     if (meta.author.trim()) {
       page.lines.push({
         segments: plainSegments(meta.author),
@@ -1416,6 +1434,24 @@ export function paginate(input: PaginateInput): Page[] {
         justify: false,
         spaceBeforeMm: pxToMm(titleLeadPx * 0.6, dpi),
         heightMm: pxToMm(autoLeadingPx(KDY_AUTHOR.sizePt, 0, dpi), dpi),
+      });
+    }
+    if (meta.publisher?.trim()) {
+      page.lines.push({
+        segments: plainSegments(meta.publisher),
+        kind: "author",
+        sizePt: 10,
+        font: KDY_TITLE.font,
+        weight: 400,
+        italic: false,
+        align: "center",
+        indentMm: 0,
+        blockIndentMm: 0,
+        justify: false,
+        // Yazarın altında, sayfanın alt bölümüne doğru (JS önizleme yukarıdan dizer;
+        // Typst çıktısında yayınevi en alta sabitlenir — bu yalnız hızlı önizleme).
+        spaceBeforeMm: pxToMm(contentHeightPx * 0.22, dpi),
+        heightMm: pxToMm(autoLeadingPx(10, 0, dpi), dpi),
       });
     }
   }

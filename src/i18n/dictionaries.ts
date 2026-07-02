@@ -379,6 +379,10 @@ type LayoutStudioCopy = {
   bookTitlePlaceholder: string;
   bookAuthorLabel: string;
   bookAuthorPlaceholder: string;
+  bookSubtitleLabel: string;
+  bookSubtitlePlaceholder: string;
+  bookPublisherLabel: string;
+  bookPublisherPlaceholder: string;
   bookBioLabel: string;
   bookBioPlaceholder: string;
   bookHint: string;
@@ -1461,6 +1465,10 @@ const tr: Dictionary = {
     bookTitlePlaceholder: "Örn. Sessiz Sokaklar",
     bookAuthorLabel: "Yazar",
     bookAuthorPlaceholder: "Örn. Ayşe Demir",
+    bookSubtitleLabel: "Alt başlık",
+    bookSubtitlePlaceholder: "Örn. Bir İstanbul Öyküsü (isteğe bağlı)",
+    bookPublisherLabel: "Yayınevi",
+    bookPublisherPlaceholder: "Örn. Deniz Yayınları (isteğe bağlı)",
     bookBioLabel: "Yazar biyografisi",
     bookBioPlaceholder: "Yazar hakkında kısa bir tanıtım yazısı (isteğe bağlı).",
     bookHint:
@@ -2572,6 +2580,10 @@ const en: Dictionary = {
     bookTitlePlaceholder: "e.g. Silent Streets",
     bookAuthorLabel: "Author",
     bookAuthorPlaceholder: "e.g. Ayşe Demir",
+    bookSubtitleLabel: "Subtitle",
+    bookSubtitlePlaceholder: "e.g. An Istanbul Story (optional)",
+    bookPublisherLabel: "Publisher",
+    bookPublisherPlaceholder: "e.g. Deniz Press (optional)",
     bookBioLabel: "Author bio",
     bookBioPlaceholder: "A short introduction about the author (optional).",
     bookHint:

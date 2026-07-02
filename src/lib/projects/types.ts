@@ -23,6 +23,7 @@ export type ProjectMeta = {
   title: string;
   author: string;
   subtitle?: string;
+  publisher?: string; // yayınevi adı — başlık sayfasının altında görünür
   isbn?: string;
   bio?: string;
   genre?: string; // tür — sihirbazda sorulur, kapak promtunu yönlendirir

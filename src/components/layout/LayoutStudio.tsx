@@ -133,13 +133,15 @@ export default function LayoutStudio({
   const [title, setTitle] = useState(seed?.meta.title ?? "");
   const [author, setAuthor] = useState(seed?.meta.author ?? "");
   const [bio, setBio] = useState(seed?.meta.bio ?? "");
+  const [subtitle, setSubtitle] = useState(seed?.meta.subtitle ?? "");
+  const [publisher, setPublisher] = useState(seed?.meta.publisher ?? "");
 
   // Gövde metni (elle yazılan markdown) ve Word'den içe aktarılan bloklar.
   const [sourceMode, setSourceMode] = useState<SourceMode>("manual");
   const [raw, setRaw] = useState(seed?.manuscript.text ?? "");
 
   // Bulut projesi aktifse: başlık/yazar/bio + metni projeye debounce ile yaz.
-  useMetaSync(projectId, { title, author, bio });
+  useMetaSync(projectId, { title, author, bio, subtitle, publisher });
   useManuscriptSync(projectId, raw, "layout");
   const [importedBlocks, setImportedBlocks] = useState<Block[] | null>(null);
   // Word'den gelen RESİM ikili verisi (markdown'a sığmaz) → jeton + harita.
@@ -240,8 +242,8 @@ export default function LayoutStudio({
   const size = getSize(sizeId);
 
   const meta: BookMeta = useMemo(
-    () => ({ title, author, bio }),
-    [title, author, bio],
+    () => ({ title, author, bio, subtitle, publisher }),
+    [title, author, bio, subtitle, publisher],
   );
 
   const settings: LayoutSettings = useMemo(
@@ -921,6 +923,10 @@ export default function LayoutStudio({
               setTitle={setTitle}
               author={author}
               setAuthor={setAuthor}
+              subtitle={subtitle}
+              setSubtitle={setSubtitle}
+              publisher={publisher}
+              setPublisher={setPublisher}
               bio={bio}
               setBio={setBio}
             />
@@ -1658,6 +1664,10 @@ function BookPanel({
   setTitle,
   author,
   setAuthor,
+  subtitle,
+  setSubtitle,
+  publisher,
+  setPublisher,
   bio,
   setBio,
 }: {
@@ -1666,6 +1676,10 @@ function BookPanel({
   setTitle: (v: string) => void;
   author: string;
   setAuthor: (v: string) => void;
+  subtitle: string;
+  setSubtitle: (v: string) => void;
+  publisher: string;
+  setPublisher: (v: string) => void;
   bio: string;
   setBio: (v: string) => void;
 }) {
@@ -1680,11 +1694,27 @@ function BookPanel({
           className={inputCls}
         />
       </Field>
+      <Field label={t.bookSubtitleLabel}>
+        <input
+          value={subtitle}
+          onChange={(e) => setSubtitle(e.target.value)}
+          placeholder={t.bookSubtitlePlaceholder}
+          className={inputCls}
+        />
+      </Field>
       <Field label={t.bookAuthorLabel}>
         <input
           value={author}
           onChange={(e) => setAuthor(e.target.value)}
           placeholder={t.bookAuthorPlaceholder}
+          className={inputCls}
+        />
+      </Field>
+      <Field label={t.bookPublisherLabel}>
+        <input
+          value={publisher}
+          onChange={(e) => setPublisher(e.target.value)}
+          placeholder={t.bookPublisherPlaceholder}
           className={inputCls}
         />
       </Field>

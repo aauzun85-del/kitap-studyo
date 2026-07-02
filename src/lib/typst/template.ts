@@ -91,14 +91,23 @@ const HELPERS = String.raw`#set heading(numbering: none)
   let n = counter(page).display()
   if calc.odd(here().page()) { align(right, n) } else { align(left, n) }
 }
-#let _titlepage(title, author) = page(header: none, footer: none)[
+#let _titlepage(title, subtitle, author, publisher) = page(header: none, footer: none)[
   #set par(first-line-indent: 0pt, justify: false, leading: 0.4em)
   // fr-tabanlı dikey ritim: başlık üst-üçte bir, yazar alta yakın, bol boşluk.
+  // Alt başlık (varsa) başlığın hemen altında; yayınevi sayfanın en altında.
   #v(1.4fr)
   #align(center, text(size: 30pt, weight: 700, title))
+  #if subtitle != none [
+    #v(5mm)
+    #align(center, text(size: 15pt, weight: 400, style: "italic", subtitle))
+  ]
   #v(2.4fr)
   #align(center, text(size: 12pt, weight: 600, tracking: 0.18em)[#upper(author)])
   #v(1fr)
+  #if publisher != none [
+    #align(center, text(size: 10pt, weight: 500, tracking: 0.14em)[#upper(publisher)])
+    #v(0.3fr)
+  ]
 ]
 #let _biopage(body) = page(header: none, footer: none)[
   #set par(first-line-indent: 0pt, justify: true, leading: 0.6em)

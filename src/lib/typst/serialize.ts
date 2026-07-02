@@ -113,7 +113,10 @@ export function bookToTypst(input: TypstBookInput): string {
   // numarası ön sayfada gizli; gövdede 1'den başlasın diye sayaç sıfırlanır.
   if (input.settings.showFrontMatter) {
     if (meta.title || meta.author) {
-      out.push(`#_titlepage([${escapeTypst(meta.title)}], [${escapeTypst(meta.author)}])`);
+      // Boş alt başlık/yayınevi → Typst `none` (o blok çizilmez).
+      const sub = meta.subtitle?.trim() ? `[${escapeTypst(meta.subtitle)}]` : "none";
+      const pub = meta.publisher?.trim() ? `[${escapeTypst(meta.publisher)}]` : "none";
+      out.push(`#_titlepage([${escapeTypst(meta.title)}], ${sub}, [${escapeTypst(meta.author)}], ${pub})`);
     }
     const bioParas = meta.bio
       .split(/\n{2,}/)
