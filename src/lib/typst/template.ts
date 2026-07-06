@@ -71,6 +71,10 @@ const HELPERS = String.raw`#set heading(numbering: none)
     while n < words.len() and hgt(n + 1) <= limit { n = n + 1 }
     let head = words.slice(0, n).join(" ")
     let tail = if n < words.len() { words.slice(n).join(" ") } else { "" }
+    // Baş (harfin yanı) ile gövde AYNI paragraf → aralarında boşluk OLMAMALI.
+    // Paragraf-arası boşluk (par.spacing) buraya sızmasın diye blok boşluğunu
+    // sıfırla; sonraki paragrafla arası dış boşlukla korunur.
+    set block(spacing: 0pt)
     grid(columns: (iw, fw), gutter: 0pt, place(top + left, capt), box(width: fw)[#set par(justify: true, first-line-indent: 0pt); #head])
     if tail != "" { box(width: 100%)[#set par(justify: true, first-line-indent: 0pt); #tail] }
   }
