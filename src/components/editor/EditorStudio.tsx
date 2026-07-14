@@ -1440,6 +1440,7 @@ export default function EditorStudio({
             )}
             {checking ? t.checking : t.checkCta}
           </button>
+          <p className="mt-1.5 pl-[30px] text-xs text-muted">{t.checkHint}</p>
 
           <button
             onClick={handleReview}
