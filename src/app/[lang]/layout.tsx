@@ -21,7 +21,11 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "tipostudio",
+  metadataBase: new URL("https://laycoty.com"),
+  title: {
+    default: "Laycoty — Kapak, mizanpaj ve AI editör",
+    template: "%s · Laycoty",
+  },
   description:
     "Kapak, mizanpaj ve AI destekli editör — kitabını baştan sona profesyonelce hazırla.",
 };

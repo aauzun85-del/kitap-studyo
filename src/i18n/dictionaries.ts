@@ -593,6 +593,7 @@ type EditorStudioCopy = {
   exportDocxFilename: string;
   // Kontrol düğmesi ve durumlar.
   checkCta: string;
+  checkHint: string;
   checking: string;
   reviewCta: string;
   reviewing: string;
@@ -924,7 +925,7 @@ export type Dictionary = {
 };
 
 const tr: Dictionary = {
-  brand: "tipostudio",
+  brand: "laycoty",
   nav: {
     home: "Ana Sayfa",
     cover: "Kapak",
@@ -1711,7 +1712,8 @@ const tr: Dictionary = {
       "İndirildi. Orijinal biçim korundu, {count} düzeltme dosyaya işlendi.",
     exportDocxDonePlain: "İndirildi (düz metin .docx).",
     exportDocxFilename: "duzenlenmis-metin",
-    checkCta: "Kontrol et",
+    checkCta: "Genel Kontrol",
+    checkHint: "Dilbilgisi, yazım yanlışı ve noktalama hatalarını bulur; her düzeltmeyi tek tek onaylarsınız.",
     checking: "Kontrol ediliyor…",
     reviewCta: "Editöryal inceleme",
     reviewing: "İnceleniyor…",
@@ -2039,7 +2041,7 @@ const tr: Dictionary = {
 };
 
 const en: Dictionary = {
-  brand: "tipostudio",
+  brand: "laycoty",
   nav: {
     home: "Home",
     cover: "Cover",
@@ -2826,7 +2828,8 @@ const en: Dictionary = {
       "Downloaded. Original formatting kept, {count} corrections written into the file.",
     exportDocxDonePlain: "Downloaded (plain-text .docx).",
     exportDocxFilename: "edited-text",
-    checkCta: "Check",
+    checkCta: "General Check",
+    checkHint: "Finds grammar, spelling and punctuation mistakes; you approve each fix one by one.",
     checking: "Checking…",
     reviewCta: "Editorial review",
     reviewing: "Reviewing…",

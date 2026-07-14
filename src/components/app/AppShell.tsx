@@ -6,9 +6,9 @@ import { usePathname } from "next/navigation";
 import type { Locale } from "@/i18n/config";
 
 /**
- * tipostudio uygulama kabuğu — giriş yapmış kullanıcının gördüğü çatı.
+ * Laycoty uygulama kabuğu — giriş yapmış kullanıcının gördüğü çatı.
  * 250px sol menü + 66px üst bar + kayan içerik alanı. Renk dili indigo→mor
- * (Claude Design "tipostudio Panel" tasarımı). CSS değişkenleri kök div'e
+ * (Claude Design "Laycoty Panel" tasarımı). CSS değişkenleri kök div'e
  * gömülüdür → bu kabuğun altındaki her şey indigo temayı kullanır; uygulamanın
  * geri kalanı (pazarlama sayfası, eski araçlar) etkilenmez.
  */
@@ -158,6 +158,8 @@ export type ShellUser = {
   initials: string;
   email: string;
   isAdmin: boolean;
+  /** Güncel jeton bakiyesi. null = sınırsız (admin) → üst barda "∞". */
+  balance?: number | null;
 };
 
 const COPY = {
@@ -174,6 +176,9 @@ const COPY = {
     langLabel: "Dil",
     collapse: "Menüyü daralt",
     expand: "Menüyü genişlet",
+    jeton: "jeton",
+    jetonTitle: "Jeton bakiyen",
+    unlimited: "Sınırsız (yönetici)",
   },
   en: {
     home: "Home",
@@ -188,6 +193,9 @@ const COPY = {
     langLabel: "Language",
     collapse: "Collapse menu",
     expand: "Expand menu",
+    jeton: "credits",
+    jetonTitle: "Your credit balance",
+    unlimited: "Unlimited (admin)",
   },
 } as const;
 
@@ -365,7 +373,7 @@ export default function AppShell({
       >
         <Link
           href={`/${lang}/projeler`}
-          title="tipostudio"
+          title="Laycoty"
           style={{ display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "flex-start", gap: 10, padding: "6px 8px 18px", textDecoration: "none" }}
         >
           <div
@@ -383,11 +391,11 @@ export default function AppShell({
               fontSize: 18,
             }}
           >
-            t
+            L
           </div>
           {!collapsed && (
             <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-.3px", color: "var(--sb-logo)" }}>
-              tipostudio
+              laycoty
             </div>
           )}
         </Link>
@@ -545,23 +553,41 @@ export default function AppShell({
             <Icon name="panel" size={19} />
           </button>
           <div style={{ flex: 1 }} />
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 7,
-              padding: "7px 13px",
-              border: "1px solid #e3e5f0",
-              borderRadius: 10,
-              fontSize: 13,
-              fontWeight: 600,
-              color: "#4b5365",
-            }}
-          >
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--pri)" }} />
-            {t.plan}
-            <span style={{ color: "var(--pri)", fontWeight: 700, marginLeft: 2 }}>{t.upgrade}</span>
-          </div>
+          {/* Jeton bakiyesi pili — giriş yapmış kullanıcıya güncel bakiye,
+              admin'e "∞ Sınırsız". Değer toShellUser'da sunucuda hesaplanır. */}
+          {user && (
+            <Link
+              href={`/${lang}/jetonlar`}
+              title={user.balance == null ? t.unlimited : t.jetonTitle}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+                padding: "7px 13px",
+                border: "1px solid #e3e5f0",
+                borderRadius: 10,
+                fontSize: 13,
+                fontWeight: 600,
+                color: "#4b5365",
+                textDecoration: "none",
+              }}
+            >
+              <span
+                style={{
+                  width: 15,
+                  height: 15,
+                  borderRadius: "50%",
+                  background: "linear-gradient(135deg,#f0b429,#de911d)",
+                  boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,.5)",
+                  flex: "none",
+                }}
+              />
+              <span style={{ color: "var(--pri)", fontWeight: 800 }}>
+                {user.balance == null ? "∞" : user.balance}
+              </span>
+              {t.jeton}
+            </Link>
+          )}
           <button
             style={{
               width: 40,

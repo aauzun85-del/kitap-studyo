@@ -32,7 +32,7 @@ export default async function SiteHeader({
             className="flex h-9 w-9 items-center justify-center rounded-[10px] text-lg font-extrabold text-white"
             style={{ background: "linear-gradient(135deg, var(--color-accent), #7c3aed)" }}
           >
-            t
+            L
           </span>
           <span className="font-sans text-xl font-extrabold lowercase tracking-tight">
             {dict.brand}

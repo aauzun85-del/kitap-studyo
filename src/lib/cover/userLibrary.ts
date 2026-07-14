@@ -32,7 +32,7 @@ export type UserTemplate = {
 export const USER_IMAGES_LIMIT = 60;
 export const USER_TEMPLATES_LIMIT = 40;
 
-const DB_NAME = "tipostudio";
+const DB_NAME = "tipostudio"; // eski marka adı — mevcut kullanıcı verisi kaybolmasın diye DEĞİŞTİRME
 const STORE = "kv";
 const IMAGES_KEY = "userImages";
 const TEMPLATES_KEY = "userTemplates";

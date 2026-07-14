@@ -163,7 +163,7 @@ const PRICING = {
 const TESTIMONIALS = {
   tr: [
     {
-      text: "İlk kitabımın kapağını Canva'da 3 günde yapmıştım. Tipostudio'da 20 dakikada, üstelik baskıya hazır PDF ile çıktım.",
+      text: "İlk kitabımın kapağını Canva'da 3 günde yapmıştım. Laycoty'de 20 dakikada, üstelik baskıya hazır PDF ile çıktım.",
       author: "Selin A.",
       role: "Bağımsız Yazar",
       avatar: "SA",
@@ -183,7 +183,7 @@ const TESTIMONIALS = {
   ],
   en: [
     {
-      text: "I used to spend 3 days on my cover in Canva. With Tipostudio I was done in 20 minutes, with a print-ready PDF.",
+      text: "I used to spend 3 days on my cover in Canva. With Laycoty I was done in 20 minutes, with a print-ready PDF.",
       author: "Sarah A.",
       role: "Indie Author",
       avatar: "SA",
@@ -317,7 +317,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                   <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/70" />
                   <span className="h-2.5 w-2.5 rounded-full bg-green-400/70" />
                   <span className="mx-2 flex-1 rounded bg-border" style={{ height: 14 }} />
-                  <span className="font-mono text-[9px] text-muted">tipostudio.com</span>
+                  <span className="font-mono text-[9px] text-muted">laycoty.com</span>
                 </div>
 
                 {/* Panel tabs */}

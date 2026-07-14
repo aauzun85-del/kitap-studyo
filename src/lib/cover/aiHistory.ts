@@ -12,7 +12,7 @@ export type AiHistoryItem = {
 
 export const AI_HISTORY_LIMIT = 6;
 
-const DB_NAME = "tipostudio";
+const DB_NAME = "tipostudio"; // eski marka adı — mevcut kullanıcı verisi kaybolmasın diye DEĞİŞTİRME
 const STORE = "kv";
 const KEY = "aiHistory";
 

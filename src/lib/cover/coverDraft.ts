@@ -69,7 +69,7 @@ export type CoverDraft = {
 
 export const COVER_DRAFT_VERSION = 1;
 
-const DB_NAME = "tipostudio";
+const DB_NAME = "tipostudio"; // eski marka adı — mevcut kullanıcı verisi kaybolmasın diye DEĞİŞTİRME
 const STORE = "kv";
 const KEY = "coverDraft";
 
