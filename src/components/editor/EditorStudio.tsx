@@ -801,7 +801,6 @@ export default function EditorStudio({
   // Uzun metinler otomatik parçalanır; ilerleme (parça/toplam) burada tutulur.
   const [checkProgress, setCheckProgress] = useState<{ done: number; total: number } | null>(null);
   const [genre, setGenre] = useState<Genre>("fiction");
-  const [deep, setDeep] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
   const [checkError, setCheckError] = useState<string | null>(null);
@@ -1025,7 +1024,9 @@ export default function EditorStudio({
             const res = await fetch(endpoint, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ text: chunk, lang, mode: deep ? "deep" : "fast", ...extraBody }),
+              // Derin kontrol artık STANDART (seçenek değil): her kontrol en
+              // güçlü modelle çalışır — kullanıcı kutucuk/karar yükü taşımaz.
+              body: JSON.stringify({ text: chunk, lang, mode: "deep", ...extraBody }),
             });
             if (!res.ok) {
               const d = (await res.json().catch(() => ({}))) as { error?: string; max?: number };
@@ -1422,28 +1423,20 @@ export default function EditorStudio({
             <p className="mt-1 text-xs text-accent">{exportInfo}</p>
           )}
 
-          <label className="mt-4 flex cursor-pointer items-start gap-2 text-xs text-muted">
-            <input
-              type="checkbox"
-              checked={deep}
-              onChange={(e) => setDeep(e.target.checked)}
-              className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[var(--accent)]"
-            />
-            <span>
-              <span className="font-medium text-foreground">{t.deepLabel}</span>
-              <span className="block">{t.deepHint}</span>
-            </span>
-          </label>
+          {/* KONTROLLER — numaralı adımlar (1-6). Derin kontrol artık standart;
+              onay kutusu yok. Her düğmenin solunda sıra rozeti: karmaşa yerine
+              yukarıdan aşağı izlenen net bir sıra. */}
+          <div className="mt-5 h-px bg-border" />
 
           <button
             onClick={handleCheck}
             disabled={!hasText || checking || reviewing || risking || genreLoading}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-4 flex w-full items-center gap-2.5 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {checking ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-white/40 border-t-white" />
             ) : (
-              <MagicWandIcon className="h-4 w-4" />
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/25 font-mono text-[11px] font-bold">1</span>
             )}
             {checking ? t.checking : t.checkCta}
           </button>
@@ -1451,76 +1444,75 @@ export default function EditorStudio({
           <button
             onClick={handleReview}
             disabled={!hasText || checking || reviewing || risking || genreLoading}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-accent/40 px-4 py-2.5 text-sm font-semibold text-accent transition enabled:hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-2 flex w-full items-center gap-2.5 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition enabled:hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
           >
             {reviewing ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+              <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
             ) : (
-              <BookIcon className="h-4 w-4" />
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-soft font-mono text-[11px] font-bold text-accent">2</span>
             )}
             {reviewing ? t.reviewing : t.reviewCta}
           </button>
-          <p className="mt-1.5 text-xs text-muted">{t.reviewHint}</p>
+          <p className="mt-1.5 pl-[30px] text-xs text-muted">{t.reviewHint}</p>
 
           <button
             onClick={handleStructure}
             disabled={!hasText || checking || reviewing || risking || genreLoading}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition enabled:hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-2 flex w-full items-center gap-2.5 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition enabled:hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <BookIcon className="h-4 w-4 text-accent" />
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-soft font-mono text-[11px] font-bold text-accent">3</span>
             {t.structureCta}
           </button>
-          <p className="mt-1.5 text-xs text-muted">{t.structureHint}</p>
+          <p className="mt-1.5 pl-[30px] text-xs text-muted">{t.structureHint}</p>
 
           <button
             onClick={handlePrep}
             disabled={!hasText || checking || reviewing || risking || genreLoading}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition enabled:hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-2 flex w-full items-center gap-2.5 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition enabled:hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <MagicWandIcon className="h-4 w-4 text-accent" />
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-soft font-mono text-[11px] font-bold text-accent">4</span>
             {t.prepCta}
           </button>
-          <p className="mt-1.5 text-xs text-muted">{t.prepHint}</p>
+          <p className="mt-1.5 pl-[30px] text-xs text-muted">{t.prepHint}</p>
 
           <button
             onClick={handleRisk}
             disabled={!hasText || checking || reviewing || risking || genreLoading}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition enabled:hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-2 flex w-full items-center gap-2.5 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition enabled:hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
           >
             {risking ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+              <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
             ) : (
-              <WarningIcon className="h-4 w-4 text-accent" />
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-soft font-mono text-[11px] font-bold text-accent">5</span>
             )}
             {risking ? t.risking : t.riskCta}
           </button>
-          <p className="mt-1.5 text-xs text-muted">{t.riskHint}</p>
+          <p className="mt-1.5 pl-[30px] text-xs text-muted">{t.riskHint}</p>
 
-          <label className="mt-4 block text-xs font-medium text-muted">
-            {t.genreLabel}
-          </label>
+          <button
+            onClick={handleGenre}
+            disabled={!hasText || checking || reviewing || risking || genreLoading}
+            className="mt-2 flex w-full items-center gap-2.5 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition enabled:hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {genreLoading ? (
+              <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+            ) : (
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-soft font-mono text-[11px] font-bold text-accent">6</span>
+            )}
+            {genreLoading ? t.genreLoading : t.genreCta}
+          </button>
+          {/* Tür seçimi 6. kontrolün parçası — düğmenin hemen altında, hizalı. */}
           <select
             value={genre}
             onChange={(e) => setGenre(e.target.value as Genre)}
-            className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition focus:border-accent"
+            className="ml-[30px] mt-1.5 w-[calc(100%-30px)] rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground outline-none transition focus:border-accent"
+            aria-label={t.genreLabel}
           >
             <option value="fiction">{t.genreFiction}</option>
             <option value="selfhelp">{t.genreSelfhelp}</option>
             <option value="academic">{t.genreAcademic}</option>
           </select>
-          <button
-            onClick={handleGenre}
-            disabled={!hasText || checking || reviewing || risking || genreLoading}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition enabled:hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {genreLoading ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
-            ) : (
-              <BookIcon className="h-4 w-4 text-accent" />
-            )}
-            {genreLoading ? t.genreLoading : t.genreCta}
-          </button>
-          <p className="mt-1.5 text-xs text-muted">{t.genreHint}</p>
+          <p className="mt-1.5 pl-[30px] text-xs text-muted">{t.genreHint}</p>
         </div>
       </aside>
 
