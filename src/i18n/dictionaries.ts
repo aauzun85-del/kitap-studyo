@@ -35,6 +35,15 @@ type AuthCopy = {
   notConnected: string;
   signOut: string;
   loggedInAs: string;
+  // Şifre sıfırlama akışı.
+  forgotTitle: string;
+  forgotSubtitle: string;
+  forgotCta: string;
+  forgotSent: string;
+  newPassTitle: string;
+  newPassSubtitle: string;
+  newPassCta: string;
+  backToLogin: string;
 };
 
 type CoverStudioCopy = {
@@ -981,6 +990,16 @@ const tr: Dictionary = {
       "Üyelik sistemi henüz bağlı değil — bu ekran şimdilik yalnızca önizleme. Gerçek giriş bir sonraki adımda aktif olacak.",
     signOut: "Çıkış yap",
     loggedInAs: "Hesap",
+    forgotTitle: "Şifreni sıfırla",
+    forgotSubtitle:
+      "Kayıtlı e-postanı yaz; sana yeni şifre belirleme bağlantısı gönderelim.",
+    forgotCta: "Bağlantı gönder",
+    forgotSent:
+      "Bağlantı gönderildi! E-postandaki bağlantıya tıklayarak yeni şifreni belirle. (Gelmezse spam klasörüne bak.)",
+    newPassTitle: "Yeni şifre belirle",
+    newPassSubtitle: "Hesabın için yeni bir şifre seç.",
+    newPassCta: "Şifreyi güncelle",
+    backToLogin: "Girişe dön",
   },
   home: {
     badge: "Tek pakette kitap hazırlığı",
@@ -2097,6 +2116,16 @@ const en: Dictionary = {
       "The membership system isn't connected yet — this screen is a preview for now. Real sign-in activates in the next step.",
     signOut: "Sign out",
     loggedInAs: "Account",
+    forgotTitle: "Reset your password",
+    forgotSubtitle:
+      "Enter your registered email and we'll send you a link to set a new password.",
+    forgotCta: "Send link",
+    forgotSent:
+      "Link sent! Click the link in your email to set a new password. (Check your spam folder if it doesn't arrive.)",
+    newPassTitle: "Set a new password",
+    newPassSubtitle: "Choose a new password for your account.",
+    newPassCta: "Update password",
+    backToLogin: "Back to login",
   },
   home: {
     badge: "Book preparation in one package",

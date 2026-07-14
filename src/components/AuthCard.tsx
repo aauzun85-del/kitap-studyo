@@ -9,6 +9,7 @@ import {
   signUpAction,
   type AuthState,
 } from "@/app/[lang]/auth-actions";
+import { createClient } from "@/lib/supabase/client";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 
@@ -73,9 +74,28 @@ export default function AuthCard({
     {},
   );
 
-  // Google girişi şimdilik kapalı (kod /lib/supabase/client.ts + /auth/callback ile
-  // hazır; Supabase panelinde Google sağlayıcısı ayarlanınca açılır).
-  const [googleNote, setGoogleNote] = useState(false);
+  // Google girişi: tarayıcıdan Supabase'e yönlendirir; dönüşte /auth/callback
+  // oturumu çerezlere yazar. Supabase panelinde Google sağlayıcısı açık olmalı.
+  const [googlePending, setGooglePending] = useState(false);
+  const [googleError, setGoogleError] = useState(false);
+
+  async function signInWithGoogle() {
+    setGooglePending(true);
+    setGoogleError(false);
+    const supabase = createClient();
+    const target = next && next.startsWith(`/${lang}/`) ? next : `/${lang}/projeler`;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(target)}`,
+      },
+    });
+    // Hata yoksa tarayıcı Google'a yönlenir; buraya yalnız hata durumunda düşülür.
+    if (error) {
+      setGooglePending(false);
+      setGoogleError(true);
+    }
+  }
 
   return (
     <div className="mx-auto flex max-w-md flex-col px-4 py-16">
@@ -135,9 +155,12 @@ export default function AuthCard({
 
           {!isSignup && (
             <div className="text-right">
-              <span className="cursor-not-allowed text-sm font-medium text-accent/70">
+              <Link
+                href={`/${lang}/sifre-sifirla`}
+                className="text-sm font-medium text-accent hover:underline"
+              >
                 {t.forgot}
-              </span>
+              </Link>
             </div>
           )}
 
@@ -167,16 +190,11 @@ export default function AuthCard({
           <span className="h-px flex-1 bg-border" />
         </div>
 
-        {/* OPTIONAL: Google girişi. Açmak için: import { createClient } from
-            "@/lib/supabase/client"; ve onClick'i şununla değiştir:
-              const supabase = createClient();
-              await supabase.auth.signInWithOAuth({ provider: "google",
-                options: { redirectTo: `${location.origin}/auth/callback?next=/${lang}` } });
-            Ayrıca Supabase panelinde Google sağlayıcısını yapılandır. */}
         <button
           type="button"
-          onClick={() => setGoogleNote(true)}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface py-2.5 text-sm font-semibold transition hover:border-foreground/30"
+          onClick={signInWithGoogle}
+          disabled={googlePending}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface py-2.5 text-sm font-semibold transition hover:border-foreground/30 disabled:opacity-60"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
             <path
@@ -198,11 +216,11 @@ export default function AuthCard({
           </svg>
           {t.googleCta}
         </button>
-        {googleNote && (
-          <p className="mt-3 text-center text-xs text-muted">
+        {googleError && (
+          <p className="mt-3 text-center text-xs text-red-600 dark:text-red-400">
             {lang === "tr"
-              ? "Google ile giriş çok yakında. Şimdilik e-posta ile devam et."
-              : "Google sign-in is coming soon. For now, continue with email."}
+              ? "Google girişi şu an kullanılamıyor. E-posta ile devam edebilirsin."
+              : "Google sign-in is currently unavailable. You can continue with email."}
           </p>
         )}
 
