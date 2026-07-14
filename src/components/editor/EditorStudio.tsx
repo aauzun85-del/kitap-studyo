@@ -66,10 +66,20 @@ type Suggestion = {
 };
 
 // Parçalı kontrolde aynı öneri birden çok parçada çıkabilir; tekilleştir.
+// Ayrıca DEĞİŞİKLİK İÇERMEYEN "düzeltme"leri ele: model bazen sorun bulamadığı
+// cümleyi aynen geri döndürür ("bu yapı zaten doğru" açıklamasıyla). ESKİ=ÖNERİ
+// olan kart kullanıcıya iş yaptırmaz — hiç gösterme (boşluk farkları sayılmaz).
+const normalizeForCompare = (s: string) => s.replace(/\s+/g, " ").trim();
 function dedupeSuggestions(list: Suggestion[]): Suggestion[] {
   const seen = new Set<string>();
   const out: Suggestion[] = [];
   for (const s of list) {
+    if (
+      s.kind === "fix" &&
+      s.suggestion &&
+      normalizeForCompare(s.original) === normalizeForCompare(s.suggestion)
+    )
+      continue;
     const key = `${s.kind}|${s.category}|${s.original}|${s.suggestion}`;
     if (seen.has(key)) continue;
     seen.add(key);
