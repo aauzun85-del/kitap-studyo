@@ -6,7 +6,18 @@
 // haritasıyla). parseBlocks (paginate.ts) bu jetonları geri okur.
 
 import type { Block, Run } from "./paginate";
-import { type MediaMap, imageToken, tableToFence, PAGEBREAK_TOKEN, spacerToken } from "./mediaTokens";
+import { type MediaMap, imageToken, tableToFence, PAGEBREAK_TOKEN, spacerToken, fmtToken } from "./mediaTokens";
+import { COVER_FONTS } from "@/lib/cover/fonts";
+
+// Blok-bazlı yazı tipi/punto geçersiz kılması varsa "[[stil:…]]" ön satırı üret.
+// Font, aile adıyla değil KISA id ile yazılır (boşluksuz, kararlı).
+function fmtPrefix(b: Extract<Block, { type: "paragraph" | "heading" | "blockquote" }>): string {
+  const fontId = b.fontFamily
+    ? COVER_FONTS.find((f) => f.family === b.fontFamily)?.id
+    : undefined;
+  const tok = fmtToken({ fontId, sizePt: b.sizePt });
+  return tok ? tok + "\n" : "";
+}
 
 // Tek satıra inen kalın/italik markdown (inlineRuns'ın tersi). Boşluklar işaretin
 // DIŞINA taşınır (parseBlocks'taki inlineRuns "** x **" gibi şeyleri çözemez).
@@ -36,14 +47,14 @@ export function blocksToMarkdown(blocks: Block[]): { markdown: string; media: Me
         // restructureHeadings onu tekrar bir sonraki başlığın kicker'ına katlar
         // (aynı chunk'a koymak başlığı blockquote sanılmasına yol açardı).
         if (b.kicker) parts.push("# " + b.kicker);
-        parts.push("#".repeat(lvl) + " " + runsToMarkdown(b.runs));
+        parts.push(fmtPrefix(b) + "#".repeat(lvl) + " " + runsToMarkdown(b.runs));
         break;
       }
       case "paragraph":
-        parts.push(runsToMarkdown(b.runs));
+        parts.push(fmtPrefix(b) + runsToMarkdown(b.runs));
         break;
       case "blockquote":
-        parts.push("> " + runsToMarkdown(b.runs));
+        parts.push(fmtPrefix(b) + "> " + runsToMarkdown(b.runs));
         break;
       case "blank":
         parts.push("");

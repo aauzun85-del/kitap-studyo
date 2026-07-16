@@ -50,6 +50,39 @@ export function matchSpacer(chunk: string): number | null {
   return m[1] ? parseFloat(m[1]) : DEFAULT_SPACER_MM;
 }
 
+// ── Paragraf biçimi işareti (biçim çubuğu: yazı tipi / punto) ────────────────
+// Bloğun İLK satırı olarak yazılır: "[[stil:font=arnopro;punto=12.5]]".
+// blocksToMarkdown yazar, parseBlocks okuyup bloğa uygular → blok-bazlı
+// font/punto raw'da KALICI olur (kaydet/yenile/PDF hepsinde yaşar).
+// Bilinmeyen alanlar yok sayılır → ileriye uyumlu.
+export type FmtMark = { fontId?: string; sizePt?: number };
+
+export function fmtToken(m: FmtMark): string | null {
+  const parts: string[] = [];
+  if (m.fontId) parts.push(`font=${m.fontId}`);
+  if (m.sizePt != null && Number.isFinite(m.sizePt)) parts.push(`punto=${m.sizePt}`);
+  return parts.length ? `[[stil:${parts.join(";")}]]` : null;
+}
+
+// Bir satır stil işareti mi? → FmtMark (yoksa null).
+export function matchFmtLine(line: string): FmtMark | null {
+  const m = /^\[\[stil:([^\]]*)\]\]$/.exec(line.trim());
+  if (!m) return null;
+  const out: FmtMark = {};
+  for (const kv of m[1].split(";")) {
+    const eq = kv.indexOf("=");
+    if (eq <= 0) continue;
+    const k = kv.slice(0, eq);
+    const v = kv.slice(eq + 1);
+    if (k === "font" && v) out.fontId = v;
+    if (k === "punto") {
+      const n = parseFloat(v);
+      if (Number.isFinite(n) && n > 0) out.sizePt = n;
+    }
+  }
+  return out.fontId || out.sizePt != null ? out : null;
+}
+
 // Bir "chunk" tablo fence'i mi? → table bloğu (yoksa null).
 export function matchTableFence(chunk: string): Extract<Block, { type: "table" }> | null {
   const t = chunk.trim();

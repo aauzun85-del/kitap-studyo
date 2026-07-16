@@ -388,9 +388,12 @@ export default function LayoutStudio({
       let next: Block[];
       if (text.trim().length === 0) {
         next = [...blocks.slice(0, index), ...blocks.slice(index + 1)]; // boşaldı → sil
-      } else if (runsEqual(b.runs, runs)) {
+      } else if (runsEqual(b.runs, runs) && !fmtDirtyRef.current) {
         setEditingBlock(null); // değişiklik yok → dokunma
         return;
+      } else if (runsEqual(b.runs, runs)) {
+        // Metin aynı ama font/punto değişti → mevcut blocks'u raw'a yaz.
+        next = [...blocks];
       } else {
         next = [...blocks];
         next[index] = { ...b, runs };
@@ -404,6 +407,7 @@ export default function LayoutStudio({
       setImportMedia(media);
       setRaw(markdown);
       setEditingBlock(null);
+      fmtDirtyRef.current = false;
     },
     [blocks],
   );
@@ -423,6 +427,9 @@ export default function LayoutStudio({
   }, []);
 
   // Biçim çubuğu: düzenlenen bloğun blok-seviyesi biçimini güncelle (tüm paragraf).
+  // fmtDirty: yalnız font/punto değişti ve metin AYNI kaldıysa bile commit'te
+  // raw'a yazılsın (yoksa kapatınca kaybolur — raw tek kalıcı kaynak).
+  const fmtDirtyRef = useRef(false);
   const mutateEditingBlock = useCallback(
     (fn: (b: Block) => Block) => {
       setBlocks((prev) => {
@@ -433,6 +440,7 @@ export default function LayoutStudio({
         next[editingBlock] = fn(b);
         return next;
       });
+      fmtDirtyRef.current = true;
     },
     [editingBlock],
   );
@@ -498,6 +506,7 @@ export default function LayoutStudio({
     const cur = editingBlockRef.current;
     if (cur != null && cur !== i) editorApiRef.current?.commit();
     setSelFmt({ bold: false, italic: false });
+    fmtDirtyRef.current = false;
     setEditingBlock(i);
   }, []);
 
@@ -1266,6 +1275,20 @@ export default function LayoutStudio({
               typeLabel={editingTypeLabel}
               selBold={selFmt.bold}
               selItalic={selFmt.italic}
+              fontId={
+                editingBlockData.type === "paragraph" || editingBlockData.type === "heading" || editingBlockData.type === "blockquote"
+                  ? editingBlockData.fontFamily
+                    ? idOfFamily(editingBlockData.fontFamily)
+                    : blockDefaultFontId(editingBlockData, fontId, headingFontId)
+                  : fontId
+              }
+              sizePt={
+                editingBlockData.type === "paragraph" || editingBlockData.type === "heading" || editingBlockData.type === "blockquote"
+                  ? (editingBlockData.sizePt ?? blockDefaultSizePt(editingBlockData, bodySizePt))
+                  : bodySizePt
+              }
+              onFontId={(id) => setBlockFont(familyOf(id))}
+              onSizePt={(pt) => setBlockSize(pt)}
               onToggleBold={toggleSelBold}
               onToggleItalic={toggleSelItalic}
               onSendNextPage={() => editingBlock != null && sendBlockToNextPage(editingBlock)}
@@ -2459,6 +2482,10 @@ function FormatBar({
   typeLabel,
   selBold,
   selItalic,
+  fontId,
+  sizePt,
+  onFontId,
+  onSizePt,
   onToggleBold,
   onToggleItalic,
   onSendNextPage,
@@ -2472,6 +2499,11 @@ function FormatBar({
   typeLabel?: string;
   selBold: boolean;
   selItalic: boolean;
+  /** Düzenlenen bloğun yazı tipi (id) ve puntosu — tüm paragrafa uygulanır. */
+  fontId: string;
+  sizePt: number;
+  onFontId: (id: string) => void;
+  onSizePt: (pt: number) => void;
   onToggleBold: () => void;
   onToggleItalic: () => void;
   onSendNextPage: () => void;
@@ -2507,6 +2539,34 @@ function FormatBar({
       <button type="button" onMouseDown={keepFocus} onClick={onToggleItalic} className={`${btn} italic ${isItalic ? btnOn : ""}`} title="İtalik">
         I
       </button>
+
+      <div className="mx-1 h-5 w-px bg-border" />
+
+      {/* Paragrafın yazı tipi + puntosu (tüm bloğa uygulanır; select/input odak
+          alabilir — data-fmtbar sayesinde düzenleme kapanmaz). */}
+      <select
+        value={fontId}
+        onChange={(e) => onFontId(e.target.value)}
+        className="h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-accent"
+        title="Yazı tipi (paragraf)"
+      >
+        {TYPST_FONTS.map((f) => (
+          <option key={f.id} value={f.id}>{f.label}</option>
+        ))}
+      </select>
+      <input
+        type="number"
+        value={sizePt}
+        min={6}
+        max={48}
+        step={0.5}
+        onChange={(e) => {
+          const n = parseFloat(e.target.value);
+          if (Number.isFinite(n) && n >= 6 && n <= 48) onSizePt(n);
+        }}
+        className="h-8 w-16 rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-accent"
+        title="Punto (paragraf)"
+      />
 
       <div className="mx-1 h-5 w-px bg-border" />
 
@@ -2582,6 +2642,18 @@ function RichBlockEditor({
   const ref = useRef<HTMLDivElement>(null);
   const committedRef = useRef(false); // çift kayıt / kayıp düzenleme önler
 
+  // Kayıt geri çağrıları HER render'da tazelenir: api mount'ta bir kez kurulur,
+  // içindeki commit ilk render'ın commitBlockFinal kopyasını hapsederse blok-
+  // seviyesi font/punto gibi SONRAKİ blocks değişiklikleri eski kopyayla ezilir.
+  const onCommitFinalRef = useRef(onCommitFinal);
+  const onCommitDraftRef = useRef(onCommitDraft);
+  const onEndRef = useRef(onEnd);
+  useEffect(() => {
+    onCommitFinalRef.current = onCommitFinal;
+    onCommitDraftRef.current = onCommitDraft;
+    onEndRef.current = onEnd;
+  });
+
   const emitSelection = useCallback(() => {
     let bold = false;
     let italic = false;
@@ -2630,8 +2702,8 @@ function RichBlockEditor({
       },
       commit: () => {
         committedRef.current = true;
-        onCommitFinal(read());
-        onEnd();
+        onCommitFinalRef.current(read());
+        onEndRef.current();
       },
       splitAtCaret: () => {
         const sel = window.getSelection();
@@ -2655,7 +2727,7 @@ function RichBlockEditor({
       if (apiRef.current === api) apiRef.current = null;
       // Beklenmedik unmount (örn. yeniden sayfalama editörü taşıdı): düzenlemeyi
       // bitirmeden run'ları sakla, böylece yazılanlar kaybolmaz.
-      if (!committedRef.current && node) onCommitDraft(read());
+      if (!committedRef.current && node) onCommitDraftRef.current(read());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

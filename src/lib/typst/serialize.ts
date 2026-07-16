@@ -49,16 +49,29 @@ function dropCapPara(b: Extract<Block, { type: "paragraph" }>): string {
   return `#_dropcap(${typstStr(cap)}, ${typstStr(rest)})`;
 }
 
+// Blok-bazlı yazı tipi/punto geçersiz kılması (biçim çubuğundan): içerik bir
+// #set text(...) kapsamına sarılır. Geçersiz kılma yoksa içerik aynen döner.
+function fmtWrap(
+  b: Extract<Block, { type: "paragraph" | "heading" | "blockquote" }>,
+  inner: string,
+): string {
+  const sets: string[] = [];
+  if (b.fontFamily) sets.push(`font: ${typstStr(b.fontFamily)}`);
+  if (b.sizePt != null) sets.push(`size: ${b.sizePt}pt`);
+  if (!sets.length) return inner;
+  return `#[#set text(${sets.join(", ")}); ${inner}]`;
+}
+
 function blockToTypst(b: Block, contentWidthMm: number): string {
   switch (b.type) {
     case "heading":
       // Ara başlık (subhead): küçük ortalı; içindekilere girmez.
-      if (b.subhead) return `#_subhead[${runsToMarkup(b.runs)}]`;
-      return `#heading(level: ${b.level})[${runsToMarkup(b.runs)}]`;
+      if (b.subhead) return fmtWrap(b, `#_subhead[${runsToMarkup(b.runs)}]`);
+      return fmtWrap(b, `#heading(level: ${b.level})[${runsToMarkup(b.runs)}]`);
     case "paragraph":
-      return runsToMarkup(b.runs);
+      return fmtWrap(b, runsToMarkup(b.runs));
     case "blockquote":
-      return `#block(inset: (x: ${KDY_RULES.blockquoteIndentMm}mm))[#emph[${runsToMarkup(b.runs)}]]`;
+      return fmtWrap(b, `#block(inset: (x: ${KDY_RULES.blockquoteIndentMm}mm))[#emph[${runsToMarkup(b.runs)}]]`);
     case "blank":
       return "#v(0.8em)";
     case "pagebreak":
