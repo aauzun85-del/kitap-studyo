@@ -184,7 +184,7 @@ export default function WizardBar({
         </button>
       )}
     </div>
-    <WizardGuide lang={lang} step={current} />
+    <WizardGuide lang={lang} step={current} projectId={projectId} />
     </>
   );
 }

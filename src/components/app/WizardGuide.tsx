@@ -13,7 +13,9 @@ const GUIDE: Record<Step, { tr: { title: string; lines: string[] }; en: { title:
       title: "1. Adım · AI Editör",
       lines: [
         "Kitabının metnini sol panele yapıştır ya da Word (.docx) dosyandan yükle.",
-        "Yapay zekâ yazım, dil ve tutarlılık önerilerini çıkarır; her öneriye Uygula ya da Yoksay de.",
+        "Sağda 1'den 6'ya numaralı kontroller var: Genel Kontrol (yazım/dilbilgisi), Editöryal inceleme (üslup), Kitap yapısı, Yayına hazırlık, Riskli içerik ve Türe göre kontrol.",
+        "Sırayla hepsini çalıştırabilir ya da yalnız istediğin kontrolleri seçebilirsin — zorunlu değil.",
+        "Çıkan önerilere tek tek Uygula ya da Yoksay de; karar her zaman sende.",
         "Bittiğinde üstteki Tamamladım düğmesine bas — seni Mizanpaj adımına geçirir.",
       ],
     },
@@ -21,7 +23,9 @@ const GUIDE: Record<Step, { tr: { title: string; lines: string[] }; en: { title:
       title: "Step 1 · AI Editor",
       lines: [
         "Paste your manuscript into the left panel or upload it from a Word (.docx) file.",
-        "AI surfaces spelling, style and consistency suggestions; Apply or Ignore each one.",
+        "On the right are checks numbered 1 to 6: General Check (spelling/grammar), Editorial review (style), Book structure, Publish prep, Risky content and Genre check.",
+        "Run them all in order, or pick only the ones you want — none are required.",
+        "Apply or Ignore each suggestion one by one; you're always in control.",
         "When done, hit Done at the top — it takes you to the Layout step.",
       ],
     },
@@ -82,10 +86,20 @@ const GUIDE: Record<Step, { tr: { title: string; lines: string[] }; en: { title:
   },
 };
 
-export default function WizardGuide({ lang, step }: { lang: Locale; step: Step }) {
+export default function WizardGuide({
+  lang,
+  step,
+  projectId,
+}: {
+  lang: Locale;
+  step: Step;
+  projectId?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
-  const seenKey = `tipo_guide_seen_${step}`;
+  // "Görüldü" bilgisi KİTABA özeldir: her yeni kitapta rehber yeniden ortada
+  // açılır (eskiden adım başına tek seferdi → ikinci kitapta hiç çıkmıyordu).
+  const seenKey = projectId ? `tipo_guide_seen_${projectId}_${step}` : `tipo_guide_seen_${step}`;
 
   // Her adıma İLK girişte rehber ortada (karartılı) açılır; daha önce görüldüyse
   // küçük düğme olarak durur.
@@ -123,9 +137,9 @@ export default function WizardGuide({ lang, step }: { lang: Locale; step: Step }
             background: "rgba(20,24,40,.38)",
             backdropFilter: "blur(1.5px)",
             display: "flex",
-            alignItems: "flex-start",
+            alignItems: "center",
             justifyContent: "center",
-            paddingTop: "min(22vh, 200px)",
+            padding: 20,
             fontFamily: "'Plus Jakarta Sans',system-ui,sans-serif",
           }}
         >
