@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
+import { genreThemeId, genreLayoutSeed } from "@/lib/projects/genres";
 import { useMetaSync, useManuscriptSync } from "@/lib/projects/useSync";
 import {
   INTERIOR_SIZES,
@@ -36,6 +37,7 @@ import {
 } from "@/lib/layout/paginate";
 import {
   LAYOUT_THEMES,
+  getTheme,
   type LayoutTheme,
   type ChapterOrnament,
 } from "@/lib/layout/themes";
@@ -314,6 +316,21 @@ export default function LayoutStudio({
     setChapterOrnament(theme.chapterOrnament);
     setShowChapterKicker(theme.showChapterKicker);
   }, []);
+
+  // Tür → tema: sihirbazda seçilen kitap türü bir temaya eşleşiyorsa mizanpaj
+  // o temayla açılır (şiir→Şiir, kişisel gelişim→Kişisel Gelişim, akademik/
+  // bilim/tarih→Akademik, biyografi→Anı). Çocuk kitabında yalnız punto büyür.
+  // Bir kez, açılışta çalışır; kullanıcı sonrasında her şeyi değiştirebilir.
+  const genreThemeFiredRef = useRef(false);
+  useEffect(() => {
+    if (genreThemeFiredRef.current) return;
+    genreThemeFiredRef.current = true;
+    const themeIdFromGenre = genreThemeId(seed?.meta.genre);
+    if (themeIdFromGenre) applyTheme(getTheme(themeIdFromGenre));
+    const extra = genreLayoutSeed(seed?.meta.genre);
+    if (extra?.bodySizePt) setBodySizePt(extra.bodySizePt);
+    if (extra?.leadingPt) setLeadingPt(extra.leadingPt);
+  }, [applyTheme, seed]);
 
   // Etkin bloklar: Word modundaysa ve içe aktarım varsa onu, yoksa elle
   // yazılan markdown'ı kullan. İçe aktarım korunur; kaynağı değiştirince

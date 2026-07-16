@@ -9,6 +9,7 @@ import { signThumbs } from "@/lib/projects/storage";
 import { createClient } from "@/lib/supabase/client";
 import type { ProjectListItem } from "@/lib/projects/types";
 import { WIZARD_PROFILES, STANDARD_PROFILES, profileSizeOptions, type PrintStandard } from "@/lib/layout/standards";
+import { GENRES } from "@/lib/projects/genres";
 import AppShell, { Icon, MODULES, type ShellUser } from "./AppShell";
 
 // ── Yerel metinler (Pano'ya özel; tasarım Türkçe, app iki dilli) ──
@@ -110,19 +111,6 @@ const COPY = {
     cancel: "Cancel",
   },
 } as const;
-
-const GENRES: { v: string; tr: string; en: string }[] = [
-  { v: "roman", tr: "Roman", en: "Novel" },
-  { v: "oyku", tr: "Öykü", en: "Short story" },
-  { v: "cocuk", tr: "Çocuk kitabı", en: "Children's" },
-  { v: "siir", tr: "Şiir", en: "Poetry" },
-  { v: "kisisel-gelisim", tr: "Kişisel gelişim", en: "Self-help" },
-  { v: "bilim-teknik", tr: "Bilim / Teknik", en: "Science / Technical" },
-  { v: "tarih", tr: "Tarih", en: "History" },
-  { v: "biyografi", tr: "Biyografi / Anı", en: "Biography / Memoir" },
-  { v: "akademik", tr: "Akademik", en: "Academic" },
-  { v: "diger", tr: "Diğer", en: "Other" },
-];
 
 const SPINES = [
   "linear-gradient(160deg,#6366f1,#7c3aed)",

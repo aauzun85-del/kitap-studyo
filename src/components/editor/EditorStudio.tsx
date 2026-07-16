@@ -6,6 +6,7 @@ import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
 import { useManuscriptSync } from "@/lib/projects/useSync";
+import { genreEditorMode } from "@/lib/projects/genres";
 import { chunkText } from "@/lib/editor/chunk";
 import { docxToText } from "@/lib/editor/docxText";
 import { textToDocx, suggestDocxName } from "@/lib/editor/textToDocx";
@@ -800,7 +801,11 @@ export default function EditorStudio({
   const [genreLoading, setGenreLoading] = useState(false);
   // Uzun metinler otomatik parçalanır; ilerleme (parça/toplam) burada tutulur.
   const [checkProgress, setCheckProgress] = useState<{ done: number; total: number } | null>(null);
-  const [genre, setGenre] = useState<Genre>("fiction");
+  // Sihirbazda seçilen kitap türü editörün tür kipine eşlenir (kişisel gelişim →
+  // selfhelp; akademik/bilim/tarih → academic; anlatı türleri → fiction).
+  const [genre, setGenre] = useState<Genre>(
+    genreEditorMode(initialProject?.data.meta.genre) ?? "fiction",
+  );
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
   const [checkError, setCheckError] = useState<string | null>(null);

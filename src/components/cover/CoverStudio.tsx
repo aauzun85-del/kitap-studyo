@@ -78,6 +78,7 @@ import { saveProjectCover } from "@/lib/projects/data";
 import { resolveDraftImages } from "@/lib/projects/storage";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import type { ProjectEnvelope } from "@/lib/projects/types";
+import { genreAiStyleId } from "@/lib/projects/genres";
 import {
   loadUserImages,
   saveUserImages,
@@ -173,7 +174,11 @@ export default function CoverStudio({
   const [logoPos, setLogoPos] = useState<"top" | "bottom">("bottom");
 
   // AI kapak görseli üretimi
-  const [aiStyle, setAiStyle] = useState(DEFAULT_AI_STYLE_ID);
+  // Kitabın türü bir kapak stiline eşleşiyorsa (roman→edebi, çocuk→çocuk…)
+  // AI paneli o stille açılır; kullanıcı dilediğinde değiştirir.
+  const [aiStyle, setAiStyle] = useState(
+    genreAiStyleId(initialProject?.data.meta.genre) ?? DEFAULT_AI_STYLE_ID,
+  );
   // Üretim modeli: "flux" (mevcut, hızlı/sanatsal) | "nano" (Nano Banana Pro,
   // komutları daha iyi izler). Varsayılan flux → mevcut davranış korunur.
   const [aiModel, setAiModel] = useState<"flux" | "nano" | "ideogram">("flux");
