@@ -160,8 +160,13 @@ export default function LayoutStudio({
   // KDP/Serbest taşma (bleed) açık mı — profilin varsayılanı.
   const [bleedOn, setBleedOn] = useState(seedProfile.bleedDefaultOn);
 
-  // Sayfa / kenar boşlukları (profil varsayılanları).
-  const [sizeId, setSizeId] = useState(seedProfile.defaultSizeId);
+  // Sayfa / kenar boşlukları (profil varsayılanları). Sihirbazda kitap boyu
+  // seçildiyse (meta.sizeId) o kullanılır; tanınmayan/eski id'de profil varsayılanı.
+  const seedSizeId =
+    seed?.meta.sizeId && ALL_SIZES.some((s) => s.id === seed.meta.sizeId)
+      ? seed.meta.sizeId
+      : seedProfile.defaultSizeId;
+  const [sizeId, setSizeId] = useState(seedSizeId);
   const [margins, setMargins] = useState<Margins>({ ...seedProfile.defaultMargins });
   const [presetId, setPresetId] = useState<string>(seedPlatform);
   const [gutterAuto, setGutterAuto] = useState(true);

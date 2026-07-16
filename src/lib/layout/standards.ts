@@ -8,6 +8,7 @@
 
 import { KDY_SIZE, KDY_MARGINS, KDY_BLEED_MM, KDY_MARK_OFFSET_MM } from "./kdy";
 import { recommendedGutter, type Margins } from "./page";
+import { BOOK_SIZES, type BookSize } from "@/lib/cover/spread";
 
 export type PrintStandard = "kdy" | "akademi" | "kdp" | "ingram" | "bnpress" | "lulu" | "serbest";
 
@@ -15,10 +16,27 @@ export type PrintStandard = "kdy" | "akademi" | "kdp" | "ingram" | "bnpress" | "
 export const WIZARD_PROFILES: { id: PrintStandard; tr: string; en: string; note: { tr: string; en: string } }[] = [
   { id: "kdy", tr: "KDY", en: "KDY", note: { tr: "Roman · 13×19,5 cm", en: "Novel · 130×195 mm" } },
   { id: "akademi", tr: "KDY Akademi", en: "KDY Academic", note: { tr: "Akademik · 15×22,5 cm", en: "Academic · 150×225 mm" } },
-  { id: "kdp", tr: "KDP", en: "KDP", note: { tr: "Amazon · 6×9 inç", en: "Amazon · 6×9 in" } },
-  { id: "ingram", tr: "Ingram", en: "Ingram", note: { tr: "IngramSpark · 6×9 inç", en: "IngramSpark · 6×9 in" } },
+  { id: "kdp", tr: "KDP", en: "KDP", note: { tr: "Amazon · boyunu seç", en: "Amazon · pick a size" } },
+  { id: "ingram", tr: "Ingram", en: "Ingram", note: { tr: "IngramSpark · boyunu seç", en: "IngramSpark · pick a size" } },
   { id: "serbest", tr: "Serbest", en: "Free", note: { tr: "Boyutu sen seç", en: "You pick the size" } },
 ];
+
+// Sihirbazda profil seçilince sunulan kitap boyları. Boş dizi = profilin boyu
+// sabittir (KDY/Akademi), seçici gösterilmez. KDP ailesi (Ingram/B&N/Lulu dahil)
+// aynı inç boylarını paylaşır; Serbest'te tüm katalog açıktır.
+export function profileSizeOptions(standard: PrintStandard): BookSize[] {
+  switch (standard) {
+    case "kdp":
+    case "ingram":
+    case "bnpress":
+    case "lulu":
+      return BOOK_SIZES.filter((s) => s.category === "kdp");
+    case "serbest":
+      return BOOK_SIZES;
+    default:
+      return [];
+  }
+}
 
 export type StandardProfile = {
   id: PrintStandard;

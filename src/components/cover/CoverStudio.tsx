@@ -206,7 +206,11 @@ export default function CoverStudio({
   // (kapak baskı speci platformla uyumlu olsun). Eski/profilsiz projede varsayılan.
   const seedCoverPlatform = initialProject?.data.meta.platform;
   const seedCoverProfile = seedCoverPlatform ? STANDARD_PROFILES[seedCoverPlatform] : null;
-  const [sizeId, setSizeId] = useState(seedCoverProfile?.defaultSizeId ?? DEFAULT_SIZE_ID);
+  // Sihirbazda seçilen kitap boyu (meta.sizeId) öncelikli — kapak, iç sayfayla
+  // aynı trim'de açılsın. Yoksa profil varsayılanı.
+  const [sizeId, setSizeId] = useState(
+    initialProject?.data.meta.sizeId ?? seedCoverProfile?.defaultSizeId ?? DEFAULT_SIZE_ID,
+  );
   const [pageCount, setPageCount] = useState(200);
   const [paperGsm, setPaperGsm] = useState<PaperGsm>(80);
   const [binding, setBinding] = useState<BindingType>("soft");

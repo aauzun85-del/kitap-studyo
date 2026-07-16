@@ -8,7 +8,7 @@ import { listProjects, createProject, renameProject, deleteProject } from "@/lib
 import { signThumbs } from "@/lib/projects/storage";
 import { createClient } from "@/lib/supabase/client";
 import type { ProjectListItem } from "@/lib/projects/types";
-import { WIZARD_PROFILES, type PrintStandard } from "@/lib/layout/standards";
+import { WIZARD_PROFILES, STANDARD_PROFILES, profileSizeOptions, type PrintStandard } from "@/lib/layout/standards";
 import AppShell, { Icon, MODULES, type ShellUser } from "./AppShell";
 
 // ── Yerel metinler (Pano'ya özel; tasarım Türkçe, app iki dilli) ──
@@ -47,6 +47,8 @@ const COPY = {
     newSub: "Birkaç bilgi ver — gerisini 3 adımda birlikte yapacağız.",
     fProfile: "Yayın profili",
     fProfileHint: "Boyut, kenar boşlukları ve kapak baskı ölçüleri buna göre ayarlanır.",
+    fSize: "Kitap boyu",
+    fSizeHint: "Sonradan Mizanpaj modülünden değiştirebilirsin.",
     fTitle: "Kitap adı",
     fAuthor: "Yazar",
     fGenre: "Tür",
@@ -93,6 +95,8 @@ const COPY = {
     newSub: "Give a few details — we'll do the rest in 3 steps together.",
     fProfile: "Publishing profile",
     fProfileHint: "Size, margins and cover print dimensions are set to match this.",
+    fSize: "Trim size",
+    fSizeHint: "You can change it later in the Layout module.",
     fTitle: "Book title",
     fAuthor: "Author",
     fGenre: "Genre",
@@ -176,6 +180,8 @@ export default function Dashboard({
   // Yeni kitap sihirbazı başlangıç formu
   const [newOpen, setNewOpen] = useState(false);
   const [nProfile, setNProfile] = useState<PrintStandard>("kdy");
+  // Seçilen kitap boyu — yalnız çok-boylu profillerde (KDP/Ingram/Serbest) anlamlı.
+  const [nSizeId, setNSizeId] = useState<string>("");
   const [nTitle, setNTitle] = useState("");
   const [nAuthor, setNAuthor] = useState("");
   const [nGenre, setNGenre] = useState("");
@@ -203,6 +209,7 @@ export default function Dashboard({
   // "Yeni Kitap" → önce başlangıç formunu aç (ad/yazar/tür).
   function onNew() {
     setNProfile("kdy");
+    setNSizeId("");
     setNTitle("");
     setNAuthor("");
     setNGenre("");
@@ -215,7 +222,11 @@ export default function Dashboard({
     if (!nTitle.trim()) return;
     setBusy(true);
     try {
-      const { id } = await createProject(nTitle.trim(), nAuthor.trim(), nGenre, nIsbn.trim(), nProfile);
+      // Çok-boylu profillerde seçilen (ya da varsayılan) boy projeye yazılır;
+      // sabit boylu profillerde (KDY/Akademi) profil zaten boyu belirler.
+      const sizeOpts = profileSizeOptions(nProfile);
+      const sizeId = sizeOpts.length ? (nSizeId || STANDARD_PROFILES[nProfile].defaultSizeId) : undefined;
+      const { id } = await createProject(nTitle.trim(), nAuthor.trim(), nGenre, nIsbn.trim(), nProfile, sizeId);
       router.push(`/${lang}/editor?project=${id}`);
     } catch (e) {
       console.error(e);
@@ -589,7 +600,7 @@ export default function Dashboard({
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => setNProfile(p.id)}
+                    onClick={() => { setNProfile(p.id); setNSizeId(""); }}
                     style={{
                       flex: "1 1 calc(50% - 4px)",
                       minWidth: 132,
@@ -609,6 +620,29 @@ export default function Dashboard({
               })}
             </div>
             <div style={{ fontSize: 12, color: "#9aa1b1", marginTop: 6 }}>{t.fProfileHint}</div>
+
+            {/* Çok-boylu profillerde (KDP/Ingram/Serbest) kitap boyu seçici */}
+            {(() => {
+              const sizeOpts = profileSizeOptions(nProfile);
+              if (!sizeOpts.length) return null;
+              const current = nSizeId || STANDARD_PROFILES[nProfile].defaultSizeId;
+              return (
+                <>
+                  <label style={dlgLabel}>{t.fSize}</label>
+                  <select
+                    className="tipo-input"
+                    value={current}
+                    onChange={(e) => setNSizeId(e.target.value)}
+                    style={{ ...dlgInput, cursor: "pointer" }}
+                  >
+                    {sizeOpts.map((s) => (
+                      <option key={s.id} value={s.id}>{s.label}</option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 12, color: "#9aa1b1", marginTop: 6 }}>{t.fSizeHint}</div>
+                </>
+              );
+            })()}
 
             <label style={dlgLabel}>{t.fTitle}</label>
             <input

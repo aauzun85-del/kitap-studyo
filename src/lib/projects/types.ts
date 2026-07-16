@@ -28,6 +28,7 @@ export type ProjectMeta = {
   bio?: string;
   genre?: string; // tür — sihirbazda sorulur, kapak promtunu yönlendirir
   platform?: PrintStandard; // yayın profili (KDY/KDP/Ingram/Serbest…) — boyut+marj+kapak speci
+  sizeId?: string; // kitap boyu (BOOK_SIZES id) — sihirbazda seçilir; yoksa profilin varsayılanı
 };
 
 // 3 adımlı "otomatik kitap" sihirbazının durumu (proje ile saklanır).
@@ -142,7 +143,7 @@ export function migrateEnvelope(data: unknown): ProjectEnvelope {
     const cover = (d.cover as CoverDraft) ?? base.cover;
     return {
       schema: 2,
-      meta: { title: meta.title ?? "", author: meta.author ?? "", subtitle: meta.subtitle, isbn: meta.isbn, bio: meta.bio, genre: meta.genre, platform: meta.platform },
+      meta: { title: meta.title ?? "", author: meta.author ?? "", subtitle: meta.subtitle, publisher: meta.publisher, isbn: meta.isbn, bio: meta.bio, genre: meta.genre, platform: meta.platform, sizeId: meta.sizeId },
       manuscript: { text: manuscript.text ?? "", updatedBy: manuscript.updatedBy, updatedAt: manuscript.updatedAt },
       modules,
       cover,

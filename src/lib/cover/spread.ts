@@ -39,10 +39,20 @@ export const PAPER_OPTIONS: PaperGsm[] = [70, 80, 90, 100];
 // boyları. Etiketler markaya özel değildir; aynı inç boyları tüm bu standartlar
 // için geçerlidir, bu yüzden başlarına firma adı yazılmaz.
 export const BOOK_SIZES: BookSize[] = [
-  { id: "kdp-6x9", label: '6×9" (152×229 mm)', width: 152, height: 229, category: "kdp" },
+  // KDP'nin resmî dikey (portrait) boyları — küçükten büyüğe. Aynı liste
+  // Ingram/B&N/Lulu için de geçerlidir. 6×9 en yaygını olduğundan varsayılandır.
   { id: "kdp-5x8", label: '5×8" (127×203 mm)', width: 127, height: 203, category: "kdp" },
+  { id: "kdp-5.06x7.81", label: '5.06×7.81" (129×198 mm)', width: 129, height: 198, category: "kdp" },
+  { id: "kdp-5.25x8", label: '5.25×8" (133×203 mm)', width: 133, height: 203, category: "kdp" },
   { id: "kdp-5.5x8.5", label: '5.5×8.5" (140×216 mm)', width: 140, height: 216, category: "kdp" },
+  { id: "kdp-6x9", label: '6×9" (152×229 mm)', width: 152, height: 229, category: "kdp" },
   { id: "kdp-6x9-a", label: '6.14×9.21" (156×234 mm)', width: 156, height: 234, category: "kdp" },
+  { id: "kdp-6.69x9.61", label: '6.69×9.61" (170×244 mm)', width: 170, height: 244, category: "kdp" },
+  { id: "kdp-7x10", label: '7×10" (178×254 mm)', width: 178, height: 254, category: "kdp" },
+  { id: "kdp-7.44x9.69", label: '7.44×9.69" (189×246 mm)', width: 189, height: 246, category: "kdp" },
+  { id: "kdp-7.5x9.25", label: '7.5×9.25" (190×235 mm)', width: 190, height: 235, category: "kdp" },
+  { id: "kdp-8x10", label: '8×10" (203×254 mm)', width: 203, height: 254, category: "kdp" },
+  { id: "kdp-8.5x11", label: '8.5×11" (216×279 mm)', width: 216, height: 279, category: "kdp" },
   { id: "tr-135x210", label: "135×210 mm (Cep boy)", width: 135, height: 210, category: "tr" },
   { id: "tr-145x210", label: "145×210 mm", width: 145, height: 210, category: "tr" },
   { id: "tr-150x225", label: "150×225 mm (KDY Akademi)", width: 150, height: 225, category: "tr" },
