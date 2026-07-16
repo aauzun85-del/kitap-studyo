@@ -26,11 +26,14 @@ export { cleanMetaValue };
 // Word'den gelen resim/tablo + sayfa-sonu/boşluk jetonlarını markdown'da tanı.
 import {
   type MediaMap,
+  type FmtMark,
   matchImageToken,
   matchTableFence,
   matchPageBreak,
   matchSpacer,
+  matchFmtLine,
 } from "./mediaTokens";
+import { COVER_FONTS } from "@/lib/cover/fonts";
 
 // ── Biçimlendirme parçaları ────────────────────────────────────────────────
 export type Run = { text: string; bold: boolean; italic: boolean };
@@ -266,6 +269,37 @@ export function reapplyRuns(oldRuns: Run[], newText: string): Run[] {
   return runs;
 }
 
+// ── Paragraf sınırı normalizasyonu ─────────────────────────────────────────
+// parseBlocks paragrafları BOŞ satırla (\n\n) ayırır; tek satır sonları (\n) ise
+// aynı paragrafın görsel kırpması sayılıp boşlukla birleştirilir. Bu, Word'den
+// gelen / satır-satır kırpılmış (hard-wrap) metinler için doğrudur. Ama bazı
+// kaynaklar (yapıştırılan düz metin) paragrafları TEK satır sonuyla ayırır →
+// motor onları tek paragraf sanıp birleştirir. Bu fonksiyon, GERÇEK paragraf
+// sınırı olan tek satır sonlarını boş satıra yükseltir; hard-wrap metne dokunmaz.
+// Word/editör kaynaklı içerik bu jetonları taşır → zaten \n\n ile düzgün ayrıktır;
+// jeton içeriğini (tablo JSON'u vb.) bozmamak için o metne hiç dokunma.
+const HAS_MEDIA_TOKEN = /```kitap-tablo|kitap-gorsel:|\[\[sayfa-sonu\]\]|\[\[bosluk|\[\[stil:/;
+
+function normalizeParagraphBreaks(raw: string): string {
+  const text = raw.replace(/\r\n?/g, "\n");
+  // Word/editör kaynaklı içerik (medya jetonu taşır) zaten \n\n ile düzgün
+  // ayrıktır; jeton gövdesini (tablo JSON'u vb.) bozmamak için hiç dokunma.
+  if (HAS_MEDIA_TOKEN.test(text)) return text;
+  if (!/\n\s*\n/.test(text)) {
+    // Hiç boş satır yok → paragraflar tek satır sonuyla ayrılmış (yapıştırılan
+    // düz metin): her satır ayrı paragraf. (Satır-satır kırpılmış metin bu yola
+    // pratikte hiç gelmez; içe aktarma/editör daima \n\n üretir.)
+    return text.replace(/\n+/g, "\n\n");
+  }
+  // Karışık metin: paragrafların çoğu \n\n ile ayrık ama araya tek \n karışmış.
+  // Yalnız GERÇEK paragraf sınırlarını (satır cümleyle biter + sonraki satır
+  // büyük harf/tırnak/rakamla başlar) boş satıra yükselt; hard-wrap'e dokunma.
+  return text.replace(
+    /([.!?…:]["'”’»)\]]*)\n(?!\n)(?=["'“‘«([\p{Lu}\p{N}])/gu,
+    "$1\n\n",
+  );
+}
+
 // Ham markdown metni bloklara ayırır (manuel giriş yolu).
 export function parseBlocks(raw: string, detectHeadings: boolean, media?: MediaMap): Block[] {
   // Bozuk kaynak onarımı: noktalamadan sonra boşluksuz birleşmiş kelimeleri ayır.
@@ -284,10 +318,22 @@ export function parseBlocks(raw: string, detectHeadings: boolean, media?: MediaM
       .replace(new RegExp(`(?<=\\p{Ll})(:)(?=[\\p{Lu}${OQ}])`, "gu"), "$1 ")
       // , ; iki harf arası. Ondalık "3,5" korunur.
       .replace(new RegExp(`(?<=\\p{L})([,;])(?=[\\p{L}${OQ}])`, "gu"), "$1 ");
-  const chunks = raw.replace(/\r\n?/g, "\n").split(/\n{2,}/);
+  const chunks = normalizeParagraphBreaks(raw).split(/\n{2,}/);
   const blocks: Block[] = [];
+  // "[[stil:…]]" ön satırları: chunk'ın ürettiği İLK bloğa uygulanacak biçim.
+  // Uygulama, indeksler oynamadan (restructureHeadings'ten ÖNCE) yapılır.
+  const pendingFmt: Array<{ idx: number; fmt: FmtMark }> = [];
 
-  for (const rawChunk of chunks) {
+  for (let rawChunk of chunks) {
+    // Blok-bazlı yazı tipi/punto işareti (biçim çubuğundan): ilk satırı ayıkla.
+    const nlAt = rawChunk.indexOf("\n");
+    const firstRawLine = nlAt === -1 ? rawChunk : rawChunk.slice(0, nlAt);
+    const fmt = matchFmtLine(firstRawLine);
+    if (fmt) {
+      rawChunk = nlAt === -1 ? "" : rawChunk.slice(nlAt + 1);
+      if (!rawChunk.trim()) continue; // işaret tek başına kalmış → yok say
+      pendingFmt.push({ idx: blocks.length, fmt });
+    }
     // Sayfa düzeni işaretleri (Yaz: sayfa sonu / boşluk).
     if (matchPageBreak(rawChunk)) {
       blocks.push({ type: "pagebreak" });
@@ -362,6 +408,18 @@ export function parseBlocks(raw: string, detectHeadings: boolean, media?: MediaM
     }
 
     blocks.push({ type: "paragraph", runs: inlineRuns(rawLines.join(" ")) });
+  }
+
+  // Stil işaretlerini bloklara uygula (font id → aile adı). restructureHeadings
+  // blok NESNELERİNİ taşıdığı için alanlar dönüşümden sonra da yaşar.
+  for (const { idx, fmt } of pendingFmt) {
+    const b = blocks[idx];
+    if (!b || (b.type !== "paragraph" && b.type !== "heading" && b.type !== "blockquote")) continue;
+    if (fmt.fontId) {
+      const fam = COVER_FONTS.find((f) => f.id === fmt.fontId)?.family;
+      if (fam) b.fontFamily = fam;
+    }
+    if (fmt.sizePt != null) b.sizePt = fmt.sizePt;
   }
 
   return restructureHeadings(blocks);
