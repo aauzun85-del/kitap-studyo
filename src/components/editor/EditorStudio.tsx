@@ -397,6 +397,23 @@ function parseStructure(text: string): StructureReport {
   return { chapters, issues, completeness };
 }
 
+// ——— Eski/Öneri farkı: ortak baş ve son kelimeler aynı kalır, yalnız DEĞİŞEN
+// orta kısım renklendirilir — kullanıcı farkı tek bakışta görsün. ———
+function splitDiff(a: string, b: string): { pre: string; aMid: string; bMid: string; post: string } {
+  const at = a.split(/(\s+)/);
+  const bt = b.split(/(\s+)/);
+  let i = 0;
+  while (i < at.length && i < bt.length && at[i] === bt[i]) i++;
+  let j = 0;
+  while (j < at.length - i && j < bt.length - i && at[at.length - 1 - j] === bt[bt.length - 1 - j]) j++;
+  return {
+    pre: at.slice(0, i).join(""),
+    aMid: at.slice(i, at.length - j).join(""),
+    bMid: bt.slice(i, bt.length - j).join(""),
+    post: at.slice(at.length - j).join(""),
+  };
+}
+
 // ——— Yayına hazırlık (Kategori 4): yerel/ücretsiz tipografi ———
 
 type PrepKind = "spaces" | "blankLines" | "quotes" | "ellipsis" | "dashRange" | "dialogue";
@@ -1633,24 +1650,43 @@ export default function EditorStudio({
                       )}
                     </div>
 
-                    {s.kind === "fix" && (
-                      <div className="mt-2 space-y-1 text-sm">
-                        <div className="flex gap-2">
-                          <span className="shrink-0 font-mono text-[10px] uppercase text-muted">
-                            {t.origLabel}
-                          </span>
-                          <span className="text-foreground line-through decoration-red-400">
-                            {s.original}
-                          </span>
-                        </div>
-                        <div className="flex gap-2">
-                          <span className="shrink-0 font-mono text-[10px] uppercase text-muted">
-                            {t.fixLabel}
-                          </span>
-                          <span className="font-medium text-foreground">{s.suggestion}</span>
-                        </div>
-                      </div>
-                    )}
+                    {s.kind === "fix" &&
+                      (() => {
+                        // Yalnız değişen kısım renkli: fark tek bakışta görünsün.
+                        const d = splitDiff(s.original, s.suggestion);
+                        return (
+                          <div className="mt-2 space-y-1 text-sm">
+                            <div className="flex gap-2">
+                              <span className="shrink-0 font-mono text-[10px] uppercase text-muted">
+                                {t.origLabel}
+                              </span>
+                              <span className="text-foreground">
+                                {d.pre}
+                                {d.aMid && (
+                                  <span className="rounded bg-red-50 px-0.5 text-red-700 line-through decoration-red-400">
+                                    {d.aMid}
+                                  </span>
+                                )}
+                                {d.post}
+                              </span>
+                            </div>
+                            <div className="flex gap-2">
+                              <span className="shrink-0 font-mono text-[10px] uppercase text-muted">
+                                {t.fixLabel}
+                              </span>
+                              <span className="font-medium text-foreground">
+                                {d.pre}
+                                {d.bMid && (
+                                  <span className="rounded bg-emerald-100 px-0.5 font-semibold text-emerald-800">
+                                    {d.bMid}
+                                  </span>
+                                )}
+                                {d.post}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                     <p className="mt-2 text-xs text-muted">
                       {s.category === "long"

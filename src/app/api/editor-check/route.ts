@@ -56,6 +56,16 @@ function systemPrompt(language: "tr" | "en"): string {
     "5) Emin olmadığın yere dokunma. Doğru olanı 'hata' diye işaretleme.",
     "6) Yazarın üslubunu, kelime tercihini, cümle kuruluşunu değiştirme.",
     "7) Hata yoksa boş bir 'suggestions' listesi döndür.",
+    "",
+    "ÇOK ÖNEMLİ — yalnız KESİN hatalar:",
+    "- Bir kullanım zaten dilbilgisi açısından doğruysa DOKUNMA; 'daha yaygın',",
+    "  'daha şık' ya da 'bence daha iyi' türü alternatif önerme.",
+    "- Anlatım kipini/zamanını değiştirme (örn. 'vermektedir' → 'verdik'):",
+    "  bunlar üslup tercihidir, hata değildir.",
+    "- İkili/simetrik kalıplarda (örn. 'en yüksekten en düşüğe') tek tarafı",
+    "  değiştirip tutarsızlık yaratma; kalıbın bütünü doğruysa hiç önerme.",
+    "- Her öneriden önce kendine sor: bu %100 nesnel bir hata mı, yoksa tercih mi?",
+    "  Tercihse listeye ALMA. Az ama kesin öneri, çok ama tartışmalı öneriden iyidir.",
   ].join("\n");
 }
 
