@@ -230,7 +230,10 @@ function PageBox({
 
   // Bu sayfadaki tıklanabilir blok bantları (sayfa kutusunun yüzdesi). Bantlar
   // sayfayı TEPEDEN TABANA boşluksuz döşer (ölü bölge olmaz):
-  //  • İlk bant tepeye (0) kadar uzar → üst marj/başlık/önceki bloğun taşması da
+  //  • Sayfa önceki sayfadan TAŞAN blokla başlıyorsa tepe bölgesi [0, ilk işaret)
+  //    o taşan bloğun AYRI bandıdır — aksi halde kuyruk, sonraki paragrafla tek
+  //    vurguda birleşir ve tıklayınca yanlış blok seçilir.
+  //  • Taşan blok yoksa ilk bant tepeye (0) kadar uzar → üst marj/başlık da
   //    tıklanır (kullanıcı şikâyeti: "üst taraflar aktif değil").
   //  • Her bant bir sonrakinin y'sine, son bant sayfa tabanına iner.
   //  • Sayfada hiç işaret yoksa (uzun bloğun ortası) tüm sayfa = taşan blok.
@@ -239,12 +242,18 @@ function PageBox({
     if (blocks.length === 0) {
       return fallbackIdx >= 0 ? [{ idx: fallbackIdx, topPct: 0, heightPct: 100 }] : [];
     }
-    return blocks.map((b, i) => {
+    const first = blocks[0];
+    const hasSpill = fallbackIdx >= 0 && fallbackIdx !== first.idx && first.yPt > 0;
+    const out = blocks.map((b, i) => {
       const next = blocks[i + 1];
-      const top = i === 0 ? 0 : b.yPt; // ilk bandı tepeye kadar uzat
+      const top = i === 0 && !hasSpill ? 0 : b.yPt;
       const bottom = next ? next.yPt : pageH;
       return { idx: b.idx, topPct: pct(top), heightPct: pct(Math.max(8, bottom - top)) };
     });
+    if (hasSpill) {
+      out.unshift({ idx: fallbackIdx, topPct: 0, heightPct: pct(Math.max(8, first.yPt)) });
+    }
+    return out;
   }, [blocks, fallbackIdx, pageH]);
 
   return (
