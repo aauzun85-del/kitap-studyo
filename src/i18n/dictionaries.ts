@@ -680,6 +680,10 @@ type EditorStudioCopy = {
   prepApply: string;
   prepApplyAll: string;
   prepCount: string;
+  prepSpacesTitle: string;
+  prepSpacesDesc: string;
+  prepBlankTitle: string;
+  prepBlankDesc: string;
   prepQuotesTitle: string;
   prepQuotesDesc: string;
   prepEllipsisTitle: string;
@@ -1800,11 +1804,15 @@ const tr: Dictionary = {
     structureMissing: "yok",
     structureCompletenessHint: "Belirgin bir giriş/sonuç bölümü olup olmadığını gösterir. Kurgu kitaplarında bunların olmaması olağandır.",
     prepCta: "Yayına hazırlık",
-    prepHint: "Tipografik düzeltmeler: akıllı tırnak, üç nokta, tire (yerel, ücretsiz). Her birini ayrı uygulayabilirsiniz.",
+    prepHint: "Temizlik + tipografi: fazla boşluk, boş satır, akıllı tırnak, üç nokta, tire (yerel, ücretsiz). Her birini ayrı uygulayabilirsiniz.",
     prepNone: "Yayına hazırlık açısından düzeltilecek bir şey görünmüyor. Tipografi temiz.",
     prepApply: "Uygula",
     prepApplyAll: "Tümünü uygula",
     prepCount: "{count} yer",
+    prepSpacesTitle: "Fazla boşluk",
+    prepSpacesDesc: "Art arda birden çok boşluk/sekme tek boşluğa iner; satır sonlarındaki gereksiz boşluklar silinir. Word'den gelen metinlerde sık görülür.",
+    prepBlankTitle: "Fazla boş satır",
+    prepBlankDesc: "Paragraflar arasındaki birden çok boş satır tek boş satıra iner. Paragraf yapısı bozulmaz.",
     prepQuotesTitle: "Düz tırnak",
     prepQuotesDesc: "Düz çift tırnaklar (\") kitap için tipografik tırnağa (“ ”) çevrilir.",
     prepEllipsisTitle: "Üç nokta",
@@ -2926,11 +2934,15 @@ const en: Dictionary = {
     structureMissing: "no",
     structureCompletenessHint: "Shows whether there's a clear intro/conclusion. In fiction it's normal not to have them.",
     prepCta: "Publish prep",
-    prepHint: "Typographic fixes: smart quotes, ellipsis, dashes (local, free). Apply each one separately.",
+    prepHint: "Cleanup + typography: extra spaces, blank lines, smart quotes, ellipsis, dashes (local, free). Apply each one separately.",
     prepNone: "Nothing to fix for publishing. Typography looks clean.",
     prepApply: "Apply",
     prepApplyAll: "Apply all",
     prepCount: "{count} places",
+    prepSpacesTitle: "Extra spaces",
+    prepSpacesDesc: "Runs of multiple spaces/tabs collapse to a single space; trailing spaces at line ends are removed. Common in text coming from Word.",
+    prepBlankTitle: "Extra blank lines",
+    prepBlankDesc: "Multiple blank lines between paragraphs collapse to a single blank line. Paragraph structure is preserved.",
     prepQuotesTitle: "Straight quotes",
     prepQuotesDesc: "Straight double quotes (\") are converted to typographic quotes (“ ”) for the book.",
     prepEllipsisTitle: "Three dots",

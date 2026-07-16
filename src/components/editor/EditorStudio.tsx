@@ -399,11 +399,20 @@ function parseStructure(text: string): StructureReport {
 
 // ——— Yayına hazırlık (Kategori 4): yerel/ücretsiz tipografi ———
 
-type PrepKind = "quotes" | "ellipsis" | "dashRange" | "dialogue";
+type PrepKind = "spaces" | "blankLines" | "quotes" | "ellipsis" | "dashRange" | "dialogue";
 type PrepFix = { kind: PrepKind; count: number };
 
 function countPrep(kind: PrepKind, text: string): number {
   switch (kind) {
+    case "spaces":
+      // Satır içi art arda boşluk/sekme + satır sonunda kalan boşluklar.
+      return (
+        (text.match(/[ \t ]{2,}/g) ?? []).length +
+        (text.match(/[^ \t \n][ \t ]+$/gm) ?? []).length
+      );
+    case "blankLines":
+      // Art arda 2+ boş satır (paragraf arası tek boş satır normaldir).
+      return (text.match(/\n[ \t ]*\n(?:[ \t ]*\n)+/g) ?? []).length;
     case "quotes":
       return (text.match(/"/g) ?? []).length;
     case "ellipsis":
@@ -417,6 +426,15 @@ function countPrep(kind: PrepKind, text: string): number {
 
 function applyPrep(kind: PrepKind, text: string): string {
   switch (kind) {
+    case "spaces":
+      // Bölünmez boşluk → normal boşluk; satır sonu boşlukları silinir;
+      // satır içi art arda boşluk/sekme tek boşluğa iner.
+      return text
+        .replace(/ /g, " ")
+        .replace(/[ \t]+$/gm, "")
+        .replace(/[ \t]{2,}/g, " ");
+    case "blankLines":
+      return text.replace(/\n[ \t ]*\n(?:[ \t ]*\n)+/g, "\n\n");
     case "quotes": {
       // Düz çift tırnağı bağlama göre açılış/kapanış tipografik tırnağa çevir.
       let out = "";
@@ -441,7 +459,7 @@ function applyPrep(kind: PrepKind, text: string): string {
   }
 }
 
-const PREP_KINDS: PrepKind[] = ["quotes", "ellipsis", "dashRange", "dialogue"];
+const PREP_KINDS: PrepKind[] = ["spaces", "blankLines", "quotes", "ellipsis", "dashRange", "dialogue"];
 
 function scanPrep(text: string): PrepFix[] {
   return PREP_KINDS.map((kind) => ({ kind, count: countPrep(kind, text) })).filter(
@@ -472,6 +490,10 @@ function PrepView({
 
   function title(kind: PrepKind): string {
     switch (kind) {
+      case "spaces":
+        return t.prepSpacesTitle;
+      case "blankLines":
+        return t.prepBlankTitle;
       case "quotes":
         return t.prepQuotesTitle;
       case "ellipsis":
@@ -485,6 +507,10 @@ function PrepView({
 
   function desc(kind: PrepKind): string {
     switch (kind) {
+      case "spaces":
+        return t.prepSpacesDesc;
+      case "blankLines":
+        return t.prepBlankDesc;
       case "quotes":
         return t.prepQuotesDesc;
       case "ellipsis":
