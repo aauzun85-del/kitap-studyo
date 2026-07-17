@@ -10,6 +10,7 @@
 import { mmToPx, pxToMm } from "./page";
 import { hyphenPoints } from "./hyphenate";
 import { knuthPlass, INFINITY, type KPItem } from "./linebreak";
+import { TYPOGRAPHY_RULES } from "./typographyRules";
 import {
   KDY_HEADINGS,
   KDY_TITLE,
@@ -997,10 +998,10 @@ export function paginate(input: PaginateInput): Page[] {
     startPage("body", true); // bölüm açılış sayfası: koşu başlığı yok
   };
 
-  // Dul/yetim kontrolü: bir paragrafın tek satırı bir sayfanın altında (orphan)
-  // ya da üstünde (widow) yalnız kalmasın. Bloğun tüm satırlarını birlikte
-  // değerlendirir; gerekirse bloğu ya da son iki satırı sonraki sayfaya taşır.
-  const MIN_KEEP = 2;
+  // Dul/yetim kontrolü (TİPOGRAFİ kural 4): bir paragrafın tek satırı bir sayfanın
+  // altında (orphan) ya da üstünde (widow) yalnız kalmasın. Bloğun tüm satırlarını
+  // birlikte değerlendirir; gerekirse bloğu ya da son iki satırı sonraki sayfaya taşır.
+  const MIN_KEEP = TYPOGRAPHY_RULES.minLinesBeforeBreak;
   const addBlockLines = (entries: { line: Line; heightPx: number }[]) => {
     if (entries.length === 0) return;
     if (!current) startPage("body");
@@ -1069,14 +1070,68 @@ export function paginate(input: PaginateInput): Page[] {
   let chapterIndex = -1;
   let pendingDropCap = false; // bir sonraki paragraf bölüm başı drop cap alacak
 
+  // ── TİPOGRAFİ KURALLARI: başlık + sayfa düzeni (typographyRules.ts) ────────
+  // Akış-içi başlıklar (level 2+ / ara başlık) HEMEN yerleştirilmez; takip eden
+  // bloğun ilk satırlarıyla birlikte değerlendirilmek üzere tamponlanır. Ardışık
+  // başlıklar (kural 6) aynı grupta dar boşlukla birikir.
+  type HeadEntry = { line: Line; heightPx: number; blockIndex: number; gapBeforePx?: number };
+  let pendingHeading: { entries: HeadEntry[]; beforeGapPx: number; afterGapPx: number } | null = null;
+
+  // Bekleyen başlık grubunu yerleştirir. followEntries = takip eden bloğun satır
+  // yükseklikleri (null → takip yok: sayfa sonu/bölüm/kitap sonu). Öncelik
+  // sırası (kural 8): önce Alt Bölge Koruması (3), sonra Keep-With-Next (2/5);
+  // dul/yetim (4) takip bloğunun addBlockLines'ında zaten uygulanır.
+  const placePendingHeading = (followEntries: { heightPx: number }[] | null) => {
+    const g = pendingHeading;
+    if (!g) return;
+    pendingHeading = null;
+    if (!current) startPage("body");
+    const onFresh = current!.lines.length === 0;
+    // Önce-boşluk önceki bloğun bekleyen boşluğuyla yarışır → büyüğü kazanır
+    // (üst üste eklenmez); sayfa başında hiç uygulanmaz (kural 7).
+    const before = onFresh ? 0 : Math.max(pendingGapPx, g.beforeGapPx);
+    const headH = g.entries.reduce((s, e) => s + e.heightPx + (e.gapBeforePx ?? 0), 0);
+    let move = false;
+    if (!onFresh) {
+      // Kural 3: başlık, kullanılabilir yüksekliğin son bölgesinde BAŞLAYAMAZ.
+      const limit = contentHeightPx * (1 - TYPOGRAPHY_RULES.bottomProtectionZone);
+      if (y + before > limit) move = true;
+      // Kural 2/5: başlık + sonra-boşluğu + takip eden ilk N satır bu sayfaya
+      // sığmalı; sığmıyorsa hep birlikte sonraki sayfaya. (Takip eden gövde
+      // satırı taban ızgarasına çekileceği için boşluk ızgarayla simüle edilir.)
+      if (!move) {
+        const followN = (followEntries ?? []).slice(0, TYPOGRAPHY_RULES.minParaLinesAfterHeading);
+        const followH = followN.reduce((s, e) => s + e.heightPx, 0);
+        const afterGap = followN.length > 0 ? snapBodyGap(y + before + headH, g.afterGapPx) : 0;
+        if (y + before + headH + afterGap + followH > contentHeightPx) move = true;
+      }
+    }
+    if (move) {
+      startPage("body");
+      pendingGapPx = 0;
+    } else {
+      pendingGapPx = before; // ilk başlık satırı bu tek birleşik boşlukla iner
+    }
+    const savedIdx = currentBlockIndex;
+    for (const e of g.entries) {
+      if (e.gapBeforePx) addGap(e.gapBeforePx); // ardışık başlıklar arası dar boşluk
+      currentBlockIndex = e.blockIndex; // tıkla-düzenle bağı başlığın KENDİ bloğuna
+      addLine(e.line, e.heightPx);
+    }
+    currentBlockIndex = savedIdx;
+    addGap(g.afterGapPx); // kural 1: başlıktan sonra 1 satır
+  };
+
   for (const block of blocks) {
     currentBlockIndex++;
     // Görsel/tablo: bu (JS) motor render etmez — Typst yolu yapar. Sessizce atla
     // (eski davranış zaten düşürüyordu; çökme/karışma olmasın).
     if (block.type === "image" || block.type === "table") continue;
     // Sayfa sonu: sonrasını yeni sayfaya it (mevcut sayfada içerik varsa; yoksa
-    // boş sayfa açma). pendingGap sıfırlanır.
+    // boş sayfa açma). pendingGap sıfırlanır. Bekleyen başlık, yazar zorlaması
+    // olduğu için olduğu yere iner (kural 2 uygulanamaz; kural 3 yine bakılır).
     if (block.type === "pagebreak") {
+      placePendingHeading(null);
       const cur = bodyPages[bodyPages.length - 1];
       if (cur && cur.lines.length > 0) {
         startPage("body");
@@ -1084,13 +1139,18 @@ export function paginate(input: PaginateInput): Page[] {
       }
       continue;
     }
-    // Boşluk: dikey boşluk ekle (JS önizlemesinde de görünsün).
+    // Boşluk: dikey boşluk ekle (JS önizlemesinde de görünsün). Başlık beklerken
+    // gelen boşluk, başlık-sonrası boşluğa eklenir (grup bütünlüğü bozulmasın).
     if (block.type === "spacer") {
-      addGap(mmToPx(block.mm, dpi));
+      const px = mmToPx(block.mm, dpi);
+      if (pendingHeading) pendingHeading.afterGapPx += px;
+      else addGap(px);
       continue;
     }
     if (block.type === "blank") {
-      addGap(autoLeadingPx(settings.bodySizePt, settings.leadingPt, dpi));
+      const px = autoLeadingPx(settings.bodySizePt, settings.leadingPt, dpi);
+      if (pendingHeading) pendingHeading.afterGapPx += px;
+      else addGap(px);
       continue;
     }
 
@@ -1108,6 +1168,7 @@ export function paginate(input: PaginateInput): Page[] {
       const align: ParaAlign = block.align ?? (isSub ? "center" : style.align);
 
       if (block.level === 1 && !isSub) {
+        placePendingHeading(null); // bekleyen akış-içi başlık varsa bölümden önce yerleşsin
         // recto koşu başlığı bu bölümün adını göstersin (açılıştan sonraki
         // sağ sayfalarda). Açılış sayfasında zaten koşu başlığı çizilmez.
         currentChapterTitle = block.runs.map((r) => r.text).join("").trim();
@@ -1147,12 +1208,43 @@ export function paginate(input: PaginateInput): Page[] {
           addGap(kLeadPx * 1.5); // kicker ↔ başlık arası
         }
         pendingDropCap = settings.dropCap; // bölümün ilk paragrafı drop cap alsın
-      } else if (isSub) {
-        addGap(bodyLeadPx * 2); // üstte ~2 satır boşluk
-        pendingDropCap = false;
       } else {
-        addGap(headLeadPx * 0.8);
+        // ── Akış-içi başlık (level 2+ / ara başlık): TİPOGRAFİ KURALLARI ──
+        // Hemen yerleştirilmez; takip eden blokla birlikte placePendingHeading
+        // karar verir (kural 2/3/5). Boşluklar kural 1/9; ardışık başlık kural 6.
         pendingDropCap = false;
+        const segs = wrapRuns(ctx, block.runs, weight, false, sizePx, font, contentWidthPx, contentWidthPx);
+        const hEntries: HeadEntry[] = segs.map((segments) => ({
+          line: {
+            segments,
+            kind: "heading",
+            sizePt: headSizePt,
+            font,
+            weight,
+            italic: false,
+            align,
+            indentMm: 0,
+            blockIndentMm: 0,
+            justify: false,
+            spaceBeforeMm: 0,
+            heightMm: 0,
+          },
+          heightPx: headLeadPx,
+          blockIndex: currentBlockIndex,
+        }));
+        if (pendingHeading) {
+          // Kural 6: ardışık başlıklar arasında tam önce-boşluğu değil dar boşluk.
+          hEntries[0].gapBeforePx = bodyLeadPx * TYPOGRAPHY_RULES.tightHeadingGapLines;
+          pendingHeading.entries.push(...hEntries);
+          pendingHeading.afterGapPx = bodyLeadPx * TYPOGRAPHY_RULES.headingAfterLines;
+        } else {
+          pendingHeading = {
+            entries: hEntries,
+            beforeGapPx: bodyLeadPx * TYPOGRAPHY_RULES.headingBeforeLines,
+            afterGapPx: bodyLeadPx * TYPOGRAPHY_RULES.headingAfterLines,
+          };
+        }
+        continue;
       }
 
       const segLines = wrapRuns(ctx, block.runs, weight, false, sizePx, font, contentWidthPx, contentWidthPx);
@@ -1211,8 +1303,8 @@ export function paginate(input: PaginateInput): Page[] {
           );
         }
       }
-      // Ara başlık: altta ~1 satır; diğerleri: KDY spaceAfter.
-      addGap(isSub ? bodyLeadPx * 1 : mmToPx(style.spaceAfterMm, dpi) + headLeadPx * 0.4);
+      // (Bu noktaya yalnız level-1 bölüm başlığı ulaşır.) Altında KDY spaceAfter.
+      addGap(mmToPx(style.spaceAfterMm, dpi) + headLeadPx * 0.4);
       continue;
     }
 
@@ -1224,30 +1316,32 @@ export function paginate(input: PaginateInput): Page[] {
       const leadPx = autoLeadingPx(bqSizePt, settings.leadingPt, dpi);
       const innerWidth = contentWidthPx - blockIndentPx * 2;
       const align: ParaAlign = block.align ?? (settings.align === "justify" ? "justify" : "left");
-      addGap(leadPx * 0.5);
       const segLines =
         (align === "justify" && settings.lineBreak === "balanced"
           ? layoutJustified(ctx, block.runs, 400, true, sizePx, bqFont, () => innerWidth, settings.hyphenate)
           : null) ?? wrapRuns(ctx, block.runs, 400, true, sizePx, bqFont, innerWidth, innerWidth, settings.hyphenate);
-      addBlockLines(
-        segLines.map((segments, li) => ({
-          line: {
-            segments,
-            kind: "body" as const,
-            sizePt: bqSizePt,
-            font: bqFont,
-            weight: 400,
-            italic: true,
-            align,
-            indentMm: 0,
-            blockIndentMm: KDY_RULES.blockquoteIndentMm,
-            justify: align === "justify" && li !== segLines.length - 1,
-            spaceBeforeMm: 0,
-            heightMm: 0,
-          },
-          heightPx: leadPx,
-        })),
-      );
+      const bqEntries = segLines.map((segments, li) => ({
+        line: {
+          segments,
+          kind: "body" as const,
+          sizePt: bqSizePt,
+          font: bqFont,
+          weight: 400,
+          italic: true,
+          align,
+          indentMm: 0,
+          blockIndentMm: KDY_RULES.blockquoteIndentMm,
+          justify: align === "justify" && li !== segLines.length - 1,
+          spaceBeforeMm: 0,
+          heightMm: 0,
+        },
+        heightPx: leadPx,
+      }));
+      // Bekleyen başlık varsa alıntının ilk satırlarıyla birlikte yerleşir
+      // (kural 2/3/5); kendi üst boşluğu başlık-sonrası boşluğun yerini almaz.
+      if (pendingHeading) placePendingHeading(bqEntries);
+      else addGap(leadPx * 0.5);
+      addBlockLines(bqEntries);
       addGap(leadPx * 0.5);
       continue;
     }
@@ -1295,6 +1389,9 @@ export function paginate(input: PaginateInput): Page[] {
         const leftInsetMm = pxToMm(insetPx, dpi);
         const narrowWidth = contentWidthPx - insetPx;
 
+        // Drop-cap yalnız bölüm açılışını izler → bekleyen başlık olamaz; yine de
+        // güvenlik için boşalt (sıra bozulmasın).
+        placePendingHeading(null);
         if (spaceBeforeMm > 0) addGap(mmToPx(spaceBeforeMm, dpi));
         const segLines =
           (align === "justify" && settings.lineBreak === "balanced"
@@ -1342,33 +1439,38 @@ export function paginate(input: PaginateInput): Page[] {
       }
     }
 
-    if (spaceBeforeMm > 0) addGap(mmToPx(spaceBeforeMm, dpi));
     const segLines =
       (align === "justify" && settings.lineBreak === "balanced"
         ? layoutJustified(ctx, block.runs, 400, false, sizePx, paraFont,
             (n) => (n === 1 ? contentWidthPx - indentPx : contentWidthPx), settings.hyphenate)
         : null) ??
       wrapRuns(ctx, block.runs, 400, false, sizePx, paraFont, contentWidthPx - indentPx, contentWidthPx, settings.hyphenate);
-    addBlockLines(
-      segLines.map((segments, li) => ({
-        line: {
-          segments,
-          kind: "body" as const,
-          sizePt,
-          font: paraFont,
-          weight: 400,
-          italic: false,
-          align,
-          indentMm: li === 0 ? indentMm : 0,
-          blockIndentMm: 0,
-          justify: align === "justify" && li !== segLines.length - 1,
-          spaceBeforeMm: 0,
-          heightMm: 0,
-        },
-        heightPx: leadPx,
-      })),
-    );
+    const paraEntries = segLines.map((segments, li) => ({
+      line: {
+        segments,
+        kind: "body" as const,
+        sizePt,
+        font: paraFont,
+        weight: 400,
+        italic: false,
+        align,
+        indentMm: li === 0 ? indentMm : 0,
+        blockIndentMm: 0,
+        justify: align === "justify" && li !== segLines.length - 1,
+        spaceBeforeMm: 0,
+        heightMm: 0,
+      },
+      heightPx: leadPx,
+    }));
+    // Bekleyen başlık varsa paragrafın ilk satırlarıyla birlikte yerleşir
+    // (kural 2/3/5); paragraf-arası boşluk başlık-sonrası boşluğun üstüne binmez.
+    if (pendingHeading) placePendingHeading(paraEntries);
+    else if (spaceBeforeMm > 0) addGap(mmToPx(spaceBeforeMm, dpi));
+    addBlockLines(paraEntries);
   }
+
+  // Döngü bitti: hâlâ bekleyen başlık varsa (kitap başlıkla bitiyor) yerleştir.
+  placePendingHeading(null);
 
   if (bodyPages.length === 0) startPage("body");
 

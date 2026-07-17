@@ -153,19 +153,34 @@ export function bookToTypst(input: TypstBookInput): string {
     b.type === "heading" || b.type === "paragraph" || b.type === "blockquote" || b.type === "image" || b.type === "table";
 
   let pendingDropCap = false;
+  // TİPOGRAFİ kural 6: ardışık akış-içi başlıklar arasında tam önce-boşluğu
+  // (_hb) değil dar boşluk (_ht) kullanılır — önceki bloğu serializer bilir.
+  let prevInlineHeading = false;
   blocks.forEach((b, i) => {
     const mk = taggable(b) ? tag(i) + "\n" : "";
     if (b.type === "heading" && b.level === 1 && !b.subhead) {
       out.push(chapterOpen(b, tag(i), input.settings, contentHeightMm));
       pendingDropCap = input.settings.dropCap;
+      prevInlineHeading = false;
       return;
     }
     if (b.type === "paragraph" && pendingDropCap) {
       out.push(mk + dropCapPara(b));
       pendingDropCap = false;
+      prevInlineHeading = false;
       return;
     }
     if (b.type !== "blank") pendingDropCap = false;
+    if (b.type === "heading") {
+      // Akış-içi başlık (L2+/ara başlık). _hpre = çapa + alt-bölge kararı +
+      // önce-boşluk (kural 1/3/6/7; ardışıkta dar boşluk). Konum işareti (mk)
+      // _hpre'den SONRA → sayfa kırılırsa tıkla-düzenle bandı doğru sayfayı
+      // görür. Başlığın show kuralı: sticky blok + sonra-boşluk (kural 2/5).
+      out.push(`#_hpre(${prevInlineHeading})\n` + mk + blockToTypst(b, contentWidthMm));
+      prevInlineHeading = true;
+      return;
+    }
+    if (b.type !== "blank" && b.type !== "spacer") prevInlineHeading = false;
     out.push(mk + blockToTypst(b, contentWidthMm));
   });
   const body = out.filter((s) => s.length > 0).join("\n\n");

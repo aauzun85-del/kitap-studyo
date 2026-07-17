@@ -3,6 +3,7 @@
 
 import type { TypstBookInput } from "./serialize";
 import { typstFontExpr } from "./fonts";
+import { TYPOGRAPHY_RULES } from "@/lib/layout/typographyRules";
 
 // Typst leading = satır KUTULARI arası boşluk; bizim leadingPt = taban-taban
 // toplam satır yüksekliği. ÖLÇÜMLE kalibre edildi (Vollkorn 11pt): leading=4pt →
@@ -41,11 +42,20 @@ const HELPERS = String.raw`#set heading(numbering: none)
 // Başlıklar ASLA yaslanmaz + hecelenmez (dizgi kuralı): gövdenin justify/
 // hyphenate ayarı başlığa sızarsa kelime araları açılır ve "YÖN-TEMİ" gibi
 // heceden bölünmeler çıkar.
+//
+// TİPOGRAFİ KURALLARI (typographyRules.ts — iki motor ortak):
+//  • Önce-boşluğu (_hb / ardışıkta _ht) SERİALİZER emit eder (önceki bloğu o
+//    bilir, kural 6); v(weak) sayfa başında kendiliğinden düşer (kural 7).
+//  • _hguard: başlık, kullanılabilir yüksekliğin son bölgesinde başlayamaz
+//    (kural 3) — sınır _hlim önsözde hesaplanır.
+//  • block(sticky, breakable: false): başlık sayfa sonunda tek kalamaz, takip
+//    eden bloğa yapışır (kural 2/5); Typst'in dul/yetim maliyeti ilk satırın
+//    yalnız kalmasını zaten engeller (kural 4). below: _ha = sonra 1 satır.
 #show heading.where(level: 1): it => { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(center, text(size: 20pt, weight: 700, it.body)) }
-#show heading.where(level: 2): it => { v(0.7em, weak: true); set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(center, text(size: 16pt, weight: 700, it.body)); v(14mm, weak: true) }
-#show heading.where(level: 3): it => { v(0.6em, weak: true); set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); text(size: 14pt, weight: 700, it.body); v(14mm, weak: true) }
-#show heading.where(level: 4): it => { v(0.5em, weak: true); set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); text(size: 12pt, weight: 700, it.body); v(14mm, weak: true) }
-#let _subhead(body) = { v(0.5em, weak: true); set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(center, text(size: 11pt, weight: 700, body)); v(14mm, weak: true) }
+#show heading.where(level: 2): it => block(sticky: true, breakable: false, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(center, text(size: 16pt, weight: 700, it.body)) })
+#show heading.where(level: 3): it => block(sticky: true, breakable: false, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); text(size: 14pt, weight: 700, it.body) })
+#show heading.where(level: 4): it => block(sticky: true, breakable: false, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); text(size: 12pt, weight: 700, it.body) })
+#let _subhead(body) = block(sticky: true, breakable: false, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(center, text(size: 11pt, weight: 700, body)) })
 #let _chapter(kicker: none, ornament: "none", right: true, top: 30mm, body) = {
   if right { pagebreak(to: "odd", weak: true) } else { pagebreak(weak: true) }
   v(top)
@@ -155,7 +165,39 @@ export function buildPreamble(input: TypstBookInput): string {
   const paraSpacing = s.paragraphSpacingMm;
   const linebreaks = s.lineBreak === "greedy" ? '"simple"' : '"optimized"';
 
+  // ── TİPOGRAFİ KURALLARI (typographyRules.ts) — başlık boşlukları + alt bölge ──
+  // pitch = taban-taban satır adımı (satır yüksekliği). Kural 1/6/9 boşlukları
+  // bunun katı; kural 3 sınırı (_hlim) sayfa MUTLAK y'sinde: üst marj +
+  // kullanılabilir yüksekliğin (1 - koruma bölgesi)'i.
+  const pitchPt = s.leadingPt > 0 ? s.leadingPt : 1.2 * s.bodySizePt;
+  const hb = (TYPOGRAPHY_RULES.headingBeforeLines * pitchPt).toFixed(2);
+  const ha = (TYPOGRAPHY_RULES.headingAfterLines * pitchPt).toFixed(2);
+  const ht = (TYPOGRAPHY_RULES.tightHeadingGapLines * pitchPt).toFixed(2);
+  const contentHmm = size.height - m.top - m.bottom;
+  const hlim = (to + m.top + (1 - TYPOGRAPHY_RULES.bottomProtectionZone) * contentHmm).toFixed(2);
+  const typoRules = `#let _hb = ${hb}pt
+#let _ha = ${ha}pt
+#let _ht = ${ht}pt
+#let _hlim = ${hlim}mm
+// Başlık ÖNCESİ paket (kural 1/3/6/7): çapa + alt-bölge kararı + önce-boşluk.
+// DİKKAT — yakınsama tuzakları (CLI taramasıyla test edildi, 17/17 yakınsar):
+//  • Karar here() ile verilemez: guard'ın ürettiği pagebreak kendi konumunu
+//    sonraki sayfaya "taşıyıp" kararı tersine çevirir → osilasyon.
+//  • Çıplak metadata çapası da yetmez: Typst etiketleri sayfa kırılımında takip
+//    eden içerikle GÖÇ eder → sınır bandında yine osilasyon.
+//  • Çözüm: çapa, göç etmeyen sıfır-yükseklik BLOK içinde; karar "çapa + boşluk
+//    > sınır" (boşluğun sayfa sonunda trimlenmesi kararı etkileyemez).
+#let _hpre(tight) = {
+  block(height: 0pt, above: 0pt, below: 0pt, [#metadata(none) <hg>])
+  context {
+    let anchors = query(selector(<hg>).before(here(), inclusive: true))
+    if anchors.len() > 0 and anchors.last().location().position().y + (if tight { _ht } else { _hb }) > _hlim { pagebreak(weak: true) }
+  }
+  v(if tight { _ht } else { _hb }, weak: true)
+}`;
+
   return `// otomatik üretilen — Block[] → Typst (mizanpaj motoru)
+${typoRules}
 ${HELPERS}
 #set document(title: ${typstStr(meta.title)}, author: ${typstStr(meta.author)})
 #set page(
