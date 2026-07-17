@@ -20,12 +20,23 @@ export const AI_PROMPT_SUFFIX =
   "no spine, no frame, no border, leave a calm area near the top for a title";
 
 // Tam sarmal (arka+sırt+ön) üretiminde eklenen kompozisyon ipucu: tek kesintisiz
-// sahne, ana odak sağda (ön kapak), sol taraf (arka kapak) daha sakin ve yazıya
-// yer bırakacak şekilde açık kalsın.
+// sahne. SAĞ YARI = ön kapak → ana özne sağ yarının ORTASINDA ve tamamen sağ
+// yarının içinde; görüntünün tam dikey ortası (sırt bandı) yüz/figür/önemli
+// nesneden ARINIK (özne sırtta ikiye bölünmesin); sol yarı (arka kapak) sakin.
 export const AI_WRAP_HINT =
   "ultra-wide panoramic flat artwork, one continuous seamless scene across the " +
-  "full width, cohesive horizon and lighting, main focal subject on the right third, " +
-  "calmer simpler open space on the left third, balanced cinematic composition";
+  "full width, cohesive horizon and lighting. The RIGHT half of the image is the " +
+  "FRONT cover: place the main eye-catching subject centered within the right half, " +
+  "fully contained inside it. Keep the narrow vertical strip at the exact horizontal " +
+  "center of the image (the spine area) completely free of faces, figures and " +
+  "important objects — plain background only there, nothing gets cut in half. " +
+  "The LEFT half (back cover) stays calmer and more open";
+
+// Yalnız ön kapak üretiminde eklenen kompozisyon ipucu: dikkat çekici özne
+// kadrajın ortasında (kullanıcının açıklaması aksini söylemedikçe).
+export const AI_FRONT_HINT =
+  "unless the art direction says otherwise, place the main eye-catching subject " +
+  "centered in the frame, slightly below the middle, clearly visible";
 
 export const AI_STYLES: AiStyle[] = [
   {
@@ -103,7 +114,7 @@ export function buildAiPrompt(
   const desc = description.trim();
   const parts = [style.prompt];
   if (desc) parts.push(desc);
-  if (wrap) parts.push(AI_WRAP_HINT);
+  parts.push(wrap ? AI_WRAP_HINT : AI_FRONT_HINT);
   parts.push(AI_PROMPT_SUFFIX);
   return parts.join(". ");
 }
@@ -154,18 +165,31 @@ export function buildNanoCoverPrompt(opts: {
   if (opts.wrap) parts.push(AI_WRAP_HINT);
 
   // Metin talimatları — tırnak içinde BİREBİR yazılması istenir (çeviri YOK).
+  // Konumlar da net verilir: sarmal üretimde tüm yazılar SAĞ YARIDA (ön kapak);
+  // en alt-orta şerit yayınevi logosuna AYRILIR (sonradan uygulama bindirir).
+  const front = opts.wrap ? "of the right half (the front cover)" : "of the cover";
   if (title) {
     parts.push(
-      `the book title "${title}" displayed prominently near the top in large, ` +
-        `elegant, perfectly legible typography that matches the mood`,
+      `the book title "${title}" displayed prominently, horizontally centered in the upper third ${front}, ` +
+        `in large, elegant, perfectly legible typography that matches the mood`,
     );
   }
   if (subtitle) {
-    parts.push(`a smaller subtitle "${subtitle}" beneath the title`);
+    parts.push(`a smaller subtitle "${subtitle}" directly beneath the title, centered`);
   }
   if (author) {
     parts.push(
-      `the author name "${author}" in smaller refined type near the bottom`,
+      `the author name "${author}" in smaller refined type, horizontally centered in the lower quarter ${front} — ` +
+        `but NOT at the very bottom edge`,
+    );
+  }
+  parts.push(
+    `keep the bottom strip ${front} (roughly the bottom 8 percent) completely free of text ` +
+      `and busy detail — the publisher's logo will be placed there afterwards`,
+  );
+  if (opts.wrap) {
+    parts.push(
+      "no text at all on the left half (the back cover) or on the narrow center spine strip",
     );
   }
 

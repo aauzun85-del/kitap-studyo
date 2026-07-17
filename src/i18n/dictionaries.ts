@@ -1163,7 +1163,7 @@ const tr: Dictionary = {
       "Bir stil seç, istersen kitabını birkaç kelimeyle anlat; yapay zeka sanatsal arka planı üretsin. Başlığı uygulama kendi fontuyla üstüne yazar.",
     aiModelLabel: "Yapay zeka modeli",
     aiModelHint:
-      "FLUX: hızlı ve sanatsal. Nano Banana Pro: komutları daha iyi izler, daha kaliteli. Ideogram v3: yazı/tipografide en iyisi — başlığı görsele basmak için ideal, ama daha yavaş ve maliyetli.",
+      "Üçü de kapak görseli üretir, farkları şu: FLUX hızlıdır ve görsele yazı basmaz — başlık/yazar üstüne ayrıca eklenir (önerilen). Nano Banana Pro tarifi en iyi izler; 'metni göm' açıksa başlığı resmin içine yazar. Ideogram v3 de yazıyı resme basar (tipografisi en iyisi) ama yavaş ve pahalıdır. Kararsızsan FLUX'ta kal.",
     aiModelFlux: "FLUX 1.1 Pro",
     aiModelNano: "Nano Banana Pro",
     aiModelIdeogram: "Ideogram v3",
@@ -2293,7 +2293,7 @@ const en: Dictionary = {
       "Pick a style, optionally describe your book in a few words, and let AI generate the artwork. The app overlays your title in its own font.",
     aiModelLabel: "AI model",
     aiModelHint:
-      "FLUX: fast and artistic. Nano Banana Pro: follows prompts better, higher quality. Ideogram v3: best at text/typography — ideal for printing the title onto the artwork, but slower and pricier.",
+      "All three generate cover artwork; the difference: FLUX is fast and never prints text — title/author are added on top by the app (recommended). Nano Banana Pro follows instructions best; with 'embed text' on it writes the title into the image. Ideogram v3 also prints text (best typography) but is slower and pricier. Unsure? Stick with FLUX.",
     aiModelFlux: "FLUX 1.1 Pro",
     aiModelNano: "Nano Banana Pro",
     aiModelIdeogram: "Ideogram v3",

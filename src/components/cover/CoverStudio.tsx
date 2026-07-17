@@ -3083,6 +3083,7 @@ export default function CoverStudio({
               ref={canvasRef}
               spread={spread}
               labels={labels}
+              lang={lang}
               templateId={templateId}
               colors={colors}
               content={content}

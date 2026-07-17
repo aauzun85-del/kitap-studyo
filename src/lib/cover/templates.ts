@@ -33,6 +33,11 @@ export type TemplateCtx = {
   // bant logoya AYRILIR → alt-hizalı yazar adı bu kadar yukarı kayar, logoyla
   // üst üste binmez. Logo yoksa 0.
   bottomReserveMm?: number;
+  // Kitabın dili: BÜYÜK HARF dönüşümü buna göre yapılır (tr: i→İ, ı→I).
+  lang?: "tr" | "en";
+  // Kapak görseli var mı? Varsa tipografik süsler (çizgi/çerçeve/amblem)
+  // çizilmez — görselin üstünde anlamsız dururlar; başlık/yazar/panel kalır.
+  hasImage?: boolean;
 };
 
 export type CoverTemplate = {
@@ -111,7 +116,9 @@ type TextOpts = {
 function centeredText(ctx: TemplateCtx, text: string, o: TextOpts) {
   const { fabric, canvas, px } = ctx;
   const isLeft = o.align === "left";
-  const t = new fabric.Textbox(o.upper ? text.toUpperCase() : text, {
+  // Türkçe kitapta i→İ, ı→I (JS varsayılanı i→I yapar, yanlış); İngilizcede standart.
+  const upper = (s: string) => s.toLocaleUpperCase(ctx.lang === "en" ? "en" : "tr");
+  const t = new fabric.Textbox(o.upper ? upper(text) : text, {
     left: isLeft ? px(o.leftMm ?? 0) : px(o.cx),
     top: px(o.top),
     width: px(o.maxWidthMm),
@@ -424,7 +431,7 @@ function drawTitleBlock(ctx: TemplateCtx, r: TemplateRecipe) {
   let y = d.topTrim + d.bookHeight * startRatio;
   const gap = d.bookHeight * 0.018;
 
-  if (r.frame) {
+  if (r.frame && !ctx.hasImage) {
     const fw = d.frontSafeRight - d.frontSafeLeft;
     const fh = d.bottomSafe - d.topSafe;
     addDecor(
@@ -436,7 +443,7 @@ function drawTitleBlock(ctx: TemplateCtx, r: TemplateRecipe) {
       "frame",
     );
   }
-  if (r.emblem) {
+  if (r.emblem && !ctx.hasImage) {
     emblem(ctx, align === "left" ? leftMm + 8 : d.frontCenter, y, colors.accent);
     y += d.bookHeight * 0.075;
   }
@@ -479,10 +486,14 @@ function drawTitleBlock(ctx: TemplateCtx, r: TemplateRecipe) {
   });
   y += pxToMm(ctx, title.height ?? 0) + gap;
 
+  // Görselli kapakta süs çizgisi/noktalar çizilmez (görselin üstünde anlamsız
+  // duran turuncu çizgi şikayeti); düz zeminli tipografik kapakta kalır.
   const dec = r.decoration ?? "rule";
-  if (dec === "rule") accentRule(ctx, decCx, y + gap * 0.4, colors.accent);
-  else if (dec === "doubleRule") doubleRule(ctx, decCx, y + gap * 0.6, colors.accent);
-  else if (dec === "dots") dotsDivider(ctx, decCx, y + gap, colors.accent);
+  if (!ctx.hasImage) {
+    if (dec === "rule") accentRule(ctx, decCx, y + gap * 0.4, colors.accent);
+    else if (dec === "doubleRule") doubleRule(ctx, decCx, y + gap * 0.6, colors.accent);
+    else if (dec === "dots") dotsDivider(ctx, decCx, y + gap, colors.accent);
+  }
 
   if (content.author) {
     const a = {

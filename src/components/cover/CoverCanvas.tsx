@@ -179,6 +179,8 @@ type FabricCanvasInstance = {
 const CoverCanvas = forwardRef<CoverCanvasHandle, {
   spread: SpreadDimensions;
   labels: Labels;
+  /** Kitabın dili — büyük harf dönüşümü (tr: i→İ) buna göre yapılır. */
+  lang?: "tr" | "en";
   templateId: string;
   colors: CoverColors;
   content: CoverContent;
@@ -204,6 +206,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
 }>(function CoverCanvas({
   spread,
   labels,
+  lang,
   templateId,
   colors,
   content,
@@ -688,7 +691,19 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
         ? (spread.bookWidth * (images.logoSize / 100)) / 2.2 + spread.bookHeight * 0.025
         : 0;
       // colors bir an için boş gelirse (canlı güncelleme sırasında) şablonun kendi paletine düş.
-      const ctx = { fabric, canvas, px, d: spread, content, barcodeUrl, colors: colors ?? template.palette, bottomReserveMm };
+      const ctx = {
+        fabric,
+        canvas,
+        px,
+        d: spread,
+        content,
+        barcodeUrl,
+        colors: colors ?? template.palette,
+        bottomReserveMm,
+        lang,
+        // Görsel varken şablon süsleri (çizgi/çerçeve/amblem) çizilmez.
+        hasImage: !!images.cover,
+      };
 
       // 1) Zemin rengi (editId "background"). Katman panelinden gizlenmişse görünmez yap.
       template.base(ctx);
@@ -1595,7 +1610,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       // kalmasın → bir sonraki seçim olayları yine parent'a yansıyabilsin.
       rebuildingRef.current = false;
     };
-  }, [spread, labels, templateId, colors, content, showGuides, images, objects, positions, layers, hidden, locked, autoContrast, textStyles, containerW, containerH, fontsReady]);
+  }, [spread, labels, lang, templateId, colors, content, showGuides, images, objects, positions, layers, hidden, locked, autoContrast, textStyles, containerW, containerH, fontsReady]);
 
   useEffect(() => {
     return () => {
