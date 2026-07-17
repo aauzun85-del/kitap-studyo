@@ -20,17 +20,15 @@ export const AI_PROMPT_SUFFIX =
   "no spine, no frame, no border, leave a calm area near the top for a title";
 
 // Tam sarmal (arka+sırt+ön) üretiminde eklenen kompozisyon ipucu: tek kesintisiz
-// sahne. SAĞ YARI = ön kapak → ana özne sağ yarının ORTASINDA ve tamamen sağ
-// yarının içinde; görüntünün tam dikey ortası (sırt bandı) yüz/figür/önemli
-// nesneden ARINIK (özne sırtta ikiye bölünmesin); sol yarı (arka kapak) sakin.
+// sahne, ana odak SAĞ üçte-birde (ön kapak), sol taraf (arka kapak) sakin.
+// NOT: Daha ayrıntılı "sağ yarının ortasında + sırt bandı boş" tarifi denendi
+// ve FLUX'ta GERİLEME yaptı (özne tam ortaya/sola kaydı) — kullanıcı "önceki
+// sürüm daha iyiydi" dedi. Kanıtlanmış kısa kalıp + tek kısa sırt güvencesi.
 export const AI_WRAP_HINT =
   "ultra-wide panoramic flat artwork, one continuous seamless scene across the " +
-  "full width, cohesive horizon and lighting. The RIGHT half of the image is the " +
-  "FRONT cover: place the main eye-catching subject centered within the right half, " +
-  "fully contained inside it. Keep the narrow vertical strip at the exact horizontal " +
-  "center of the image (the spine area) completely free of faces, figures and " +
-  "important objects — plain background only there, nothing gets cut in half. " +
-  "The LEFT half (back cover) stays calmer and more open";
+  "full width, cohesive horizon and lighting, main focal subject placed on the " +
+  "right third, nothing important at the exact horizontal center, " +
+  "calmer simpler open space on the left third, balanced cinematic composition";
 
 // Yalnız ön kapak üretiminde eklenen kompozisyon ipucu: dikkat çekici özne
 // kadrajın ortasında (kullanıcının açıklaması aksini söylemedikçe).
