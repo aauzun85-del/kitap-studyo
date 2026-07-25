@@ -503,6 +503,8 @@ type LayoutStudioCopy = {
   emptyPreview: string;
   // PDF dışa aktarma.
   exportPdfCta: string;
+  exportIdmlCta: string;
+  exportIdmlHint: string;
   exportingLabel: string;
   exportErrorLabel: string;
   cropMarksLabel: string;
@@ -1608,6 +1610,8 @@ const tr: Dictionary = {
     emptyPreview:
       "Kitap adını ve metni girin; başlık sayfası, içindekiler ve bölümler burada belirir.",
     exportPdfCta: "PDF indir",
+    exportIdmlCta: "InDesign (IDML)",
+    exportIdmlHint: "Mizanpajı Adobe InDesign'da açıp düzenlemek için .idml dosyası indir. Metin, boyut, kenar boşlukları ve stiller aktarılır; görsel/tablo için InDesign'da yer tutucu bırakılır.",
     exportingLabel: "Hazırlanıyor…",
     exportErrorLabel: "PDF oluşturulamadı. Lütfen tekrar deneyin.",
     cropMarksLabel: "Kesim işaretleri + 5 mm taşma",
@@ -2738,6 +2742,8 @@ const en: Dictionary = {
     emptyPreview:
       "Enter the book title and text; the title page, contents and chapters will appear here.",
     exportPdfCta: "Download PDF",
+    exportIdmlCta: "InDesign (IDML)",
+    exportIdmlHint: "Download an .idml file to open and edit the layout in Adobe InDesign. Text, size, margins and styles are carried over; images/tables get a placeholder to add in InDesign.",
     exportingLabel: "Preparing…",
     exportErrorLabel: "Could not create the PDF. Please try again.",
     cropMarksLabel: "Crop marks + 5 mm bleed",

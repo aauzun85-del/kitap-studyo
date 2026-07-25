@@ -46,6 +46,7 @@ import { parseDocx, type DocxMode } from "@/lib/layout/docx";
 import { blocksToMarkdown } from "@/lib/layout/blocksToMarkdown";
 import type { MediaMap } from "@/lib/layout/mediaTokens";
 import { exportBookPdf } from "@/lib/layout/pdf";
+import { exportBookIdml } from "@/lib/layout/idml";
 import { exportBookPdfTypst, type TypstBookInput } from "@/lib/typst";
 import { preflightPdf, type PreflightReport } from "@/lib/publishing/preflight";
 import { TypstPreviewCanvas } from "@/components/editor/TypstPreviewCanvas";
@@ -604,6 +605,41 @@ export default function LayoutStudio({
       setExporting(false);
     }
   }, [pages, sizeId, margins, gutter, cropMarks, kerning, fontId, title, standard, bleedOn]);
+
+  // InDesign IDML dışa aktarma: mizanpajı Adobe InDesign'da açılabilir .idml
+  // paketine çevirir (metin + boyut + kenar + stiller).
+  const handleExportIdml = useCallback(async (): Promise<boolean> => {
+    if (blocks.length === 0) return false;
+    setExporting(true);
+    setExportError(false);
+    try {
+      const bytes = await exportBookIdml({
+        meta,
+        blocks,
+        settings,
+        size: getSize(sizeId),
+        margins,
+        gutter,
+        pageCount: pages.length,
+      });
+      const blob = new Blob([bytes as BlobPart], { type: "application/vnd.adobe.indesign-idml-package" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const safe = (title.trim() || "kitap").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
+      a.download = `${safe || "kitap"}-ic-sayfa.idml`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
+    } catch {
+      setExportError(true);
+      return false;
+    } finally {
+      setExporting(false);
+    }
+  }, [blocks, meta, settings, sizeId, margins, gutter, pages.length, title]);
 
   // Yazma görünümünün canlı önizlemesine giden Typst girdisi. Export'la AYNI
   // montaj; yalnız kesim krosları/taşma KAPALI → temiz "kitap sayfası" görünür
@@ -1178,6 +1214,15 @@ export default function LayoutStudio({
               className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {exporting ? t.exportingLabel : t.exportPdfCta}
+            </button>
+            {/* InDesign'da düzenlemek isteyen kullanıcılar için IDML çıktısı. */}
+            <button
+              onClick={() => void handleExportIdml()}
+              disabled={exporting || isEmpty || blocks.length === 0}
+              title={t.exportIdmlHint}
+              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t.exportIdmlCta}
             </button>
             <button
               onClick={() => void handlePreflight()}
