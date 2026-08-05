@@ -289,9 +289,12 @@ function frameXml(
 \t\t</TextFrame>`;
 }
 
-function pageXml(page: PageGeom, g: Geom, masterId: string): string {
+function pageXml(page: PageGeom, g: Geom): string {
   const tx = page.isRight ? 0 : -g.pageWpt;
-  return `\t\t<Page Self="${page.id}" TabOrder="" AppliedMaster="${masterId}" OverrideList="" MasterPageTransform="1 0 0 1 0 0" Name="${page.name}" AppliedTrapPreset="TrapPreset/$ID/kDefaultTrapStyleName" GeometricBounds="0 0 ${ptStr(g.pageHpt)} ${ptStr(g.pageWpt)}" ItemTransform="1 0 0 1 ${ptStr(tx)} ${ptStr(-g.halfHpt)}" LayoutRule="UseMaster" OptionalPage="false" GridStartingPoint="TopOutside" UseMasterGrid="true">
+  // AppliedMaster="n": referans KDY şablonundaki gibi — sayfalar master'a
+  // BAĞLANMAZ (master bağı, açılışta InDesign'ın düzeni yeniden akıtmasına
+  // zemin hazırlıyordu; "metin 104. sayfada başlıyor" vakasının şüphelisi).
+  return `\t\t<Page Self="${page.id}" TabOrder="" AppliedMaster="n" OverrideList="" MasterPageTransform="1 0 0 1 0 0" Name="${page.name}" AppliedTrapPreset="TrapPreset/$ID/kDefaultTrapStyleName" GeometricBounds="0 0 ${ptStr(g.pageHpt)} ${ptStr(g.pageWpt)}" ItemTransform="1 0 0 1 ${ptStr(tx)} ${ptStr(-g.halfHpt)}" LayoutRule="UseMaster" OptionalPage="false" GridStartingPoint="TopOutside" UseMasterGrid="${page.isRight ? "true" : "false"}">
 ${marginPrefXml(g)}
 \t\t</Page>`;
 }
@@ -305,10 +308,9 @@ function marginPrefXml(g: Geom): string {
 function spreadXml(
   spread: SpreadGeom,
   g: Geom,
-  masterId: string,
   frames: string[],
 ): string {
-  const pagesXml = spread.pages.map((p) => pageXml(p, g, masterId)).join("\n");
+  const pagesXml = spread.pages.map((p) => pageXml(p, g)).join("\n");
   return `${XML_HEAD}
 <idPkg:Spread ${PKG_NS} DOMVersion="15.0">
 \t<Spread Self="${spread.id}" PageTransitionType="None" PageTransitionDirection="NotApplicable" PageTransitionDuration="Medium" ShowMasterItems="true" PageCount="${spread.pages.length}" BindingLocation="${spread.pages.length === 1 ? 0 : 1}" AllowPageShuffle="true" ItemTransform="1 0 0 1 0 ${ptStr(spread.yOffset)}" FlattenerOverride="Default">
@@ -465,7 +467,7 @@ function preferencesXml(input: IdmlBookInput, g: Geom, physicalPages: number): s
   return `${XML_HEAD}
 <idPkg:Preferences ${PKG_NS} DOMVersion="15.0">
 \t<PageItemDefault FillColor="Swatch/None" FillTint="-1" StrokeWeight="1" MiterLimit="4" EndCap="ButtEndCap" EndJoin="MiterEndJoin" StrokeType="StrokeStyle/$ID/Solid" LeftLineEnd="None" RightLineEnd="None" StrokeColor="Swatch/None" StrokeTint="-1" GradientFillAngle="0" GradientStrokeAngle="0" GapColor="Swatch/None" GapTint="-1" StrokeAlignment="CenterAlignment" Nonprinting="false" />
-\t<TextPreference TypographersQuotes="true" SmartTextReflow="true" AddPages="EndOfStory" LimitToMasterTextFrames="false" PreserveFacingPageSpreads="false" DeleteEmptyPages="true" />
+\t<TextPreference TypographersQuotes="true" SmartTextReflow="false" AddPages="EndOfStory" LimitToMasterTextFrames="true" PreserveFacingPageSpreads="false" DeleteEmptyPages="false" />
 \t<TextDefault AppliedParagraphStyle="ParagraphStyle/$ID/[No paragraph style]" PointSize="${ptStr(s.bodySizePt)}" FillColor="Color/Black" StrokeColor="Swatch/None" Justification="${s.align === "justify" ? "LeftJustified" : "LeftAlign"}" Hyphenation="${s.hyphenate ? "true" : "false"}">
 \t\t<Properties>
 \t\t\t<AppliedFont type="string">${bodyFont}</AppliedFont>
@@ -626,7 +628,7 @@ export async function exportBookIdml(input: IdmlBookInput): Promise<Uint8Array> 
   zip.file(`MasterSpreads/MasterSpread_${masterId}.xml`, masterSpreadXml(masterId, g));
   for (const sp of spreads) {
     const frames = sp.pages.map((p) => frameFor.get(p.id)!).filter(Boolean);
-    zip.file(`Spreads/Spread_${sp.id}.xml`, spreadXml(sp, g, masterId, frames));
+    zip.file(`Spreads/Spread_${sp.id}.xml`, spreadXml(sp, g, frames));
   }
   zip.file(`Stories/Story_${storyId}.xml`, storyXml(storyId, blocks));
   zip.file(
