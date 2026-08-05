@@ -14,6 +14,7 @@ import JSZip from "jszip";
 import type { Block, Run, LayoutSettings, BookMeta, ParaAlign } from "./paginate";
 import type { BookSize, Margins } from "./page";
 import { smartQuoteBlocks, prepareMeta } from "./prepare";
+import { IDML_BUILTIN_STYLE_DEFS } from "./idmlBuiltinStyles";
 
 export type IdmlBookInput = {
   meta: BookMeta;
@@ -408,8 +409,7 @@ function stylesXml(s: LayoutSettings): string {
 \t\t\t\t<AppliedFont type="string">${headFont}</AppliedFont>
 \t\t\t</Properties>
 \t\t</ParagraphStyle>
-\t</RootParagraphStyleGroup>
-</idPkg:Styles>`;
+\t</RootParagraphStyleGroup>${IDML_BUILTIN_STYLE_DEFS}</idPkg:Styles>`;
 }
 
 function fontsXml(s: LayoutSettings): string {
