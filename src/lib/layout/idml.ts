@@ -164,9 +164,16 @@ function blocksToParas(blocks: Block[]): ParaSpec[] {
         out.push({ style: "Alinti", runs: b.runs, align: b.align });
         break;
       case "blank":
-      case "spacer":
-        out.push({ style: "Govde", runs: [] });
+      case "spacer": {
+        // Boşluk hijyeni: baştaki boşlar hiç eklenmez, ardışık boşlar TEKE iner.
+        // (Word'den gelen metinlerde baş/aralarda onlarca boş satır olabiliyor;
+        // hepsi paragraf olursa InDesign'da baş tarafta boş sayfalar oluşuyor.)
+        const last = out[out.length - 1];
+        if (out.length > 0 && !(last.style === "Govde" && last.runs.length === 0)) {
+          out.push({ style: "Govde", runs: [] });
+        }
         break;
+      }
       case "image":
         // v1: gerçek yerleştirme yok → görünür yer tutucu (içerik sessizce kaybolmasın).
         out.push({ style: "Govde", runs: plain("[ Görsel — InDesign'da yerleştirin ]") });
@@ -176,6 +183,10 @@ function blocksToParas(blocks: Block[]): ParaSpec[] {
         break;
       // pagebreak: v1'de atlanır (bölüm başlıkları zaten yeni sayfa hissi verir).
     }
+  }
+  // Sondaki boş paragrafları at (kuyrukta boş sayfa üretmesinler).
+  while (out.length && out[out.length - 1].style === "Govde" && out[out.length - 1].runs.length === 0) {
+    out.pop();
   }
   return out;
 }
@@ -454,7 +465,7 @@ function preferencesXml(input: IdmlBookInput, g: Geom, physicalPages: number): s
   return `${XML_HEAD}
 <idPkg:Preferences ${PKG_NS} DOMVersion="15.0">
 \t<PageItemDefault FillColor="Swatch/None" FillTint="-1" StrokeWeight="1" MiterLimit="4" EndCap="ButtEndCap" EndJoin="MiterEndJoin" StrokeType="StrokeStyle/$ID/Solid" LeftLineEnd="None" RightLineEnd="None" StrokeColor="Swatch/None" StrokeTint="-1" GradientFillAngle="0" GradientStrokeAngle="0" GapColor="Swatch/None" GapTint="-1" StrokeAlignment="CenterAlignment" Nonprinting="false" />
-\t<TextPreference TypographersQuotes="true" SmartTextReflow="true" AddPages="EndOfStory" LimitToMasterTextFrames="false" PreserveFacingPageSpreads="false" DeleteEmptyPages="false" />
+\t<TextPreference TypographersQuotes="true" SmartTextReflow="true" AddPages="EndOfStory" LimitToMasterTextFrames="false" PreserveFacingPageSpreads="false" DeleteEmptyPages="true" />
 \t<TextDefault AppliedParagraphStyle="ParagraphStyle/$ID/[No paragraph style]" PointSize="${ptStr(s.bodySizePt)}" FillColor="Color/Black" StrokeColor="Swatch/None" Justification="${s.align === "justify" ? "LeftJustified" : "LeftAlign"}" Hyphenation="${s.hyphenate ? "true" : "false"}">
 \t\t<Properties>
 \t\t\t<AppliedFont type="string">${bodyFont}</AppliedFont>
@@ -585,8 +596,10 @@ export async function exportBookIdml(input: IdmlBookInput): Promise<Uint8Array> 
   const masterId = gen();
   const sectionId = gen();
 
-  // 3) Sayfa + çerçeve zinciri: pageCount + 2 güvenlik payı (taşma yutulsun).
-  const frameCount = Math.max(1, input.pageCount) + 2;
+  // 3) Sayfa + çerçeve zinciri: pageCount + 1 güvenlik payı. Taşma olursa
+  // SmartTextReflow sayfa ekler; metin erken biterse DeleteEmptyPages kuyruğu
+  // temizler — o yüzden pay küçük tutulur (fazlası sonda boş sayfa yığıyordu).
+  const frameCount = Math.max(1, input.pageCount) + 1;
   const { spreads, pages } = buildSpreads(gen, frameCount, g.pageHpt);
 
   // Tüm sayfalar sırayla → tek zincir. Her sayfaya bir çerçeve; prev/next id'leri.

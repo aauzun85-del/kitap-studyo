@@ -620,7 +620,9 @@ export default function LayoutStudio({
         size: getSize(sizeId),
         margins,
         gutter,
-        pageCount: pages.length,
+        // Yalnız GÖVDE sayfaları: başlık/içindekiler/boş sayfalar IDML'de yok;
+        // toplam sayı verilirse hepsi InDesign'da sonda boş sayfaya dönüşüyor.
+        pageCount: pages.filter((p) => p.role === "body").length,
       });
       const blob = new Blob([bytes as BlobPart], { type: "application/vnd.adobe.indesign-idml-package" });
       const url = URL.createObjectURL(blob);
