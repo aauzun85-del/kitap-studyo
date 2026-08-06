@@ -517,6 +517,11 @@ type LayoutStudioCopy = {
   exportHintIngram: string;
   imprintNote: string;
   imprintNoteKdp: string;
+  // Önizleme ergonomisi (araç çubuğu sadeleştirme).
+  viewMenuLabel: string;
+  engineLabel: string;
+  hidePanelTip: string;
+  showPanelTip: string;
   // Yayın denetimi.
   qualityHeading: string;
   qualityHint: string;
@@ -1631,6 +1636,10 @@ const tr: Dictionary = {
       "İlk 2 sayfayı (logo + künye) KDY otomatik ekler; bu dosyada bulunmaz. PDF doğrudan başlık sayfasıyla başlar.",
     imprintNoteKdp:
       "KDP'de tüm sayfaları sen sağlarsın. Telif/künye sayfasını eklemeyi unutma; PDF başlık sayfasıyla başlar.",
+    viewMenuLabel: "Görünüm",
+    engineLabel: "Önizleme motoru",
+    hidePanelTip: "Ayar panelini gizle — önizlemeye daha geniş alan",
+    showPanelTip: "Ayar panelini göster",
     qualityHeading: "Yayın denetimi",
     qualityHint:
       "Baskıya çıkmadan önce metin, yapı ve platform kurallarını hızlıca kontrol eder.",
@@ -2763,6 +2772,10 @@ const en: Dictionary = {
       "KDY adds the first 2 pages (logo + imprint) automatically; they are not in this file. The PDF starts directly with the title page.",
     imprintNoteKdp:
       "On KDP you provide every page yourself. Don't forget to add a copyright/imprint page; the PDF starts with the title page.",
+    viewMenuLabel: "View",
+    engineLabel: "Preview engine",
+    hidePanelTip: "Hide the settings panel — more room for the preview",
+    showPanelTip: "Show the settings panel",
     qualityHeading: "Publication checks",
     qualityHint:
       "Quickly checks the manuscript, structure and platform rules before print export.",

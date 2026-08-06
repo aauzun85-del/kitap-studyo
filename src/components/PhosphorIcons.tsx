@@ -237,3 +237,19 @@ export function FolderIcon({ className }: IconProps) {
     </Icon>
   );
 }
+
+export function SidebarIcon({ className }: IconProps) {
+  return (
+    <Icon className={className}>
+      <path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40Zm176,144H96V56H216V200Z" />
+    </Icon>
+  );
+}
+
+export function CaretDownIcon({ className }: IconProps) {
+  return (
+    <Icon className={className}>
+      <path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z" />
+    </Icon>
+  );
+}

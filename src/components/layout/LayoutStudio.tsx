@@ -5,6 +5,7 @@ import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
 import { genreThemeId, genreLayoutSeed } from "@/lib/projects/genres";
+import { requireExport } from "@/lib/credits/exportGate";
 import { useMetaSync, useManuscriptSync } from "@/lib/projects/useSync";
 import {
   INTERIOR_SIZES,
@@ -64,6 +65,8 @@ import {
   SlidersIcon,
   StackIcon,
   CheckCircleIcon,
+  SidebarIcon,
+  CaretDownIcon,
 } from "@/components/PhosphorIcons";
 
 // Sayfalama hep sabit DPI'da yapılır (yakınlaştırmadan bağımsız sayfa sayısı).
@@ -117,6 +120,7 @@ export default function LayoutStudio({
   dict,
   initialProject,
   autoExport,
+  canExport,
 }: {
   lang: Locale;
   dict: Dictionary;
@@ -124,6 +128,8 @@ export default function LayoutStudio({
   /** İndirme ekranından "?export=1": sayfalama hazır olunca İç sayfa PDF'ini
    *  otomatik indir + üstte durum katmanı göster. */
   autoExport?: boolean;
+  /** Aktif jeton paketi var mı? false ise indirme kilitli. */
+  canExport: boolean;
 }) {
   const t = dict.layoutStudio;
   // Bulut projesi: state proje verisinden tohumlanır; proje yoksa anonim (boş).
@@ -175,6 +181,37 @@ export default function LayoutStudio({
   const [gutterAuto, setGutterAuto] = useState(true);
   const [gutterManual, setGutterManual] = useState(0);
   const [zoom, setZoom] = useState(1);
+
+  // Önizleme ergonomisi: sol ayar paneli gizlenebilir (geniş önizleme), ikincil
+  // kontroller "Görünüm" menüsünde, künye notu kapatılabilir. Tercihler kalıcı.
+  const [sidePanelOpen, setSidePanelOpen] = useState(true);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const [imprintNoteHidden, setImprintNoteHidden] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("mizanpaj-panel-gizli") === "1") setSidePanelOpen(false);
+      if (localStorage.getItem("mizanpaj-kunye-notu-gizli") === "1") setImprintNoteHidden(true);
+    } catch {
+      /* localStorage kapalıysa varsayılanlar kalır */
+    }
+  }, []);
+  const toggleSidePanel = () =>
+    setSidePanelOpen((v) => {
+      try {
+        localStorage.setItem("mizanpaj-panel-gizli", v ? "1" : "0");
+      } catch {
+        /* yok say */
+      }
+      return !v;
+    });
+  const dismissImprintNote = () => {
+    setImprintNoteHidden(true);
+    try {
+      localStorage.setItem("mizanpaj-kunye-notu-gizli", "1");
+    } catch {
+      /* yok say */
+    }
+  };
 
   // Tipografi (KDY varsayılanları).
   const [fontId, setFontId] = useState("sourceserif");
@@ -569,6 +606,7 @@ export default function LayoutStudio({
 
   const handleExportPdf = useCallback(async (): Promise<boolean> => {
     if (pages.length === 0) return false;
+    if (!requireExport(canExport, lang)) return false;
     setExporting(true);
     setExportError(false);
     try {
@@ -604,7 +642,45 @@ export default function LayoutStudio({
     } finally {
       setExporting(false);
     }
-  }, [pages, sizeId, margins, gutter, cropMarks, kerning, fontId, title, standard, bleedOn]);
+  }, [pages, sizeId, margins, gutter, cropMarks, kerning, fontId, title, standard, bleedOn, canExport, lang]);
+
+  // InDesign IDML dışa aktarma: mizanpajı Adobe InDesign'da açılabilir .idml
+  // paketine çevirir (metin + boyut + kenar + stiller). Jeton kapısı PDF ile aynı.
+  const handleExportIdml = useCallback(async (): Promise<boolean> => {
+    if (blocks.length === 0) return false;
+    if (!requireExport(canExport, lang)) return false;
+    setExporting(true);
+    setExportError(false);
+    try {
+      const bytes = await exportBookIdml({
+        meta,
+        blocks,
+        settings,
+        size: getSize(sizeId),
+        margins,
+        gutter,
+        // Yalnız GÖVDE sayfaları: başlık/içindekiler/boş sayfalar IDML'de yok;
+        // toplam sayı verilirse hepsi InDesign'da sonda boş sayfaya dönüşüyor.
+        pageCount: pages.filter((p) => p.role === "body").length,
+      });
+      const blob = new Blob([bytes as BlobPart], { type: "application/vnd.adobe.indesign-idml-package" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const safe = (title.trim() || "kitap").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
+      a.download = `${safe || "kitap"}-ic-sayfa.idml`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
+    } catch {
+      setExportError(true);
+      return false;
+    } finally {
+      setExporting(false);
+    }
+  }, [blocks, meta, settings, sizeId, margins, gutter, pages.length, title, canExport, lang]);
 
   // InDesign IDML dışa aktarma: mizanpajı Adobe InDesign'da açılabilir .idml
   // paketine çevirir (metin + boyut + kenar + stiller).
@@ -666,6 +742,7 @@ export default function LayoutStudio({
   // Doğrulanınca varsayılan olacak; şimdilik ayrı tuş.
   const handleExportPdfTypst = useCallback(async (): Promise<boolean> => {
     if (blocks.length === 0) return false;
+    if (!requireExport(canExport, lang)) return false;
     setExporting(true);
     setExportError(false);
     try {
@@ -698,7 +775,7 @@ export default function LayoutStudio({
     } finally {
       setExporting(false);
     }
-  }, [blocks, meta, settings, sizeId, margins, gutter, cropMarks, standard, bleedOn, title]);
+  }, [blocks, meta, settings, sizeId, margins, gutter, cropMarks, standard, bleedOn, title, canExport, lang]);
 
   // Baskı denetimi (preflight): Typst PDF'ini üret + yapısal baskı kontrolleri.
   const [preflightReport, setPreflightReport] = useState<PreflightReport | null>(null);
@@ -953,7 +1030,7 @@ export default function LayoutStudio({
   const isEmpty = blocks.length === 0 && !title.trim();
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-[1760px] flex-col gap-4 px-4 py-6 lg:flex-row">
+    <div className="mx-auto flex min-h-full w-full max-w-[1760px] flex-col gap-4 px-4 py-4 lg:flex-row">
       {autoExport && (
         <ExportOverlay
           lang={lang}
@@ -966,7 +1043,7 @@ export default function LayoutStudio({
       {preflightReport && (
         <PreflightDialog report={preflightReport} onClose={() => setPreflightReport(null)} />
       )}
-      <aside className="w-full shrink-0 lg:w-[380px]">
+      <aside className={`w-full shrink-0 lg:w-[380px] ${sidePanelOpen ? "" : "hidden"}`}>
         <div className="grid grid-cols-5 gap-1 rounded-xl border border-border bg-surface p-1">
           {navItems.map(({ id, label, Icon }) => (
             <button
@@ -1115,10 +1192,21 @@ export default function LayoutStudio({
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background lg:sticky lg:top-4 lg:h-[calc(100dvh-12rem)]">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono text-xs font-medium uppercase tracking-[0.15em] text-muted">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background lg:sticky lg:top-3 lg:h-[calc(100dvh-10.5rem)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleSidePanel}
+              title={sidePanelOpen ? t.hidePanelTip : t.showPanelTip}
+              className={`rounded-lg border p-1.5 transition ${
+                sidePanelOpen
+                  ? "border-border bg-surface text-muted hover:border-accent hover:text-accent"
+                  : "border-accent bg-accent-soft text-accent"
+              }`}
+            >
+              <SidebarIcon className="h-4 w-4" />
+            </button>
+            <span className="hidden font-mono text-xs font-medium uppercase tracking-[0.15em] text-muted xl:inline">
               {t.previewHeading}
             </span>
             <span className="text-sm font-semibold">
@@ -1138,69 +1226,116 @@ export default function LayoutStudio({
               </span>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5" title="Typst: gerçek baskı sayfası (=PDF), üstüne tıklayıp düzenle. Hızlı: yedek önizleme.">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* İkincil kontroller tek "Görünüm" menüsünde → araç çubuğu tek satır,
+                önizlemeye daha çok dikey alan kalır. */}
+            <div className="relative">
               <button
-                onClick={() => setPreviewEngine("typst")}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                  previewEngine === "typst" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
+                onClick={() => setViewMenuOpen((v) => !v)}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                  viewMenuOpen
+                    ? "border-accent bg-accent-soft text-accent"
+                    : "border-border bg-surface text-foreground hover:border-accent hover:text-accent"
                 }`}
               >
-                Typst
+                {t.viewMenuLabel}
+                <CaretDownIcon className="h-3 w-3" />
               </button>
-              <button
-                onClick={() => setPreviewEngine("js")}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                  previewEngine === "js" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
-                }`}
-              >
-                Hızlı
-              </button>
+              {viewMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setViewMenuOpen(false)} />
+                  <div className="absolute right-0 top-full z-20 mt-1 flex w-72 flex-col gap-3 rounded-xl border border-border bg-surface p-3 shadow-xl">
+                    <div className="flex items-center justify-between gap-2 text-xs text-muted">
+                      {t.engineLabel}
+                      <div
+                        className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5"
+                        title="Typst: gerçek baskı sayfası (=PDF), üstüne tıklayıp düzenle. Hızlı: yedek önizleme."
+                      >
+                        <button
+                          onClick={() => setPreviewEngine("typst")}
+                          className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                            previewEngine === "typst" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
+                          }`}
+                        >
+                          Typst
+                        </button>
+                        <button
+                          onClick={() => setPreviewEngine("js")}
+                          className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                            previewEngine === "js" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
+                          }`}
+                        >
+                          Hızlı
+                        </button>
+                      </div>
+                    </div>
+                    <label className="flex items-center justify-between gap-2 text-xs text-muted">
+                      {t.zoomLabel}
+                      <select
+                        value={zoom}
+                        onChange={(e) => setZoom(Number(e.target.value))}
+                        className="rounded-lg border border-border bg-surface px-2 py-1 text-foreground"
+                      >
+                        {ZOOM_OPTIONS.map((z) => (
+                          <option key={z} value={z}>
+                            {Math.round(z * 100)}%
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {standard === "kdy" ? (
+                      <label className="flex items-center gap-1.5 text-xs text-muted" title={t.cropMarksLabel}>
+                        <input
+                          type="checkbox"
+                          checked={cropMarks}
+                          onChange={(e) => setCropMarks(e.target.checked)}
+                          className="h-4 w-4 accent-[var(--accent)]"
+                        />
+                        {t.cropMarksLabel}
+                      </label>
+                    ) : (
+                      <label className="flex items-center gap-1.5 text-xs text-muted" title={t.bleedHint}>
+                        <input
+                          type="checkbox"
+                          checked={bleedOn}
+                          onChange={(e) => setBleedOn(e.target.checked)}
+                          className="h-4 w-4 accent-[var(--accent)]"
+                        />
+                        {t.bleedLabel}
+                      </label>
+                    )}
+                    <label className="flex items-center gap-1.5 text-xs text-muted" title={t.kerningHint}>
+                      <input
+                        type="checkbox"
+                        checked={kerning}
+                        onChange={(e) => setKerning(e.target.checked)}
+                        className="h-4 w-4 accent-[var(--accent)]"
+                      />
+                      {t.kerningLabel}
+                    </label>
+                    {/* InDesign'da düzenlemek isteyen kullanıcılar için IDML çıktısı. */}
+                    <div className="border-t border-border pt-2">
+                      <button
+                        onClick={() => void handleExportIdml()}
+                        disabled={exporting || isEmpty || blocks.length === 0}
+                        title={t.exportIdmlHint}
+                        className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {t.exportIdmlCta}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
-            {standard === "kdy" ? (
-              <label className="flex items-center gap-1.5 text-xs text-muted" title={t.cropMarksLabel}>
-                <input
-                  type="checkbox"
-                  checked={cropMarks}
-                  onChange={(e) => setCropMarks(e.target.checked)}
-                  className="h-4 w-4 accent-[var(--accent)]"
-                />
-                {t.cropMarksLabel}
-              </label>
-            ) : (
-              <label className="flex items-center gap-1.5 text-xs text-muted" title={t.bleedHint}>
-                <input
-                  type="checkbox"
-                  checked={bleedOn}
-                  onChange={(e) => setBleedOn(e.target.checked)}
-                  className="h-4 w-4 accent-[var(--accent)]"
-                />
-                {t.bleedLabel}
-              </label>
-            )}
-            <label className="flex items-center gap-1.5 text-xs text-muted" title={t.kerningHint}>
-              <input
-                type="checkbox"
-                checked={kerning}
-                onChange={(e) => setKerning(e.target.checked)}
-                className="h-4 w-4 accent-[var(--accent)]"
-              />
-              {t.kerningLabel}
-            </label>
-            <label className="flex items-center gap-2 text-xs text-muted">
-              {t.zoomLabel}
-              <select
-                value={zoom}
-                onChange={(e) => setZoom(Number(e.target.value))}
-                className="rounded-lg border border-border bg-surface px-2 py-1 text-foreground"
-              >
-                {ZOOM_OPTIONS.map((z) => (
-                  <option key={z} value={z}>
-                    {Math.round(z * 100)}%
-                  </option>
-                ))}
-              </select>
-            </label>
+            <button
+              onClick={() => void handlePreflight()}
+              disabled={preflightRunning || blocks.length === 0}
+              title="Üretilen PDF'i baskı kurallarına göre denetle (sayfa boyutu, TrimBox, font gömme…)"
+              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {preflightRunning ? "Denetleniyor…" : "Baskı Denetimi"}
+            </button>
             {/* PDF indir: görüntülenen motorla AYNI çıktı (Typst varsayılan =
                 gördüğün baskı sayfası). "Hızlı" önizlemedeyse JS motoruyla iner. */}
             <button
@@ -1217,23 +1352,6 @@ export default function LayoutStudio({
             >
               {exporting ? t.exportingLabel : t.exportPdfCta}
             </button>
-            {/* InDesign'da düzenlemek isteyen kullanıcılar için IDML çıktısı. */}
-            <button
-              onClick={() => void handleExportIdml()}
-              disabled={exporting || isEmpty || blocks.length === 0}
-              title={t.exportIdmlHint}
-              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {t.exportIdmlCta}
-            </button>
-            <button
-              onClick={() => void handlePreflight()}
-              disabled={preflightRunning || blocks.length === 0}
-              title="Üretilen PDF'i baskı kurallarına göre denetle (sayfa boyutu, TrimBox, font gömme…)"
-              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {preflightRunning ? "Denetleniyor…" : "Baskı Denetimi"}
-            </button>
           </div>
         </div>
         {exportError && (
@@ -1241,13 +1359,20 @@ export default function LayoutStudio({
             {t.exportErrorLabel}
           </div>
         )}
-        {!isEmpty && (
-          <div className="border-b border-border bg-accent-soft/40 px-4 py-2 text-xs text-muted">
-            {standard === "kdy" ? t.imprintNote : t.imprintNoteKdp}
+        {!isEmpty && !imprintNoteHidden && (
+          <div className="flex items-center justify-between gap-3 border-b border-border bg-accent-soft/40 px-4 py-1.5 text-xs text-muted">
+            <span>{standard === "kdy" ? t.imprintNote : t.imprintNoteKdp}</span>
+            <button
+              onClick={dismissImprintNote}
+              title="Bu notu gizle"
+              className="shrink-0 rounded px-1.5 text-sm leading-none text-muted transition hover:text-foreground"
+            >
+              ✕
+            </button>
           </div>
         )}
 
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-4">
           {isEmpty ? (
             <div className="flex h-full min-h-[300px] items-center justify-center text-center text-sm text-muted">
               {t.emptyPreview}
