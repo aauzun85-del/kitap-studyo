@@ -67,6 +67,7 @@ import {
   CheckCircleIcon,
   SidebarIcon,
   CaretDownIcon,
+  ArrowsOutIcon,
 } from "@/components/PhosphorIcons";
 
 // Sayfalama hep sabit DPI'da yapılır (yakınlaştırmadan bağımsız sayfa sayısı).
@@ -204,6 +205,18 @@ export default function LayoutStudio({
       }
       return !v;
     });
+  // Odak modu: önizleme tüm pencereyi kaplar (uygulama başlığı/sihirbaz çubuğu
+  // dahil hiçbir şey yer kaplamaz). ESC ile çıkılır.
+  const [focusMode, setFocusMode] = useState(false);
+  useEffect(() => {
+    if (!focusMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFocusMode(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusMode]);
+
   const dismissImprintNote = () => {
     setImprintNoteHidden(true);
     try {
@@ -682,43 +695,6 @@ export default function LayoutStudio({
     }
   }, [blocks, meta, settings, sizeId, margins, gutter, pages.length, title, canExport, lang]);
 
-  // InDesign IDML dışa aktarma: mizanpajı Adobe InDesign'da açılabilir .idml
-  // paketine çevirir (metin + boyut + kenar + stiller).
-  const handleExportIdml = useCallback(async (): Promise<boolean> => {
-    if (blocks.length === 0) return false;
-    setExporting(true);
-    setExportError(false);
-    try {
-      const bytes = await exportBookIdml({
-        meta,
-        blocks,
-        settings,
-        size: getSize(sizeId),
-        margins,
-        gutter,
-        // Yalnız GÖVDE sayfaları: başlık/içindekiler/boş sayfalar IDML'de yok;
-        // toplam sayı verilirse hepsi InDesign'da sonda boş sayfaya dönüşüyor.
-        pageCount: pages.filter((p) => p.role === "body").length,
-      });
-      const blob = new Blob([bytes as BlobPart], { type: "application/vnd.adobe.indesign-idml-package" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const safe = (title.trim() || "kitap").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
-      a.download = `${safe || "kitap"}-ic-sayfa.idml`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      return true;
-    } catch {
-      setExportError(true);
-      return false;
-    } finally {
-      setExporting(false);
-    }
-  }, [blocks, meta, settings, sizeId, margins, gutter, pages.length, title]);
-
   // Yazma görünümünün canlı önizlemesine giden Typst girdisi. Export'la AYNI
   // montaj; yalnız kesim krosları/taşma KAPALI → temiz "kitap sayfası" görünür
   // (yazarken kırpma bandı kafa karıştırmasın; export tam geometriyi kullanır).
@@ -1030,7 +1006,11 @@ export default function LayoutStudio({
   const isEmpty = blocks.length === 0 && !title.trim();
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-[1760px] flex-col gap-4 px-4 py-4 lg:flex-row">
+    // AppShell fitContent verir → burada YÜKSEKLİK TAHMİN ETME (eski
+    // calc(100dvh-…) üstteki başlık/sihirbaz çubuğunu saymadığı için önizleme
+    // kutusu gereğinden kısa kalıyordu). h-full + min-h-0 ile kalan alan neyse
+    // o doldurulur. Mobilde dikey yığılır → kendi içinde kayar.
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-[1760px] flex-col gap-3 overflow-y-auto px-3 py-3 lg:flex-row lg:overflow-hidden">
       {autoExport && (
         <ExportOverlay
           lang={lang}
@@ -1043,7 +1023,11 @@ export default function LayoutStudio({
       {preflightReport && (
         <PreflightDialog report={preflightReport} onClose={() => setPreflightReport(null)} />
       )}
-      <aside className={`w-full shrink-0 lg:w-[380px] ${sidePanelOpen ? "" : "hidden"}`}>
+      <aside
+        className={`w-full shrink-0 lg:w-[360px] lg:min-h-0 lg:overflow-y-auto lg:pr-1 ${
+          sidePanelOpen ? "" : "hidden"
+        }`}
+      >
         <div className="grid grid-cols-5 gap-1 rounded-xl border border-border bg-surface p-1">
           {navItems.map(({ id, label, Icon }) => (
             <button
@@ -1192,19 +1176,39 @@ export default function LayoutStudio({
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background lg:sticky lg:top-3 lg:h-[calc(100dvh-10.5rem)]">
+      <main
+        className={
+          focusMode
+            ? "fixed inset-0 z-50 flex min-h-0 min-w-0 flex-col overflow-hidden border-0 bg-background"
+            : "flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background lg:min-h-0"
+        }
+      >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2">
           <div className="flex items-center gap-2">
+            {!focusMode && (
+              <button
+                onClick={toggleSidePanel}
+                title={sidePanelOpen ? t.hidePanelTip : t.showPanelTip}
+                className={`rounded-lg border p-1.5 transition ${
+                  sidePanelOpen
+                    ? "border-border bg-surface text-muted hover:border-accent hover:text-accent"
+                    : "border-accent bg-accent-soft text-accent"
+                }`}
+              >
+                <SidebarIcon className="h-4 w-4" />
+              </button>
+            )}
+            {/* Odak modu: önizleme tüm pencereyi kaplar (ESC ile çıkılır). */}
             <button
-              onClick={toggleSidePanel}
-              title={sidePanelOpen ? t.hidePanelTip : t.showPanelTip}
+              onClick={() => setFocusMode((v) => !v)}
+              title={focusMode ? t.focusExitTip : t.focusTip}
               className={`rounded-lg border p-1.5 transition ${
-                sidePanelOpen
-                  ? "border-border bg-surface text-muted hover:border-accent hover:text-accent"
-                  : "border-accent bg-accent-soft text-accent"
+                focusMode
+                  ? "border-accent bg-accent-soft text-accent"
+                  : "border-border bg-surface text-muted hover:border-accent hover:text-accent"
               }`}
             >
-              <SidebarIcon className="h-4 w-4" />
+              <ArrowsOutIcon className="h-4 w-4" />
             </button>
             <span className="hidden font-mono text-xs font-medium uppercase tracking-[0.15em] text-muted xl:inline">
               {t.previewHeading}

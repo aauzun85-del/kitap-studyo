@@ -522,6 +522,8 @@ type LayoutStudioCopy = {
   engineLabel: string;
   hidePanelTip: string;
   showPanelTip: string;
+  focusTip: string;
+  focusExitTip: string;
   // Yayın denetimi.
   qualityHeading: string;
   qualityHint: string;
@@ -1640,6 +1642,8 @@ const tr: Dictionary = {
     engineLabel: "Önizleme motoru",
     hidePanelTip: "Ayar panelini gizle — önizlemeye daha geniş alan",
     showPanelTip: "Ayar panelini göster",
+    focusTip: "Odak modu — önizleme tüm ekranı kaplasın",
+    focusExitTip: "Odak modundan çık (ESC)",
     qualityHeading: "Yayın denetimi",
     qualityHint:
       "Baskıya çıkmadan önce metin, yapı ve platform kurallarını hızlıca kontrol eder.",
@@ -2776,6 +2780,8 @@ const en: Dictionary = {
     engineLabel: "Preview engine",
     hidePanelTip: "Hide the settings panel — more room for the preview",
     showPanelTip: "Show the settings panel",
+    focusTip: "Focus mode — let the preview fill the screen",
+    focusExitTip: "Exit focus mode (ESC)",
     qualityHeading: "Publication checks",
     qualityHint:
       "Quickly checks the manuscript, structure and platform rules before print export.",
