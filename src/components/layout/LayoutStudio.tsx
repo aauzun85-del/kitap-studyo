@@ -38,6 +38,7 @@ import {
 import {
   LAYOUT_THEMES,
   getTheme,
+  DEFAULT_PARAGRAPH_SPACING_MM,
   type LayoutTheme,
   type ChapterOrnament,
 } from "@/lib/layout/themes";
@@ -47,7 +48,7 @@ import { blocksToMarkdown } from "@/lib/layout/blocksToMarkdown";
 import type { MediaMap } from "@/lib/layout/mediaTokens";
 import { exportBookPdf } from "@/lib/layout/pdf";
 import { exportBookIdml } from "@/lib/layout/idml";
-import { exportBookPdfTypst, type TypstBookInput } from "@/lib/typst";
+import { exportBookPdfTypst, TypstCrashError, type TypstBookInput } from "@/lib/typst";
 import { preflightPdf, type PreflightReport } from "@/lib/publishing/preflight";
 import { TypstPreviewCanvas } from "@/components/editor/TypstPreviewCanvas";
 import ExportOverlay from "@/components/app/ExportOverlay";
@@ -67,7 +68,10 @@ import {
   SidebarIcon,
   CaretDownIcon,
   ArrowsOutIcon,
+  ArrowUUpLeftIcon,
+  ArrowUUpRightIcon,
 } from "@/components/PhosphorIcons";
+import { useLayoutHistory } from "@/lib/layout/useLayoutHistory";
 
 // Sayfalama hep sabit DPI'da yapılır (yakınlaştırmadan bağımsız sayfa sayısı).
 const PAGINATE_DPI = 150;
@@ -232,8 +236,9 @@ export default function LayoutStudio({
   // ilk-satır girintisiyle ayrılır, ekstra boşlukla değil. Boşluk eklemek tek
   // taban-çizgisi ızgarasını bozar (satır aralığı 15/20.7 pt karışır); bu yüzden
   // ızgara, gövde satırlarını leading'in katına hizalar (bkz. paginate snapBodyGap).
-  // Varsayılan: her paragraftan sonra ~1 satır boşluk (kullanıcı isteği).
-  const [paragraphSpacingMm, setParagraphSpacingMm] = useState(5);
+  // Varsayılan: her paragraftan sonra ~1 satır boşluk (kullanıcı isteği). Tüm
+  // temalar da aynı değeri kullanır → türe göre seçilen tema sıfırlamaz.
+  const [paragraphSpacingMm, setParagraphSpacingMm] = useState(DEFAULT_PARAGRAPH_SPACING_MM);
   const [headingFontId, setHeadingFontId] = useState("sourceserif");
   const [detectHeadings, setDetectHeadings] = useState(true);
 
@@ -274,6 +279,9 @@ export default function LayoutStudio({
   const [kerning, setKerning] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(false);
+  // Typst PDF motoru çöktüyse (sayfa yenilenene kadar çalışamaz): anlaşılır
+  // mesaj + "Sayfayı yenile" + teknik not (gerçek sebep).
+  const [typstCrash, setTypstCrash] = useState<TypstCrashError | null>(null);
   // İndirme ekranından "?export=1" ile gelince: sayfalama hazır olunca İç sayfa
   // PDF'i otomatik indirilir; üstteki durum katmanı bunu izler.
   const [autoExportStatus, setAutoExportStatus] = useState<"working" | "done" | "error">("working");
@@ -393,6 +401,16 @@ export default function LayoutStudio({
   // Canvasta düzenlenen blok indeksi (null = düzenleme yok).
   const [editingBlock, setEditingBlock] = useState<number | null>(null);
 
+  // Geri al / Yinele: tek kaynak (raw + resim haritası) üzerinden. Geri yükleme
+  // açık paragraf düzenleyicisini kapatır; sayfalama + otomatik kayıt takip eder.
+  const restoreSnapshot = useCallback((r: string, m: MediaMap) => {
+    setEditingBlock(null);
+    setImportMedia(m);
+    setRaw(r);
+  }, []);
+  const history = useLayoutHistory(raw, importMedia, restoreSnapshot, t.stepGeneric);
+  const markStep = history.label;
+
   // Aktif düzenleyicinin emir API'si (biçim çubuğu → seçili metne kalın/italik).
   const editorApiRef = useRef<EditorApi | null>(null);
   // Seçimin canlı biçimi (çubukta B/I vurgusu için). Düzenleyici güncelliyor.
@@ -451,12 +469,13 @@ export default function LayoutStudio({
       // düzenleme ne kaydoluyor ne PDF'e geçiyordu.)
       setBlocks(next);
       const { markdown, media } = blocksToMarkdown(next);
+      markStep(t.stepEdit);
       setImportMedia(media);
       setRaw(markdown);
       setEditingBlock(null);
       fmtDirtyRef.current = false;
     },
-    [blocks],
+    [blocks, markStep, t.stepEdit],
   );
 
   // Düzenleme sürerken (örn. blok-seviyesi punto değişince yeniden sayfalama
@@ -506,6 +525,7 @@ export default function LayoutStudio({
   // uygula. İki yarı arasına ayraç (pagebreak/spacer) girer.
   const sendBlockToNextPage = useCallback(
     (i: number) => {
+      markStep(t.stepNextPage);
       const blk = blocks[i];
       if (blk?.type === "paragraph") {
         const s = editorApiRef.current?.splitAtCaret?.();
@@ -516,10 +536,11 @@ export default function LayoutStudio({
       }
       applyLayout([...blocks.slice(0, i), { type: "pagebreak" }, ...blocks.slice(i)]);
     },
-    [blocks, applyLayout],
+    [blocks, applyLayout, markStep, t.stepNextPage],
   );
   const addSpaceAfterBlock = useCallback(
     (i: number) => {
+      markStep(t.stepSpace);
       const blk = blocks[i];
       if (blk?.type === "paragraph") {
         const s = editorApiRef.current?.splitAtCaret?.();
@@ -530,14 +551,15 @@ export default function LayoutStudio({
       }
       applyLayout([...blocks.slice(0, i + 1), { type: "spacer", mm: 8 }, ...blocks.slice(i + 1)]);
     },
-    [blocks, applyLayout],
+    [blocks, applyLayout, markStep, t.stepSpace],
   );
   const pullBlockToPrevPage = useCallback(
     (i: number) => {
       if (i <= 0 || blocks[i - 1]?.type !== "pagebreak") return;
+      markStep(t.stepPrevPage);
       applyLayout([...blocks.slice(0, i - 1), ...blocks.slice(i)]);
     },
-    [blocks, applyLayout],
+    [blocks, applyLayout, markStep, t.stepPrevPage],
   );
 
   // Bir bloğu düzenlemeye başla (JS önizleme satırı VEYA Typst sayfa hotspot'u).
@@ -573,6 +595,52 @@ export default function LayoutStudio({
   const toggleSelBold = useCallback(() => editorApiRef.current?.toggleBold(), []);
   const toggleSelItalic = useCallback(() => editorApiRef.current?.toggleItalic(), []);
 
+  // ── Geri al / Yinele ──
+  // Araç çubuğu düğmesine basınca açık paragraf önce blur ile kaydolur (değişiklik
+  // varsa o da bir adım olur) → "Geri al" her zaman EN SON değişikliği alır.
+  // Kısa bir not neyin geri alındığını söyler (değişiklik görünmeyen bir
+  // sayfada olabilir).
+  const [historyNote, setHistoryNote] = useState<string | null>(null);
+  const noteTimerRef = useRef<number | null>(null);
+  const flashNote = useCallback((text: string) => {
+    setHistoryNote(text);
+    if (noteTimerRef.current) window.clearTimeout(noteTimerRef.current);
+    noteTimerRef.current = window.setTimeout(() => setHistoryNote(null), 2800);
+  }, []);
+  const { undo: historyUndo, redo: historyRedo } = history;
+  const handleUndo = useCallback(() => {
+    if (editingBlockRef.current != null) {
+      // Düzenleyici hâlâ açıksa (blur kaydetmediyse): kaydetmeden kapat.
+      setEditingBlock(null);
+      flashNote(t.undoEditClosed);
+      return;
+    }
+    const done = historyUndo();
+    if (done) flashNote(t.undoneNote.replace("{label}", done));
+  }, [historyUndo, flashNote, t.undoEditClosed, t.undoneNote]);
+  const handleRedo = useCallback(() => {
+    const done = historyRedo();
+    if (done) flashNote(t.redoneNote.replace("{label}", done));
+  }, [historyRedo, flashNote, t.redoneNote]);
+  // ⌘Z / Ctrl+Z geri al; ⌘⇧Z / Ctrl+Y yinele. Yazı alanındayken tarayıcının
+  // kendi geri alması çalışsın diye dokunmayız.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      const isUndo = k === "z" && !e.shiftKey;
+      const isRedo = (k === "z" && e.shiftKey) || (k === "y" && e.ctrlKey && !e.metaKey);
+      if (!isUndo && !isRedo) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      e.preventDefault();
+      if (isUndo) handleUndo();
+      else handleRedo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleUndo, handleRedo]);
+
   const handleImport = useCallback(
     async (file: File) => {
       setImporting(true);
@@ -584,6 +652,7 @@ export default function LayoutStudio({
         // Resim/tablo kaybolmaz (jeton + medya haritası); kullanıcı yazma
         // görünümünde doğrudan metni düzenler, otomatik kaydolur.
         const { markdown, media } = blocksToMarkdown(res.blocks);
+        markStep(t.stepImport);
         setRaw(markdown);
         setImportMedia(media);
         setImportedBlocks(null);
@@ -604,7 +673,7 @@ export default function LayoutStudio({
         setImporting(false);
       }
     },
-    [docxMode, t],
+    [docxMode, t, markStep],
   );
 
   const clearImport = useCallback(() => {
@@ -738,7 +807,8 @@ export default function LayoutStudio({
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       return true;
-    } catch {
+    } catch (e) {
+      if (e instanceof TypstCrashError) setTypstCrash(e);
       setExportError(true);
       return false;
     } finally {
@@ -772,8 +842,18 @@ export default function LayoutStudio({
       const report = await preflightPdf(bytes, { sizeMm: getSize(sizeId), toMm: to, bleedMm });
       setPreflightReport(report);
     } catch (e) {
+      const crash = e instanceof TypstCrashError ? e : null;
+      if (crash) setTypstCrash(crash);
       setPreflightReport({
-        items: [{ level: "error", label: "Denetim başarısız", detail: String(e) }],
+        items: [
+          crash
+            ? {
+                level: "error",
+                label: t.typstCrashTitle,
+                detail: crash.panic ? `${t.typstCrashBody}\n\n${t.techNoteLabel} ${crash.panic}` : t.typstCrashBody,
+              }
+            : { level: "error", label: "Denetim başarısız", detail: String(e) },
+        ],
         errorCount: 1,
         warnCount: 0,
         ready: false,
@@ -781,7 +861,7 @@ export default function LayoutStudio({
     } finally {
       setPreflightRunning(false);
     }
-  }, [blocks, meta, settings, sizeId, margins, gutter, cropMarks, standard, bleedOn]);
+  }, [blocks, meta, settings, sizeId, margins, gutter, cropMarks, standard, bleedOn, t]);
 
   // Export modu: yazı tipleri yüklenip sayfalama hazır olunca İç sayfa PDF'ini
   // bir kez otomatik indir (indirme ekranındaki tuştan gelindi). Metin
@@ -1014,7 +1094,11 @@ export default function LayoutStudio({
         />
       )}
       {preflightReport && (
-        <PreflightDialog report={preflightReport} onClose={() => setPreflightReport(null)} />
+        <PreflightDialog
+          report={preflightReport}
+          onClose={() => setPreflightReport(null)}
+          reloadLabel={typstCrash ? t.reloadCta : undefined}
+        />
       )}
       <aside
         className={`w-full shrink-0 lg:w-[360px] lg:min-h-0 lg:overflow-y-auto lg:pr-1 ${
@@ -1058,9 +1142,19 @@ export default function LayoutStudio({
             <TextPanel
               t={t}
               raw={raw}
-              setRaw={setRaw}
+              setRaw={(v) => {
+                history.typing(t.stepTyping);
+                setRaw(v);
+              }}
               stats={stats}
-              onSample={() => setRaw(SAMPLE_TR)}
+              onSample={() => {
+                markStep(t.stepSample);
+                setRaw(SAMPLE_TR);
+              }}
+              onClear={() => {
+                markStep(t.stepClear);
+                setRaw("");
+              }}
               sourceMode={sourceMode}
               setSourceMode={setSourceMode}
               docxMode={docxMode}
@@ -1224,6 +1318,43 @@ export default function LayoutStudio({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {historyNote && (
+              <span role="status" className="text-xs font-medium text-accent">
+                {historyNote}
+              </span>
+            )}
+            {/* Geri al / Yinele: boşluk, sayfa atma, paragraf düzeltme, yazı
+                tipi/punto ve metin değişikliklerini adım adım geri alır. */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleUndo}
+                disabled={!history.canUndo && editingBlock == null}
+                title={
+                  history.undoLabel
+                    ? t.undoTip.replace("{label}", history.undoLabel)
+                    : editingBlock != null
+                      ? t.undoTipOpen
+                      : t.undoTipEmpty
+                }
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold text-foreground transition enabled:hover:border-accent enabled:hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ArrowUUpLeftIcon className="h-3.5 w-3.5" />
+                {t.undoCta}
+              </button>
+              <button
+                onClick={handleRedo}
+                disabled={!history.canRedo}
+                title={
+                  history.redoLabel
+                    ? t.redoTip.replace("{label}", history.redoLabel)
+                    : t.redoTipEmpty
+                }
+                aria-label={t.redoCta}
+                className="rounded-lg border border-border bg-surface p-1.5 text-foreground transition enabled:hover:border-accent enabled:hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ArrowUUpRightIcon className="h-3.5 w-3.5" />
+              </button>
+            </div>
             {/* İkincil kontroller tek "Görünüm" menüsünde → araç çubuğu tek satır,
                 önizlemeye daha çok dikey alan kalır. */}
             <div className="relative">
@@ -1351,9 +1482,27 @@ export default function LayoutStudio({
             </button>
           </div>
         </div>
-        {exportError && (
+        {exportError && !typstCrash && (
           <div className="border-b border-border bg-red-50 px-4 py-2 text-xs text-red-700">
             {t.exportErrorLabel}
+          </div>
+        )}
+        {typstCrash && (
+          <div className="flex items-start justify-between gap-3 border-b border-border bg-red-50 px-4 py-2 text-xs text-red-700">
+            <div className="min-w-0">
+              <span className="font-semibold">{t.typstCrashTitle}.</span> {t.typstCrashBody}
+              {typstCrash.panic && (
+                <span className="mt-1 block break-words font-mono text-[10px] text-red-600/80">
+                  {t.techNoteLabel} {typstCrash.panic}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => window.location.reload()}
+              className="shrink-0 rounded-md bg-red-600 px-2.5 py-1 font-semibold text-white transition hover:bg-red-700"
+            >
+              {t.reloadCta}
+            </button>
           </div>
         )}
         {!isEmpty && !imprintNoteHidden && (
@@ -1369,7 +1518,7 @@ export default function LayoutStudio({
           </div>
         )}
 
-        <div className="flex-1 overflow-auto p-4">
+        <div className="flex-1 overflow-auto px-4 py-3">
           {isEmpty ? (
             <div className="flex h-full min-h-[300px] items-center justify-center text-center text-sm text-muted">
               {t.emptyPreview}
@@ -1663,7 +1812,16 @@ function buildQualityChecks({
   return { score, checks, errorCount, warningCount, successCount };
 }
 
-function PreflightDialog({ report, onClose }: { report: PreflightReport; onClose: () => void }) {
+function PreflightDialog({
+  report,
+  onClose,
+  reloadLabel,
+}: {
+  report: PreflightReport;
+  onClose: () => void;
+  /** Typst motoru çöktüyse: sayfayı yenileme düğmesi. */
+  reloadLabel?: string;
+}) {
   const levelIcon = (level: "ok" | "warn" | "error") =>
     level === "ok" ? "✅" : level === "warn" ? "⚠️" : "❌";
   const summary = report.ready
@@ -1701,7 +1859,7 @@ function PreflightDialog({ report, onClose }: { report: PreflightReport; onClose
                   <div className="min-w-0">
                     <div className="text-xs font-semibold text-foreground">{item.label}</div>
                     {item.detail && (
-                      <div className="mt-0.5 text-[11px] leading-relaxed text-muted">{item.detail}</div>
+                      <div className="mt-0.5 whitespace-pre-line break-words text-[11px] leading-relaxed text-muted">{item.detail}</div>
                     )}
                   </div>
                 </div>
@@ -1709,10 +1867,18 @@ function PreflightDialog({ report, onClose }: { report: PreflightReport; onClose
             ))}
           </div>
         </div>
-        <div className="border-t border-border px-5 py-3">
+        <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
           <p className="text-[11px] text-muted">
             Yapısal PDF denetimi (şifreleme, boyut, TrimBox, gömülü font). DPI/CMYK kontrolü için baskıevi aracını kullanın.
           </p>
+          {reloadLabel && (
+            <button
+              onClick={() => window.location.reload()}
+              className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+            >
+              {reloadLabel}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1952,6 +2118,7 @@ function TextPanel({
   setRaw,
   stats,
   onSample,
+  onClear,
   sourceMode,
   setSourceMode,
   docxMode,
@@ -1967,6 +2134,7 @@ function TextPanel({
   setRaw: (v: string) => void;
   stats: { words: number; chars: number };
   onSample: () => void;
+  onClear: () => void;
   sourceMode: SourceMode;
   setSourceMode: (v: SourceMode) => void;
   docxMode: DocxMode;
@@ -2022,7 +2190,7 @@ function TextPanel({
                 {t.sampleCta}
               </button>
               <button
-                onClick={() => setRaw("")}
+                onClick={onClear}
                 className="rounded-lg border border-border px-2.5 py-1 font-medium text-foreground transition hover:border-accent hover:text-accent"
               >
                 {t.clearCta}

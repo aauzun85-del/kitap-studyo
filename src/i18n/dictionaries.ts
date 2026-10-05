@@ -497,6 +497,31 @@ type LayoutStudioCopy = {
   pullPrevPageHint: string;
   addSpace: string;
   addSpaceHint: string;
+  // Geri al / Yinele (önizleme araç çubuğu). {label} = adımın adı.
+  undoCta: string;
+  redoCta: string;
+  undoTip: string;
+  undoTipEmpty: string;
+  undoTipOpen: string;
+  redoTip: string;
+  redoTipEmpty: string;
+  undoneNote: string;
+  redoneNote: string;
+  undoEditClosed: string;
+  stepSpace: string;
+  stepNextPage: string;
+  stepPrevPage: string;
+  stepEdit: string;
+  stepImport: string;
+  stepSample: string;
+  stepClear: string;
+  stepTyping: string;
+  stepGeneric: string;
+  // Typst PDF motoru çökünce (Rust panic) gösterilen anlaşılır mesaj.
+  typstCrashTitle: string;
+  typstCrashBody: string;
+  reloadCta: string;
+  techNoteLabel: string;
   pageCountLabel: string;
   pageWord: string;
   zoomLabel: string;
@@ -1617,6 +1642,29 @@ const tr: Dictionary = {
     pullPrevPageHint: "Bu paragrafı bir önceki sayfaya geri çek (sayfa sonunu kaldır)",
     addSpace: "Boşluk",
     addSpaceHint: "Bu paragrafın altına boşluk ekle",
+    undoCta: "Geri al",
+    redoCta: "Yinele",
+    undoTip: "Geri al: {label} (⌘Z / Ctrl+Z)",
+    undoTipEmpty: "Geri alınacak değişiklik yok",
+    undoTipOpen: "Açık paragraftaki değişiklikleri geri al",
+    redoTip: "Yinele: {label} (⌘⇧Z / Ctrl+Y)",
+    redoTipEmpty: "Yinelenecek değişiklik yok",
+    undoneNote: "Geri alındı: {label}",
+    redoneNote: "Yinelendi: {label}",
+    undoEditClosed: "Açık paragraf kaydedilmeden kapatıldı",
+    stepSpace: "Boşluk eklendi",
+    stepNextPage: "Sonraki sayfaya atıldı",
+    stepPrevPage: "Önceki sayfaya çekildi",
+    stepEdit: "Paragraf düzenlendi",
+    stepImport: "Word içe aktarıldı",
+    stepSample: "Örnek metin konuldu",
+    stepClear: "Metin temizlendi",
+    stepTyping: "Metin yazıldı",
+    stepGeneric: "Değişiklik",
+    typstCrashTitle: "PDF motoru takıldı",
+    typstCrashBody: "Kitabın PDF'i hazırlanırken motor durdu ve bu sayfada yeniden çalışamıyor. Sayfayı yenileyip tekrar dene: metnin ve paragraf düzenlemelerin kayıtlı; yazı tipi, kenar boşluğu gibi sayfa ayarlarını yeniden seçmen gerekebilir. Sorun sürerse aşağıdaki teknik notu bize ilet.",
+    reloadCta: "Sayfayı yenile",
+    techNoteLabel: "Teknik not:",
     pageCountLabel: "Toplam",
     pageWord: "sayfa",
     zoomLabel: "Yakınlaştır",
@@ -2760,6 +2808,29 @@ const en: Dictionary = {
     pullPrevPageHint: "Pull this paragraph back to the previous page (remove the page break)",
     addSpace: "Space",
     addSpaceHint: "Add vertical space below this paragraph",
+    undoCta: "Undo",
+    redoCta: "Redo",
+    undoTip: "Undo: {label} (⌘Z / Ctrl+Z)",
+    undoTipEmpty: "Nothing to undo",
+    undoTipOpen: "Undo changes in the open paragraph",
+    redoTip: "Redo: {label} (⌘⇧Z / Ctrl+Y)",
+    redoTipEmpty: "Nothing to redo",
+    undoneNote: "Undone: {label}",
+    redoneNote: "Redone: {label}",
+    undoEditClosed: "Open paragraph closed without saving",
+    stepSpace: "Space added",
+    stepNextPage: "Moved to next page",
+    stepPrevPage: "Pulled to previous page",
+    stepEdit: "Paragraph edited",
+    stepImport: "Word imported",
+    stepSample: "Sample text inserted",
+    stepClear: "Text cleared",
+    stepTyping: "Text typed",
+    stepGeneric: "Change",
+    typstCrashTitle: "The PDF engine stopped",
+    typstCrashBody: "The engine stopped while preparing the PDF and cannot run again on this page. Reload and try again: your text and paragraph edits are saved; you may need to re-select page settings such as font and margins. If it keeps happening, send us the technical note below.",
+    reloadCta: "Reload page",
+    techNoteLabel: "Technical note:",
     pageCountLabel: "Total",
     pageWord: "pages",
     zoomLabel: "Zoom",

@@ -81,10 +81,15 @@ export function TypstPreviewCanvas({
       .filter((c) => c.tagName.toLowerCase() === "defs")
       .map((c) => c.outerHTML)
       .join("");
+    // Typst'in CSS'indeki çıplak `svg { fill: none }` kuralı: satır içi SVG'deki
+    // <style> belgenin TAMAMINA uygulanır → uygulamadaki tüm dolgulu simgeler
+    // (sekmeler, araç çubuğu…) görünmez oluyordu. Kural yalnız önizleme
+    // sayfalarıyla (svg.typst-page) sınırlanır; önizleme çizimi değişmez.
     const styleHtml = [...root.children]
       .filter((c) => c.tagName.toLowerCase() === "style")
       .map((c) => c.outerHTML)
-      .join("");
+      .join("")
+      .replace(/(^|[}\s,>])svg(\s*\{)/g, "$1svg.typst-page$2");
     const pages = groups.map((g) => {
       g.setAttribute("transform", "translate(0,0)");
       return g.outerHTML;
@@ -266,7 +271,7 @@ function PageBox({
         <div
           className="absolute inset-0 [&_svg]:h-full [&_svg]:w-full"
           dangerouslySetInnerHTML={{
-            __html: `<svg viewBox="0 0 ${pageW} ${pageH}" xmlns="${SVGNS}" preserveAspectRatio="xMidYMid meet">${styleHtml}${pageHtml}</svg>`,
+            __html: `<svg class="typst-page" viewBox="0 0 ${pageW} ${pageH}" xmlns="${SVGNS}" preserveAspectRatio="xMidYMid meet">${styleHtml}${pageHtml}</svg>`,
           }}
         />
       )}

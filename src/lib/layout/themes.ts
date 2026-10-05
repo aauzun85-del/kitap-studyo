@@ -6,6 +6,12 @@
 
 export type ChapterOrnament = "none" | "rule" | "dots";
 
+// Paragraf sonrası boşluk VARSAYILANI (~1 satır). Kullanıcı isteği: "her
+// paragraftan sonra varsayılan olarak bir boşluk". Tüm temalar bunu kullanır
+// ki türe göre otomatik seçilen tema boşluğu sıfırlamasın; kitap bazında
+// "Yazı" panelinden değiştirilebilir.
+export const DEFAULT_PARAGRAPH_SPACING_MM = 5;
+
 export type LayoutTheme = {
   id: string;
   name: { tr: string; en: string };
@@ -41,7 +47,7 @@ export const LAYOUT_THEMES: LayoutTheme[] = [
     leadingPt: 15.5,
     align: "justify",
     firstLineIndentMm: 5,
-    paragraphSpacingMm: 0,
+    paragraphSpacingMm: DEFAULT_PARAGRAPH_SPACING_MM,
     hyphenate: true,
     lineBreak: "balanced",
     dropCap: true,
@@ -62,7 +68,7 @@ export const LAYOUT_THEMES: LayoutTheme[] = [
     leadingPt: 14,
     align: "justify",
     firstLineIndentMm: 5,
-    paragraphSpacingMm: 0,
+    paragraphSpacingMm: DEFAULT_PARAGRAPH_SPACING_MM,
     hyphenate: true,
     lineBreak: "balanced",
     dropCap: false,
@@ -83,7 +89,7 @@ export const LAYOUT_THEMES: LayoutTheme[] = [
     leadingPt: 16,
     align: "justify",
     firstLineIndentMm: 0,
-    paragraphSpacingMm: 2.6,
+    paragraphSpacingMm: DEFAULT_PARAGRAPH_SPACING_MM,
     hyphenate: true,
     lineBreak: "balanced",
     dropCap: false,
@@ -104,7 +110,7 @@ export const LAYOUT_THEMES: LayoutTheme[] = [
     leadingPt: 17,
     align: "left",
     firstLineIndentMm: 0,
-    paragraphSpacingMm: 1.6,
+    paragraphSpacingMm: DEFAULT_PARAGRAPH_SPACING_MM,
     hyphenate: false,
     lineBreak: "balanced",
     dropCap: false,
@@ -125,7 +131,7 @@ export const LAYOUT_THEMES: LayoutTheme[] = [
     leadingPt: 16,
     align: "justify",
     firstLineIndentMm: 5,
-    paragraphSpacingMm: 0,
+    paragraphSpacingMm: DEFAULT_PARAGRAPH_SPACING_MM,
     hyphenate: true,
     lineBreak: "balanced",
     dropCap: true,
@@ -146,7 +152,7 @@ export const LAYOUT_THEMES: LayoutTheme[] = [
     leadingPt: 15,
     align: "justify",
     firstLineIndentMm: 4,
-    paragraphSpacingMm: 0,
+    paragraphSpacingMm: DEFAULT_PARAGRAPH_SPACING_MM,
     hyphenate: true,
     lineBreak: "balanced",
     dropCap: false,

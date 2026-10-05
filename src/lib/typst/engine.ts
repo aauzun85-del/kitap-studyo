@@ -53,14 +53,55 @@ export function getTypstEngine(): Promise<Snippet> {
   return (enginePromise ??= init());
 }
 
+// ── Çökme (Rust panic) yakalama ──
+// WASM içinde Rust panic olursa tarayıcı yalnız anlamsız "RuntimeError:
+// unreachable" verir; GERÇEK sebep konsola "panicked at …" diye yazılır. Derleme
+// süresince bu satırı yakalayıp hataya ekliyoruz (kullanıcı ekranında teknik not
+// olarak görünür → kök neden bulunabilir). Çöken WASM örneği paylaşımlı ve yeniden
+// kurulamaz: sayfa yenilenene kadar bozuk kalır → sonraki çağrılar beklemeden
+// aynı anlaşılır hatayla döner.
+export class TypstCrashError extends Error {
+  readonly panic: string | null;
+  constructor(panic: string | null) {
+    super(panic ? `Typst motoru çöktü: ${panic}` : "Typst motoru çöktü");
+    this.name = "TypstCrashError";
+    this.panic = panic;
+  }
+}
+let crashed: TypstCrashError | null = null;
+
+async function withPanicCapture<T>(fn: () => Promise<T>): Promise<T> {
+  if (crashed) throw crashed;
+  let panic: string | null = null;
+  const origError = console.error;
+  console.error = (...args: unknown[]) => {
+    const text = args.map((a) => (a instanceof Error ? a.message : String(a))).join(" ");
+    if (/panicked at/i.test(text)) panic = text.replace(/\s+/g, " ").trim().slice(0, 400);
+    origError.apply(console, args);
+  };
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof WebAssembly.RuntimeError || /unreachable/i.test(String(e))) {
+      crashed = new TypstCrashError(panic);
+      throw crashed;
+    }
+    throw e;
+  } finally {
+    console.error = origError;
+  }
+}
+
 // Tüm derlemeleri sıraya dizen sarmalayıcı (eşzamanlı çağrı $typst'i bozar).
 // Derlemeden önce görselleri VFS'e map'ler (#image bunlara başvurur).
 async function serialized<T>(assets: TypstAsset[], fn: (e: Snippet) => Promise<T>): Promise<T> {
-  const run = compileLock.then(async () => {
-    const e = await getTypstEngine();
-    for (const a of assets) await e.mapShadow(a.path, a.data);
-    return fn(e);
-  });
+  const run = compileLock.then(() =>
+    withPanicCapture(async () => {
+      const e = await getTypstEngine();
+      for (const a of assets) await e.mapShadow(a.path, a.data);
+      return fn(e);
+    }),
+  );
   compileLock = run.catch(() => undefined);
   return run;
 }

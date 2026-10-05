@@ -3,12 +3,12 @@
 // (WASM, tembel+mutex) → patchPdfBoxes (Trim/Bleed kutuları).
 
 import { bookToTypst, type TypstBookInput } from "./serialize";
-import { compilePdf, compileSvg, compileQuery, prewarmTypst } from "./engine";
+import { compilePdf, compileSvg, compileQuery, prewarmTypst, TypstCrashError } from "./engine";
 import { patchPdfBoxes } from "./patchBoxes";
 import { optimizeImagesForPrint } from "./optimizeImage";
 
 export type { TypstBookInput };
-export { prewarmTypst };
+export { prewarmTypst, TypstCrashError };
 
 // Bloklardaki görselleri (Word'den) VFS varlıklarına çevir.
 function collectAssets(input: TypstBookInput) {
