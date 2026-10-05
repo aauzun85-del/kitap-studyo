@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/user";
 import { loadInitialProject } from "@/lib/projects/server";
 import { toShellUser } from "@/lib/app/identity";
-import { hasActivePackageById } from "@/lib/credits/server";
 import { getSidebarPref } from "@/lib/app/prefs";
 import { signOutAction } from "@/app/[lang]/auth-actions";
 import AppShell, { type AppShellContext } from "@/components/app/AppShell";
@@ -26,7 +25,6 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/[
   const initialProject = await loadInitialProject(supabase, sp.project);
   // Tuval sayfası: kullanıcı açıkça seçmediyse menü DARALTILMIŞ başlar (geniş alan).
   const collapsed = (await getSidebarPref()) ?? true;
-  const canExport = await hasActivePackageById(user.id, user.email);
 
   const meta = initialProject?.data.meta;
   const context: AppShellContext = {
@@ -70,7 +68,6 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/[
         dict={dict}
         initialProject={initialProject}
         autoExport={exportMode}
-        canExport={canExport}
       />
     </AppShell>
   );

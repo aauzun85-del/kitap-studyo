@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
@@ -11,6 +11,18 @@ import { chunkText } from "@/lib/editor/chunk";
 import { docxToText } from "@/lib/editor/docxText";
 import { textToDocx, suggestDocxName } from "@/lib/editor/textToDocx";
 import { applyEditsToDocx, type DocxEdit } from "@/lib/editor/docxEdit";
+import {
+  useEditorSession,
+  patchSession,
+  beginJob,
+  isCurrentJob,
+  finishJob,
+  stopJob,
+  cancelJob,
+  dropSession,
+  type CheckKind,
+  type EditorSession,
+} from "@/lib/editor/session";
 import { TextTIcon, MagicWandIcon, CheckCircleIcon, BookIcon, WarningIcon } from "@/components/PhosphorIcons";
 
 // Aşama 2: yazım ve dilbilgisi kontrolü Claude'a bağlı. Öneriler tek tek
@@ -56,7 +68,7 @@ type Category =
 // Editöryal inceleme notlarının önem düzeyi (Gold kural setinden).
 type Severity = "hint" | "suggest" | "warn";
 
-type Suggestion = {
+export type Suggestion = {
   kind: "fix" | "notice";
   original: string;
   suggestion: string;
@@ -142,7 +154,7 @@ type GenreNote = {
 
 type Genre = "fiction" | "selfhelp" | "academic";
 
-type Decision = "accepted" | "rejected";
+export type Decision = "accepted" | "rejected";
 
 // Bu kelime sayısını aşan cümleler "uzun cümle" olarak uyarılır.
 const LONG_SENTENCE_WORDS = 35;
@@ -833,30 +845,54 @@ export default function EditorStudio({
   const [importError, setImportError] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportInfo, setExportInfo] = useState<string | null>(null);
-  // Yüklenen orijinal .docx (biçimi korumak için saklanır) + kabul edilen
-  // metin düzeltmeleri (dışa aktarırken orijinalin içine işlenir).
-  const [originalDocx, setOriginalDocx] = useState<ArrayBuffer | null>(null);
-  const [docxEdits, setDocxEdits] = useState<DocxEdit[]>([]);
+  // AI kontrollerinin işi, ilerlemesi ve sonuçları bileşende DEĞİL, proje
+  // başına oturum deposunda yaşar (src/lib/editor/session.ts): kullanıcı
+  // inceleme sürerken Mizanpaj/Kapak'a bakıp dönerse iş sürer, sonuçlar
+  // kaybolmaz. Projesiz (anonim) editörde oturum bu ekrana özeldir.
+  const [anonKey] = useState(() => `anon-${Math.random().toString(36).slice(2)}`);
+  const sessionKey = projectId ?? anonKey;
+  const session = useEditorSession(sessionKey);
+  const {
+    running,
+    progress: checkProgress,
+    suggestions,
+    decisions,
+    checkError,
+    stopped,
+    // Kontrol anındaki metnin sabit kopyası: kabul edince `raw` değişir, ama
+    // bağlam (önerinin metindeki yeri) bu kopyadan hesaplanır ki kaymasın.
+    checkedText,
+    // Yüklenen orijinal .docx (biçimi korumak için saklanır) + kabul edilen
+    // metin düzeltmeleri (dışa aktarırken orijinalin içine işlenir).
+    originalDocx,
+    docxEdits,
+  } = session;
+  const checking = running === "check";
+  const reviewing = running === "review";
+  const risking = running === "risk";
+  const genreLoading = running === "genre";
 
-  const [checking, setChecking] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
-  const [risking, setRisking] = useState(false);
-  const [genreLoading, setGenreLoading] = useState(false);
-  // Uzun metinler otomatik parçalanır; ilerleme (parça/toplam) burada tutulur.
-  const [checkProgress, setCheckProgress] = useState<{ done: number; total: number } | null>(null);
+  const patch = (p: Partial<EditorSession>) => patchSession(sessionKey, p);
+  const setCheckError = (v: string | null) => patch({ checkError: v });
+  const setDecisions = (v: SetStateAction<Record<number, Decision>>) =>
+    patchSession(sessionKey, (s) => ({ decisions: typeof v === "function" ? v(s.decisions) : v }));
+  const setDocxEdits = (v: SetStateAction<DocxEdit[]>) =>
+    patchSession(sessionKey, (s) => ({ docxEdits: typeof v === "function" ? v(s.docxEdits) : v }));
+
+  // Anonim editörden çıkınca iş durur ve oturum unutulur (metin de kaybolduğu
+  // için sonuçları saklamanın anlamı yok). Projeli editörde iş SÜRER.
+  useEffect(() => {
+    if (projectId) return;
+    return () => dropSession(sessionKey);
+  }, [projectId, sessionKey]);
+
   // Sihirbazda seçilen kitap türü editörün tür kipine eşlenir (kişisel gelişim →
   // selfhelp; akademik/bilim/tarih → academic; anlatı türleri → fiction).
   const [genre, setGenre] = useState<Genre>(
     genreEditorMode(initialProject?.data.meta.genre) ?? "fiction",
   );
-  const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
-  const [decisions, setDecisions] = useState<Record<number, Decision>>({});
-  const [checkError, setCheckError] = useState<string | null>(null);
   const [structure, setStructure] = useState<StructureReport | null>(null);
   const [prep, setPrep] = useState(false);
-  // Kontrol anındaki metnin sabit kopyası: kabul edince `raw` değişir, ama
-  // bağlam (önerinin metindeki yeri) bu kopyadan hesaplanır ki kaymasın.
-  const [checkedText, setCheckedText] = useState("");
 
   const stats = useMemo(
     () => ({ words: countWords(raw), chars: raw.length }),
@@ -871,18 +907,23 @@ export default function EditorStudio({
 
   const hasText = raw.trim().length > 0;
 
-  // Metin değişince eski öneriler artık geçersiz; paneli sıfırla.
+  // Metin değişince eski öneriler artık geçersiz; paneli sıfırla. Süren bir
+  // kontrol varsa o da sessizce iptal edilir (yeni metne eski sonuç yazılmasın).
   function resetResults() {
-    setSuggestions(null);
-    setDecisions({});
-    setCheckError(null);
-    setCheckedText("");
+    cancelJob(sessionKey);
+    patch({
+      suggestions: null,
+      decisions: {},
+      checkError: null,
+      checkedText: "",
+      stopped: null,
+      // Metin elle değişince/silinince yüklenen docx ile bağ kopar.
+      originalDocx: null,
+      docxEdits: [],
+    });
     setStructure(null);
     setPrep(false);
     setExportInfo(null);
-    // Metin elle değişince/silinince yüklenen docx ile bağ kopar.
-    setOriginalDocx(null);
-    setDocxEdits([]);
   }
 
   // Önerinin metindeki yerini, çevresindeki birkaç kelimeyle birlikte bulur.
@@ -987,8 +1028,7 @@ export default function EditorStudio({
       const { text, paragraphCount } = docxToText(buffer);
       setRaw(text);
       // Orijinali sakla: dışa aktarırken biçimi koruyup düzeltmeleri içine işleriz.
-      setOriginalDocx(buffer);
-      setDocxEdits([]);
+      patch({ originalDocx: buffer, docxEdits: [] });
       setImportInfo(t.wordImportedInfo.replace("{paragraphs}", String(paragraphCount)));
     } catch {
       setImportError(true);
@@ -1052,22 +1092,31 @@ export default function EditorStudio({
   const CHUNK_SIZE = 12000;
   const CONCURRENCY = 3;
 
+  // İlerleme ve sonuçlar oturum deposuna yazılır; bu yüzden kullanıcı başka
+  // adıma geçse de (bileşen kapansa da) iş sürer. `signal` iptal edilince
+  // ("Durdur") kalan parçalar HİÇ gönderilmez — boşa istek ve maliyet yok.
   async function runChunked<T>(
+    text: string,
+    signal: AbortSignal,
     endpoint: string,
     extract: (data: unknown) => T[] | undefined,
     extraBody?: Record<string, unknown>,
-  ): Promise<{ items: T[]; error: string | null }> {
-    const chunks = chunkText(raw, CHUNK_SIZE);
+  ): Promise<{ items: T[]; error: string | null; aborted: boolean; done: number; total: number }> {
+    const chunks = chunkText(text, CHUNK_SIZE);
     const total = chunks.length;
-    setCheckProgress(total > 1 ? { done: 0, total } : null);
     let done = 0;
+    const report = () => {
+      if (total > 1 && isCurrentJob(sessionKey, signal)) patch({ progress: { done, total } });
+    };
+    report();
     const items: T[] = [];
     let firstError: string | null = null;
 
     for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+      if (signal.aborted) break;
       const batch = chunks.slice(i, i + CONCURRENCY);
       const results = await Promise.all(
-        batch.map(async (chunk): Promise<{ ok: T[] } | { err: string }> => {
+        batch.map(async (chunk): Promise<{ ok: T[] } | { err: string } | { aborted: true }> => {
           try {
             const res = await fetch(endpoint, {
               method: "POST",
@@ -1075,182 +1124,164 @@ export default function EditorStudio({
               // Derin kontrol artık STANDART (seçenek değil): her kontrol en
               // güçlü modelle çalışır — kullanıcı kutucuk/karar yükü taşımaz.
               body: JSON.stringify({ text: chunk, lang, mode: "deep", ...extraBody }),
+              signal,
             });
+            let out: { ok: T[] } | { err: string };
             if (!res.ok) {
               const d = (await res.json().catch(() => ({}))) as { error?: string; max?: number };
-              return { err: mapError(d.error, d.max) };
+              out = { err: mapError(d.error, d.max) };
+            } else {
+              const d = (await res.json()) as unknown;
+              out = { ok: extract(d) ?? [] };
             }
-            const d = (await res.json()) as unknown;
-            return { ok: extract(d) ?? [] };
-          } catch {
-            return { err: t.errorGeneric };
-          } finally {
             done += 1;
-            if (total > 1) setCheckProgress({ done, total });
+            report();
+            return out;
+          } catch {
+            // Durdurulduysa bu parça "incelendi" sayılmaz.
+            if (signal.aborted) return { aborted: true };
+            done += 1;
+            report();
+            return { err: t.errorGeneric };
           }
         }),
       );
       for (const r of results) {
         if ("ok" in r) items.push(...r.ok);
-        else if (!firstError) firstError = r.err;
+        else if ("err" in r && !firstError) firstError = r.err;
       }
     }
-    setCheckProgress(null);
     // Hiç sonuç yoksa ve hata varsa hatayı bildir; bazı parçalar başardıysa göster.
-    return { items, error: items.length === 0 ? firstError : null };
+    return {
+      items,
+      error: items.length === 0 ? firstError : null,
+      aborted: signal.aborted,
+      done,
+      total,
+    };
   }
 
-  async function handleCheck() {
-    setChecking(true);
-    setCheckError(null);
-    setSuggestions(null);
-    setDecisions({});
+  // Dört AI kontrolünün ortak akışı: işi başlat → parçaları gönder → sonucu
+  // oturuma yaz. Kullanıcı durdurduysa o ana kadar bulunanlar korunur.
+  async function runAiCheck<T>(
+    kind: CheckKind,
+    endpoint: string,
+    extract: (data: unknown) => T[] | undefined,
+    toSuggestions: (items: T[], text: string) => Suggestion[],
+    extraBody?: Record<string, unknown>,
+  ) {
+    const text = raw;
+    const signal = beginJob(sessionKey, kind);
     setStructure(null);
     setPrep(false);
     try {
-      const { items, error } = await runChunked<AiSuggestion>(
-        "/api/editor-check",
-        (d) => (d as { suggestions?: AiSuggestion[] }).suggestions,
-      );
-      if (error && items.length === 0) {
-        setCheckError(error);
-        return;
+      const r = await runChunked<T>(text, signal, endpoint, extract, extraBody);
+      if (r.aborted) {
+        const found = r.items.length > 0 ? dedupeSuggestions(toSuggestions(r.items, text)) : null;
+        finishJob(sessionKey, signal, {
+          stopped: { done: r.done, total: r.total },
+          suggestions: found,
+          checkedText: found ? text : "",
+        });
+      } else if (r.error && r.items.length === 0) {
+        finishJob(sessionKey, signal, { checkError: r.error });
+      } else {
+        finishJob(sessionKey, signal, {
+          suggestions: dedupeSuggestions(toSuggestions(r.items, text)),
+          checkedText: text,
+        });
       }
-      const fixes: Suggestion[] = items.map((s) => ({ ...s, kind: "fix" }));
-      setSuggestions(dedupeSuggestions([...fixes, ...findLongSentences(raw)]));
-      setCheckedText(raw);
     } catch {
-      setCheckError(t.errorGeneric);
-    } finally {
-      setChecking(false);
-      setCheckProgress(null);
+      finishJob(sessionKey, signal, { checkError: t.errorGeneric });
     }
+  }
+
+  // Genel Kontrol (Kategori 1-2): yazım/dilbilgisi düzeltmeleri + yerel uzun
+  // cümle uyarıları.
+  function handleCheck() {
+    void runAiCheck<AiSuggestion>(
+      "check",
+      "/api/editor-check",
+      (d) => (d as { suggestions?: AiSuggestion[] }).suggestions,
+      (items, text) => [
+        ...items.map((s): Suggestion => ({ ...s, kind: "fix" })),
+        ...findLongSentences(text),
+      ],
+    );
   }
 
   // Editöryal inceleme (Aşama 3): akış, tekrar, üslup, paragraf. Gelen her
   // gözlem advisory bir "notice"; otomatik düzeltme yok.
-  async function handleReview() {
-    setReviewing(true);
-    setCheckError(null);
-    setSuggestions(null);
-    setDecisions({});
-    setStructure(null);
-    setPrep(false);
-    try {
-      const { items, error } = await runChunked<ReviewNote>(
-        "/api/editor-review",
-        (d) => (d as { notes?: ReviewNote[] }).notes,
-      );
-      if (error && items.length === 0) {
-        setCheckError(error);
-        return;
-      }
-      const notes: Suggestion[] = items.map((n) => ({
-        kind: "notice",
-        original: n.excerpt,
-        suggestion: n.suggestion,
-        category: n.category,
-        explanation: n.issue,
-        severity: n.severity,
-      }));
-      setSuggestions(dedupeSuggestions(notes));
-      setCheckedText(raw);
-    } catch {
-      setCheckError(t.errorGeneric);
-    } finally {
-      setReviewing(false);
-      setCheckProgress(null);
-    }
+  function handleReview() {
+    void runAiCheck<ReviewNote>(
+      "review",
+      "/api/editor-review",
+      (d) => (d as { notes?: ReviewNote[] }).notes,
+      (items) =>
+        items.map((n): Suggestion => ({
+          kind: "notice",
+          original: n.excerpt,
+          suggestion: n.suggestion,
+          category: n.category,
+          explanation: n.issue,
+          severity: n.severity,
+        })),
+    );
   }
 
   // Riskli içerik (Kategori 5): yalnız ciddi yayın/hukuk riskleri. Gelen her
   // gözlem advisory bir "notice"; otomatik düzeltme yok.
-  async function handleRisk() {
-    setRisking(true);
-    setCheckError(null);
-    setSuggestions(null);
-    setDecisions({});
-    setStructure(null);
-    setPrep(false);
-    try {
-      const { items, error } = await runChunked<RiskNote>(
-        "/api/editor-risk",
-        (d) => (d as { notes?: RiskNote[] }).notes,
-      );
-      if (error && items.length === 0) {
-        setCheckError(error);
-        return;
-      }
-      const notes: Suggestion[] = items.map((n) => ({
-        kind: "notice",
-        original: n.excerpt,
-        suggestion: n.suggestion,
-        category: n.category,
-        explanation: n.issue,
-      }));
-      setSuggestions(dedupeSuggestions(notes));
-      setCheckedText(raw);
-    } catch {
-      setCheckError(t.errorGeneric);
-    } finally {
-      setRisking(false);
-      setCheckProgress(null);
-    }
+  function handleRisk() {
+    void runAiCheck<RiskNote>(
+      "risk",
+      "/api/editor-risk",
+      (d) => (d as { notes?: RiskNote[] }).notes,
+      (items) =>
+        items.map((n): Suggestion => ({
+          kind: "notice",
+          original: n.excerpt,
+          suggestion: n.suggestion,
+          category: n.category,
+          explanation: n.issue,
+        })),
+    );
   }
 
   // Türe göre özel kontrol (Kategori 6): seçilen türe (roman, kişisel gelişim,
   // akademik) özel başlıklar. Gelen her gözlem advisory bir "notice".
-  async function handleGenre() {
-    setGenreLoading(true);
-    setCheckError(null);
-    setSuggestions(null);
-    setDecisions({});
-    setStructure(null);
-    setPrep(false);
-    try {
-      const { items, error } = await runChunked<GenreNote>(
-        "/api/editor-genre",
-        (d) => (d as { notes?: GenreNote[] }).notes,
-        { genre },
-      );
-      if (error && items.length === 0) {
-        setCheckError(error);
-        return;
-      }
-      const notes: Suggestion[] = items.map((n) => ({
-        kind: "notice",
-        original: n.excerpt,
-        suggestion: n.suggestion,
-        category: n.category,
-        explanation: n.issue,
-      }));
-      setSuggestions(dedupeSuggestions(notes));
-      setCheckedText(raw);
-    } catch {
-      setCheckError(t.errorGeneric);
-    } finally {
-      setGenreLoading(false);
-      setCheckProgress(null);
-    }
+  function handleGenre() {
+    void runAiCheck<GenreNote>(
+      "genre",
+      "/api/editor-genre",
+      (d) => (d as { notes?: GenreNote[] }).notes,
+      (items) =>
+        items.map((n): Suggestion => ({
+          kind: "notice",
+          original: n.excerpt,
+          suggestion: n.suggestion,
+          category: n.category,
+          explanation: n.issue,
+        })),
+      { genre },
+    );
+  }
+
+  // Yerel görünümler (3 ve 4) açılınca önceki AI sonuçları paneli bırakır.
+  function clearAiResults() {
+    patch({ suggestions: null, decisions: {}, checkedText: "", checkError: null, stopped: null });
   }
 
   // Kitap yapısı (Kategori 3): tamamen yerel, API harcaması yok. Metni
   // bölümlere ayırıp içindekiler + denge/numara notları çıkarır.
   function handleStructure() {
-    setCheckError(null);
-    setSuggestions(null);
-    setDecisions({});
-    setCheckedText("");
+    clearAiResults();
     setPrep(false);
     setStructure(parseStructure(raw));
   }
 
   // Yayına hazırlık (Kategori 4): yerel tipografi görünümünü aç.
   function handlePrep() {
-    setCheckError(null);
-    setSuggestions(null);
-    setDecisions({});
-    setCheckedText("");
+    clearAiResults();
     setStructure(null);
     setPrep(true);
   }
@@ -1586,20 +1617,39 @@ export default function EditorStudio({
             <StructureView report={structure} t={t} />
           ) : prep ? (
             <PrepView fixes={prepFixes} setRaw={setRaw} t={t} />
-          ) : checking || reviewing || risking || genreLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="flex items-center gap-3 text-sm text-muted">
-                <span className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-accent" />
-                {genreLoading
-                  ? t.genreLoading
-                  : risking
-                    ? t.risking
-                    : reviewing
-                      ? t.reviewing
-                      : t.checking}
-                {checkProgress && checkProgress.total > 1
-                  ? ` ${checkProgress.done}/${checkProgress.total}`
-                  : ""}
+          ) : running ? (
+            <div className="flex h-full items-center justify-center p-4">
+              <div className="flex max-w-xs flex-col items-center gap-4 text-center">
+                <div className="flex items-center gap-3 text-sm text-muted">
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-accent" />
+                  {genreLoading
+                    ? t.genreLoading
+                    : risking
+                      ? t.risking
+                      : reviewing
+                        ? t.reviewing
+                        : t.checking}
+                  {checkProgress && checkProgress.total > 1
+                    ? ` ${checkProgress.done}/${checkProgress.total}`
+                    : ""}
+                </div>
+                {/* Yanlış dosya vb. için: kalan parçalar gönderilmez. */}
+                <button
+                  onClick={() => stopJob(sessionKey)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-1.5 text-sm font-semibold text-foreground transition hover:border-red-300 hover:text-red-600"
+                >
+                  <span className="h-2.5 w-2.5 rounded-[2px] bg-current" />
+                  {t.stopCta}
+                </button>
+                {projectId && <p className="text-xs text-muted">{t.stopHint}</p>}
+              </div>
+            </div>
+          ) : stopped && (suggestions === null || suggestions.length === 0) ? (
+            <div className="flex h-full items-center justify-center p-4">
+              <div className="max-w-sm text-center">
+                <span className="mx-auto block h-4 w-4 rounded-[3px] bg-border" />
+                <p className="mt-3 text-sm font-semibold text-foreground">{t.stoppedTitle}</p>
+                <p className="mt-1 text-sm text-muted">{t.stoppedEmpty}</p>
               </div>
             </div>
           ) : suggestions === null ? (
@@ -1617,6 +1667,17 @@ export default function EditorStudio({
               </div>
             </div>
           ) : (
+            <>
+            {stopped && (
+              <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <span className="font-semibold">{t.stoppedTitle}</span>{" "}
+                {stopped.total > 1
+                  ? t.stoppedPartial
+                      .replace("{done}", String(stopped.done))
+                      .replace("{total}", String(stopped.total))
+                  : ""}
+              </div>
+            )}
             <ul className="flex flex-col gap-3">
               {suggestions.map((s, i) => {
                 const decision = decisions[i];
@@ -1781,6 +1842,7 @@ export default function EditorStudio({
                 );
               })}
             </ul>
+            </>
           )}
         </div>
       </main>

@@ -616,6 +616,12 @@ type EditorStudioCopy = {
   reviewCta: string;
   reviewing: string;
   reviewHint: string;
+  // Süren AI kontrolünü durdurma + durdurulmuş durum.
+  stopCta: string;
+  stopHint: string;
+  stoppedTitle: string;
+  stoppedPartial: string;
+  stoppedEmpty: string;
   deepLabel: string;
   deepHint: string;
   // Sonuç paneli.
@@ -1758,6 +1764,11 @@ const tr: Dictionary = {
     reviewCta: "Editöryal inceleme",
     reviewing: "İnceleniyor…",
     reviewHint: "Akış, sözcük seçimi, cümle yapısı, diyalog ve akıcı Türkçe üslubunu değerlendirir; düzeltmez, önerir.",
+    stopCta: "Durdur",
+    stopHint: "Bu sırada Mizanpaj ya da Kapak'a bakabilirsin; kontrol arka planda sürer, dönünce kaldığı yerden görürsün.",
+    stoppedTitle: "Kontrol durduruldu.",
+    stoppedPartial: "{done}/{total} parça incelenmişti; aşağıdakiler yalnızca incelenen kısımdan.",
+    stoppedEmpty: "Yeni bir Word dosyası ekleyebilir ya da kontrolü yeniden başlatabilirsin.",
     deepLabel: "Derin kontrol",
     deepHint: "Daha güçlü model; en ince hataları da yakalar ama biraz daha pahalıdır.",
     resultsHeading: "Öneriler",
@@ -2896,6 +2907,11 @@ const en: Dictionary = {
     reviewCta: "Editorial review",
     reviewing: "Reviewing…",
     reviewHint: "Assesses flow, word choice, sentence structure, dialogue and natural prose; it advises rather than fixes.",
+    stopCta: "Stop",
+    stopHint: "You can look at Layout or Cover meanwhile; the check keeps running and you'll find it where it left off.",
+    stoppedTitle: "Check stopped.",
+    stoppedPartial: "{done} of {total} parts had been checked; the items below cover only that part.",
+    stoppedEmpty: "You can add a new Word file or start the check again.",
     deepLabel: "Deep check",
     deepHint: "A stronger model that catches even subtle errors, but costs a bit more.",
     resultsHeading: "Suggestions",

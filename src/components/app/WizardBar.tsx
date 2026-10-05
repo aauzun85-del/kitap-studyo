@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Locale } from "@/i18n/config";
 import type { WizardState, WizardStepKey } from "@/lib/projects/types";
 import { completeWizardStep } from "@/lib/projects/data";
+import { useEditorSession } from "@/lib/editor/session";
 import { Icon } from "./AppShell";
 import WizardGuide from "./WizardGuide";
 
@@ -44,6 +45,9 @@ export default function WizardBar({
   const [busy, setBusy] = useState(false);
   const t = lang === "tr";
   const finished = current === "done";
+  // AI Editör kontrolü başka adımdayken de sürer; adım hapında görünür olsun.
+  const editorJob = useEditorSession(projectId);
+  const editorBg = editorJob.running !== null && current !== "editor";
 
   async function onComplete() {
     if (finished) return;
@@ -98,6 +102,11 @@ export default function WizardBar({
         {STEPS.map((s, i) => {
           const active = s.key === current;
           const done = isDone(wizard, s.key);
+          const bgRunning = s.key === "editor" && editorBg;
+          const bgProgress =
+            bgRunning && editorJob.progress && editorJob.progress.total > 1
+              ? ` · ${editorJob.progress.done}/${editorJob.progress.total}`
+              : "";
           return (
             <Fragment key={s.key}>
               <Link
@@ -113,35 +122,56 @@ export default function WizardBar({
                   background: active ? "var(--pri-soft)" : "transparent",
                   border: active ? "1px solid #dfe0fb" : "1px solid transparent",
                 }}
-                title={s.label[lang]}
+                title={
+                  bgRunning
+                    ? t
+                      ? "Kontrol arka planda sürüyor — sonuçları görmek için tıkla"
+                      : "Check running in the background — click to see results"
+                    : s.label[lang]
+                }
               >
-                <span
-                  style={{
-                    width: 22,
-                    height: 22,
-                    flex: "none",
-                    borderRadius: "50%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 12,
-                    fontWeight: 800,
-                    background: done ? "#16a34a" : active ? "var(--pri)" : "#fff",
-                    color: done || active ? "#fff" : "#b6bbcb",
-                    border: done || active ? "none" : "2px solid #e1e3ee",
-                  }}
-                >
-                  {done ? <Icon name="check" size={13} sw={3} /> : i + 1}
-                </span>
+                {bgRunning ? (
+                  <span
+                    className="animate-spin"
+                    style={{
+                      width: 22,
+                      height: 22,
+                      flex: "none",
+                      borderRadius: "50%",
+                      border: "2.5px solid #dfe0fb",
+                      borderTopColor: "var(--pri)",
+                    }}
+                  />
+                ) : (
+                  <span
+                    style={{
+                      width: 22,
+                      height: 22,
+                      flex: "none",
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      background: done ? "#16a34a" : active ? "var(--pri)" : "#fff",
+                      color: done || active ? "#fff" : "#b6bbcb",
+                      border: done || active ? "none" : "2px solid #e1e3ee",
+                    }}
+                  >
+                    {done ? <Icon name="check" size={13} sw={3} /> : i + 1}
+                  </span>
+                )}
                 <span
                   style={{
                     fontSize: 13.5,
                     fontWeight: active ? 700 : 600,
-                    color: active ? "var(--pri)" : done ? "#1d2333" : "#8a90a2",
+                    color: active || bgRunning ? "var(--pri)" : done ? "#1d2333" : "#8a90a2",
                     whiteSpace: "nowrap",
                   }}
                 >
                   {s.label[lang]}
+                  {bgProgress}
                 </span>
               </Link>
               {i < STEPS.length - 1 && (

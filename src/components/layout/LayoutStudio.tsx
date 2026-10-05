@@ -5,7 +5,6 @@ import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
 import { genreThemeId, genreLayoutSeed } from "@/lib/projects/genres";
-import { requireExport } from "@/lib/credits/exportGate";
 import { useMetaSync, useManuscriptSync } from "@/lib/projects/useSync";
 import {
   INTERIOR_SIZES,
@@ -121,7 +120,6 @@ export default function LayoutStudio({
   dict,
   initialProject,
   autoExport,
-  canExport,
 }: {
   lang: Locale;
   dict: Dictionary;
@@ -129,8 +127,6 @@ export default function LayoutStudio({
   /** İndirme ekranından "?export=1": sayfalama hazır olunca İç sayfa PDF'ini
    *  otomatik indir + üstte durum katmanı göster. */
   autoExport?: boolean;
-  /** Aktif jeton paketi var mı? false ise indirme kilitli. */
-  canExport: boolean;
 }) {
   const t = dict.layoutStudio;
   // Bulut projesi: state proje verisinden tohumlanır; proje yoksa anonim (boş).
@@ -619,7 +615,6 @@ export default function LayoutStudio({
 
   const handleExportPdf = useCallback(async (): Promise<boolean> => {
     if (pages.length === 0) return false;
-    if (!requireExport(canExport, lang)) return false;
     setExporting(true);
     setExportError(false);
     try {
@@ -655,13 +650,12 @@ export default function LayoutStudio({
     } finally {
       setExporting(false);
     }
-  }, [pages, sizeId, margins, gutter, cropMarks, kerning, fontId, title, standard, bleedOn, canExport, lang]);
+  }, [pages, sizeId, margins, gutter, cropMarks, kerning, fontId, title, standard, bleedOn, lang]);
 
   // InDesign IDML dışa aktarma: mizanpajı Adobe InDesign'da açılabilir .idml
   // paketine çevirir (metin + boyut + kenar + stiller). Jeton kapısı PDF ile aynı.
   const handleExportIdml = useCallback(async (): Promise<boolean> => {
     if (blocks.length === 0) return false;
-    if (!requireExport(canExport, lang)) return false;
     setExporting(true);
     setExportError(false);
     try {
@@ -693,7 +687,7 @@ export default function LayoutStudio({
     } finally {
       setExporting(false);
     }
-  }, [blocks, meta, settings, sizeId, margins, gutter, pages.length, title, canExport, lang]);
+  }, [blocks, meta, settings, sizeId, margins, gutter, pages.length, title, lang]);
 
   // Yazma görünümünün canlı önizlemesine giden Typst girdisi. Export'la AYNI
   // montaj; yalnız kesim krosları/taşma KAPALI → temiz "kitap sayfası" görünür
@@ -718,7 +712,6 @@ export default function LayoutStudio({
   // Doğrulanınca varsayılan olacak; şimdilik ayrı tuş.
   const handleExportPdfTypst = useCallback(async (): Promise<boolean> => {
     if (blocks.length === 0) return false;
-    if (!requireExport(canExport, lang)) return false;
     setExporting(true);
     setExportError(false);
     try {
@@ -751,7 +744,7 @@ export default function LayoutStudio({
     } finally {
       setExporting(false);
     }
-  }, [blocks, meta, settings, sizeId, margins, gutter, cropMarks, standard, bleedOn, title, canExport, lang]);
+  }, [blocks, meta, settings, sizeId, margins, gutter, cropMarks, standard, bleedOn, title, lang]);
 
   // Baskı denetimi (preflight): Typst PDF'ini üret + yapısal baskı kontrolleri.
   const [preflightReport, setPreflightReport] = useState<PreflightReport | null>(null);
