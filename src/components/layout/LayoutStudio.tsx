@@ -5,7 +5,8 @@ import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
 import { genreThemeId, genreLayoutSeed } from "@/lib/projects/genres";
-import { useMetaSync, useManuscriptSync } from "@/lib/projects/useSync";
+import { useMetaSync, useManuscriptSync, useModuleSync } from "@/lib/projects/useSync";
+import { readSavedLayout, LAYOUT_SETTINGS_VERSION, type SavedLayoutSettings } from "@/lib/layout/layoutSettings";
 import {
   INTERIOR_SIZES,
   MARGIN_PRESETS,
@@ -136,6 +137,10 @@ export default function LayoutStudio({
   // Bulut projesi: state proje verisinden tohumlanır; proje yoksa anonim (boş).
   const projectId = initialProject?.id ?? null;
   const seed = initialProject?.data;
+  // Kayıtlı mizanpaj ayarları (envelope.modules.layout): varsa sol paneldeki her
+  // ayar buradan başlar → sayfa yeniden açılınca seçimler kaybolmaz; İndir
+  // ekranındaki PDF de bu ayarlarla çıkar. Yoksa eskisi gibi profil/tema varsayılanı.
+  const [saved] = useState(() => readSavedLayout(seed?.modules?.layout));
 
   const [panel, setPanel] = useState<PanelId>("book");
 
@@ -166,9 +171,9 @@ export default function LayoutStudio({
   // taşma o profilin varsayılanlarına göre kurulur. Eski projelerde profil yoksa KDY.
   const seedPlatform: PrintStandard = seed?.meta.platform ?? "kdy";
   const seedProfile = STANDARD_PROFILES[seedPlatform];
-  const [standard, setStandard] = useState<PrintStandard>(seedPlatform);
+  const [standard, setStandard] = useState<PrintStandard>(saved?.standard ?? seedPlatform);
   // KDP/Serbest taşma (bleed) açık mı — profilin varsayılanı.
-  const [bleedOn, setBleedOn] = useState(seedProfile.bleedDefaultOn);
+  const [bleedOn, setBleedOn] = useState(saved?.bleedOn ?? seedProfile.bleedDefaultOn);
 
   // Sayfa / kenar boşlukları (profil varsayılanları). Sihirbazda kitap boyu
   // seçildiyse (meta.sizeId) o kullanılır; tanınmayan/eski id'de profil varsayılanı.
@@ -176,11 +181,13 @@ export default function LayoutStudio({
     seed?.meta.sizeId && ALL_SIZES.some((s) => s.id === seed.meta.sizeId)
       ? seed.meta.sizeId
       : seedProfile.defaultSizeId;
-  const [sizeId, setSizeId] = useState(seedSizeId);
-  const [margins, setMargins] = useState<Margins>({ ...seedProfile.defaultMargins });
-  const [presetId, setPresetId] = useState<string>(seedPlatform);
-  const [gutterAuto, setGutterAuto] = useState(true);
-  const [gutterManual, setGutterManual] = useState(0);
+  const [sizeId, setSizeId] = useState(
+    saved?.sizeId && ALL_SIZES.some((s) => s.id === saved.sizeId) ? saved.sizeId : seedSizeId,
+  );
+  const [margins, setMargins] = useState<Margins>(saved?.margins ?? { ...seedProfile.defaultMargins });
+  const [presetId, setPresetId] = useState<string>(saved?.presetId ?? seedPlatform);
+  const [gutterAuto, setGutterAuto] = useState(saved?.gutterAuto ?? true);
+  const [gutterManual, setGutterManual] = useState(saved?.gutterManual ?? 0);
   const [zoom, setZoom] = useState(1);
 
   // Önizleme ergonomisi: sol ayar paneli gizlenebilir (geniş önizleme), ikincil
@@ -227,40 +234,42 @@ export default function LayoutStudio({
   };
 
   // Tipografi (KDY varsayılanları).
-  const [fontId, setFontId] = useState("sourceserif");
-  const [bodySizePt, setBodySizePt] = useState(11);
-  const [leadingPt, setLeadingPt] = useState(15);
-  const [align, setAlign] = useState<"left" | "justify">("justify");
-  const [indentMm, setIndentMm] = useState(5);
+  const [fontId, setFontId] = useState(saved?.fontId ?? "sourceserif");
+  const [bodySizePt, setBodySizePt] = useState(saved?.bodySizePt ?? 11);
+  const [leadingPt, setLeadingPt] = useState(saved?.leadingPt ?? 15);
+  const [align, setAlign] = useState<"left" | "justify">(saved?.align ?? "justify");
+  const [indentMm, setIndentMm] = useState(saved?.indentMm ?? 5);
   // Paragraf-arası boşluk varsayılanı 0: klasik roman dizgisinde paragraflar
   // ilk-satır girintisiyle ayrılır, ekstra boşlukla değil. Boşluk eklemek tek
   // taban-çizgisi ızgarasını bozar (satır aralığı 15/20.7 pt karışır); bu yüzden
   // ızgara, gövde satırlarını leading'in katına hizalar (bkz. paginate snapBodyGap).
   // Varsayılan: her paragraftan sonra ~1 satır boşluk (kullanıcı isteği). Tüm
   // temalar da aynı değeri kullanır → türe göre seçilen tema sıfırlamaz.
-  const [paragraphSpacingMm, setParagraphSpacingMm] = useState(DEFAULT_PARAGRAPH_SPACING_MM);
-  const [headingFontId, setHeadingFontId] = useState("sourceserif");
-  const [detectHeadings, setDetectHeadings] = useState(true);
+  const [paragraphSpacingMm, setParagraphSpacingMm] = useState(
+    saved?.paragraphSpacingMm ?? DEFAULT_PARAGRAPH_SPACING_MM,
+  );
+  const [headingFontId, setHeadingFontId] = useState(saved?.headingFontId ?? "sourceserif");
+  const [detectHeadings, setDetectHeadings] = useState(saved?.detectHeadings ?? true);
 
   // Yapısal seçenekler.
-  const [chapterRight, setChapterRight] = useState(true);
-  const [frontMatter, setFrontMatter] = useState(true);
-  const [runningHeads, setRunningHeads] = useState(true);
-  const [pageNumbers, setPageNumbers] = useState(true);
+  const [chapterRight, setChapterRight] = useState(saved?.chapterRight ?? true);
+  const [frontMatter, setFrontMatter] = useState(saved?.frontMatter ?? true);
+  const [runningHeads, setRunningHeads] = useState(saved?.runningHeads ?? true);
+  const [pageNumbers, setPageNumbers] = useState(saved?.pageNumbers ?? true);
   // Heceleme yalnız Türkçe metinde güvenli; varsayılanı uygulama diline bağla.
-  const [hyphenate, setHyphenate] = useState(lang === "tr");
+  const [hyphenate, setHyphenate] = useState(saved?.hyphenate ?? lang === "tr");
   // Bölüm başı büyük baş harf (drop cap) — varsayılan açık.
-  const [dropCap, setDropCap] = useState(true);
+  const [dropCap, setDropCap] = useState(saved?.dropCap ?? true);
   // Satır kırma yöntemi — varsayılan "balanced" (Knuth–Plass, profesyonel).
-  const [lineBreak, setLineBreak] = useState<"balanced" | "greedy">("balanced");
+  const [lineBreak, setLineBreak] = useState<"balanced" | "greedy">(saved?.lineBreak ?? "balanced");
   // Bölüm açılış stili (tema sistemi).
-  const [chapterTopRatio, setChapterTopRatio] = useState(0.12);
-  const [chapterOrnament, setChapterOrnament] = useState<ChapterOrnament>("none");
-  const [showChapterKicker, setShowChapterKicker] = useState(true);
+  const [chapterTopRatio, setChapterTopRatio] = useState(saved?.chapterTopRatio ?? 0.12);
+  const [chapterOrnament, setChapterOrnament] = useState<ChapterOrnament>(saved?.chapterOrnament ?? "none");
+  const [showChapterKicker, setShowChapterKicker] = useState(saved?.showChapterKicker ?? true);
   // Seçili tema (boş = elle/varsayılan; tema seçince ayarlar paketçe uygulanır).
-  const [themeId, setThemeId] = useState("");
+  const [themeId, setThemeId] = useState(saved?.themeId ?? "");
   // İçindekiler başlık geçersiz kılmaları (bölüm sırasına göre). Boş = otomatik.
-  const [tocOverrides, setTocOverrides] = useState<Record<number, string>>({});
+  const [tocOverrides, setTocOverrides] = useState<Record<number, string>>(saved?.tocOverrides ?? {});
 
   const [fontsReady, setFontsReady] = useState(false);
   const measureRef = useRef<HTMLCanvasElement | null>(null);
@@ -275,8 +284,30 @@ export default function LayoutStudio({
   const [previewEngine, setPreviewEngine] = useState<"typst" | "js">("typst");
 
   // PDF dışa aktarma.
-  const [cropMarks, setCropMarks] = useState(true);
-  const [kerning, setKerning] = useState(true);
+  const [cropMarks, setCropMarks] = useState(saved?.cropMarks ?? true);
+  const [kerning, setKerning] = useState(saved?.kerning ?? true);
+
+  // Sol paneldeki ayarları projeye kaydet (700 ms gecikmeli + çıkışta hemen).
+  // İndir ekranının salt-okunur dışa aktarım modunda (autoExport) YAZILMAZ.
+  // Önizleme motoru kaydedilmez: onu büyük-kitap/çökme kuralı kendisi yönetir.
+  const layoutSlice = useMemo<SavedLayoutSettings>(
+    () => ({
+      v: LAYOUT_SETTINGS_VERSION,
+      standard, bleedOn, sizeId, margins, presetId, gutterAuto, gutterManual, cropMarks,
+      themeId, fontId, headingFontId, bodySizePt, leadingPt, align, indentMm,
+      paragraphSpacingMm, detectHeadings, kerning,
+      chapterRight, frontMatter, runningHeads, pageNumbers, hyphenate, dropCap, lineBreak,
+      chapterTopRatio, chapterOrnament, showChapterKicker, tocOverrides,
+    }),
+    [
+      standard, bleedOn, sizeId, margins, presetId, gutterAuto, gutterManual, cropMarks,
+      themeId, fontId, headingFontId, bodySizePt, leadingPt, align, indentMm,
+      paragraphSpacingMm, detectHeadings, kerning,
+      chapterRight, frontMatter, runningHeads, pageNumbers, hyphenate, dropCap, lineBreak,
+      chapterTopRatio, chapterOrnament, showChapterKicker, tocOverrides,
+    ],
+  );
+  useModuleSync(projectId, "layout", layoutSlice, !!autoExport);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(false);
   // Typst PDF motoru çöktüyse (sayfa yenilenene kadar çalışamaz): anlaşılır
@@ -380,12 +411,14 @@ export default function LayoutStudio({
   useEffect(() => {
     if (genreThemeFiredRef.current) return;
     genreThemeFiredRef.current = true;
+    // Kayıtlı ayar varsa kullanıcının seçimi geçerli: tür teması EZMESİN.
+    if (saved) return;
     const themeIdFromGenre = genreThemeId(seed?.meta.genre);
     if (themeIdFromGenre) applyTheme(getTheme(themeIdFromGenre));
     const extra = genreLayoutSeed(seed?.meta.genre);
     if (extra?.bodySizePt) setBodySizePt(extra.bodySizePt);
     if (extra?.leadingPt) setLeadingPt(extra.leadingPt);
-  }, [applyTheme, seed]);
+  }, [applyTheme, seed, saved]);
 
   // Etkin bloklar: Word modundaysa ve içe aktarım varsa onu, yoksa elle
   // yazılan markdown'ı kullan. İçe aktarım korunur; kaynağı değiştirince
