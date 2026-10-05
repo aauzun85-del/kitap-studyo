@@ -28,10 +28,13 @@ export function TypstPreviewCanvas({
   input,
   editingBlock,
   onSelectBlock,
+  onError,
 }: {
   input: TypstBookInput;
   editingBlock: number | null;
   onSelectBlock: (idx: number) => void;
+  // Derleme çökerse (ör. çok büyük kitap) üst bileşen "Hızlı" moda düşebilsin.
+  onError?: () => void;
 }) {
   const [svg, setSvg] = useState("");
   const [positions, setPositions] = useState<BlockPos[]>([]);
@@ -42,6 +45,9 @@ export function TypstPreviewCanvas({
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    // Bu effect önizleme state'ini Typst girdisiyle SENKRONİZE eder (effect'in
+    // asıl işi budur); kural fazla temkinli olduğundan senkron kısmı kapatıyoruz.
+    /* eslint-disable react-hooks/set-state-in-effect */
     if (input.blocks.length === 0) {
       setSvg("");
       setPositions([]);
@@ -50,6 +56,9 @@ export function TypstPreviewCanvas({
     }
     const id = ++reqId.current;
     setStatus("compiling");
+    /* eslint-enable react-hooks/set-state-in-effect */
+    // Bekleme süresi: yazarken HER tuşta derlemesin; yalnız kullanıcı DURUNCA bir
+    // kez derlesin (ağır Typst derlemesi arayüzü dondurduğundan kritik).
     const timer = setTimeout(() => {
       renderBookSvgWithBlocks(input)
         .then((out) => {
@@ -60,11 +69,14 @@ export function TypstPreviewCanvas({
           }
         })
         .catch(() => {
-          if (reqId.current === id) setStatus("error");
+          if (reqId.current === id) {
+            setStatus("error");
+            onError?.(); // üst bileşen "Hızlı" önizlemeye düşebilir
+          }
         });
-    }, 300);
+    }, 1200);
     return () => clearTimeout(timer);
-  }, [input]);
+  }, [input, onError]);
 
   // SVG'yi ayır: paylaşılan defs + sayfa-başı parça (transform sıfırlı) + stil.
   const doc = useMemo(() => {

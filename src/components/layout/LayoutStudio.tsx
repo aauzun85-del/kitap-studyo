@@ -282,6 +282,14 @@ export default function LayoutStudio({
   // Önizleme motoru: "typst" = gerçek baskı sayfası (=PDF), tıklanabilir bloklar;
   // "js" = hızlı yaklaşık önizleme (yedek).
   const [previewEngine, setPreviewEngine] = useState<"typst" | "js">("typst");
+  // Kullanıcı motoru elle seçtiyse artık otomatik değiştirme.
+  const engineUserPickedRef = useRef(false);
+  // Büyük kitapta bir kez "Hızlı"ya al (tekrar tekrar uyarma).
+  const bigBookAutoRef = useRef(false);
+  const pickEngine = useCallback((e: "typst" | "js") => {
+    engineUserPickedRef.current = true;
+    setPreviewEngine(e);
+  }, []);
 
   // PDF dışa aktarma.
   const [cropMarks, setCropMarks] = useState(saved?.cropMarks ?? true);
@@ -640,6 +648,28 @@ export default function LayoutStudio({
     if (noteTimerRef.current) window.clearTimeout(noteTimerRef.current);
     noteTimerRef.current = window.setTimeout(() => setHistoryNote(null), 2800);
   }, []);
+  // Typst önizlemesi çökerse (ör. çok büyük kitap) otomatik "Hızlı" moda düş →
+  // asla "önizleme hatası"nda kilitlenme. Kullanıcı menüden Typst'e dönebilir.
+  const handleTypstPreviewError = useCallback(() => {
+    engineUserPickedRef.current = true; // tekrar otomatik Typst'e zorlama
+    setPreviewEngine("js");
+    flashNote(
+      "Typst önizlemesi bu kitapta zorlandı — 'Hızlı' moda geçildi. PDF yine Typst ile üretilir.",
+    );
+  }, [flashNote]);
+  // Büyük kitapta canlı Typst derlemesi arayüzü dondurur → eşiği ilk aşınca bir
+  // kez "Hızlı"ya al (kullanıcı elle seçmediyse). PDF her hâlükârda Typst ile.
+  useEffect(() => {
+    if (bigBookAutoRef.current || engineUserPickedRef.current) return;
+    if (previewEngine === "typst" && pages.length > 120) {
+      bigBookAutoRef.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPreviewEngine("js");
+      flashNote(
+        "Büyük kitap: canlı önizleme 'Hızlı' moda alındı (daha akıcı). Typst'i menüden açabilir, PDF'i yine Typst üretir.",
+      );
+    }
+  }, [pages.length, previewEngine, flashNote]);
   const { undo: historyUndo, redo: historyRedo } = history;
   const handleUndo = useCallback(() => {
     if (editingBlockRef.current != null) {
@@ -1413,7 +1443,7 @@ export default function LayoutStudio({
                         title="Typst: gerçek baskı sayfası (=PDF), üstüne tıklayıp düzenle. Hızlı: yedek önizleme."
                       >
                         <button
-                          onClick={() => setPreviewEngine("typst")}
+                          onClick={() => pickEngine("typst")}
                           className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
                             previewEngine === "typst" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
                           }`}
@@ -1421,7 +1451,7 @@ export default function LayoutStudio({
                           Typst
                         </button>
                         <button
-                          onClick={() => setPreviewEngine("js")}
+                          onClick={() => pickEngine("js")}
                           className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
                             previewEngine === "js" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
                           }`}
@@ -1561,6 +1591,7 @@ export default function LayoutStudio({
               input={typstInput}
               editingBlock={editingBlock}
               onSelectBlock={startEditBlock}
+              onError={handleTypstPreviewError}
             />
           ) : (
             <div className="flex flex-col items-center gap-6">
