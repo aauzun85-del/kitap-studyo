@@ -263,7 +263,9 @@ export default function LayoutStudio({
   // Satır kırma yöntemi — varsayılan "balanced" (Knuth–Plass, profesyonel).
   const [lineBreak, setLineBreak] = useState<"balanced" | "greedy">(saved?.lineBreak ?? "balanced");
   // Bölüm açılış stili (tema sistemi).
-  const [chapterTopRatio, setChapterTopRatio] = useState(saved?.chapterTopRatio ?? 0.12);
+  // Bölüm başlığı HER ZAMAN sayfanın en üstünden başlar (kullanıcı isteği: bölüm
+  // başlarındaki üst boşluk tamamen kaldırıldı) → sabit 0; eski kayıtlar yok sayılır.
+  const chapterTopRatio = 0;
   const [chapterOrnament, setChapterOrnament] = useState<ChapterOrnament>(saved?.chapterOrnament ?? "none");
   const [showChapterKicker, setShowChapterKicker] = useState(saved?.showChapterKicker ?? true);
   // Seçili tema (boş = elle/varsayılan; tema seçince ayarlar paketçe uygulanır).
@@ -406,7 +408,6 @@ export default function LayoutStudio({
     setHyphenate(theme.hyphenate);
     setLineBreak(theme.lineBreak);
     setDropCap(theme.dropCap);
-    setChapterTopRatio(theme.chapterTopRatio);
     setChapterOrnament(theme.chapterOrnament);
     setShowChapterKicker(theme.showChapterKicker);
   }, []);

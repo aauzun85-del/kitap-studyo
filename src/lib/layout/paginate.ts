@@ -59,7 +59,7 @@ export type LayoutSettings = {
   lang?: "tr" | "en"; // tireleme/dil işleme dili (Typst); vars. "tr"
   dropCap: boolean; // bölüm başlarında büyük baş harf (drop cap)
   // Bölüm açılış stili (tema sistemi). Boş/eski taslaklarda makul varsayılanlar.
-  chapterTopRatio?: number; // başlık sayfanın % kaçından başlar (vars. 0.12)
+  chapterTopRatio?: number; // başlık sayfanın % kaçından başlar (vars. 0 — üst boşluk yok)
   chapterOrnament?: "none" | "rule" | "dots"; // başlık altı süs (vars. "none")
   showChapterKicker?: boolean; // "BÖLÜM N" üst etiketi (vars. true)
   // Satır kırma yöntemi (yalnız iki yana yaslı paragraflarda etkili):
@@ -1175,7 +1175,7 @@ export function paginate(input: PaginateInput): Page[] {
         startChapter();
         chapterIndex++;
         chapterPageOf.set(chapterIndex, counter);
-        addGap(contentHeightPx * (settings.chapterTopRatio ?? 0.12));
+        addGap(contentHeightPx * (settings.chapterTopRatio ?? 0));
         // "BÖLÜM N" kicker'ı: başlığın ÜSTÜNDE küçük, ortalı etiket (aynı açılış
         // sayfasında). Tema "kicker gizle" derse atlanır.
         if (block.kicker && (settings.showChapterKicker ?? true)) {

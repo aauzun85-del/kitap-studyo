@@ -29,7 +29,8 @@ export type TypstBookInput = {
 // başlık (gerçek #heading → içindekiler/koşu başlığı görür) + süs.
 function chapterOpen(b: Extract<Block, { type: "heading" }>, marker: string, s: LayoutSettings, contentHeightMm: number): string {
   const right = s.chapterStartsOnRightPage;
-  const topMm = ((s.chapterTopRatio ?? 0.12) * contentHeightMm).toFixed(2);
+  // Bölüm başında üst boşluk yok (kullanıcı isteği): başlık sayfanın en üstünden.
+  const topMm = ((s.chapterTopRatio ?? 0) * contentHeightMm).toFixed(2);
   const orn = s.chapterOrnament ?? "none";
   const showKick = s.showChapterKicker ?? true;
   const kick = showKick && b.kicker ? `kicker: ${typstStr(b.kicker)}, ` : "";

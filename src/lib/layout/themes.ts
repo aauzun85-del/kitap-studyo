@@ -28,7 +28,9 @@ export type LayoutTheme = {
   lineBreak: "balanced" | "greedy";
   // Bölüm açılışı
   dropCap: boolean;
-  chapterTopRatio: number; // başlık sayfanın % kaçından başlar (0.10–0.24)
+  // Bölüm başlığının sayfanın % kaçından başladığı. Kullanıcı isteği (5 Eki 2026):
+  // bölüm başlarında üst boşluk YOK → tüm temalarda 0 (başlık en üstten başlar).
+  chapterTopRatio: number;
   chapterOrnament: ChapterOrnament; // başlık altı süs
   showChapterKicker: boolean; // "BÖLÜM N" üst etiketi
 };
@@ -51,7 +53,7 @@ export const LAYOUT_THEMES: LayoutTheme[] = [
     hyphenate: true,
     lineBreak: "balanced",
     dropCap: true,
-    chapterTopRatio: 0.2,
+    chapterTopRatio: 0,
     chapterOrnament: "rule",
     showChapterKicker: true,
   },
@@ -72,7 +74,7 @@ export const LAYOUT_THEMES: LayoutTheme[] = [
     hyphenate: true,
     lineBreak: "balanced",
     dropCap: false,
-    chapterTopRatio: 0.1,
+    chapterTopRatio: 0,
     chapterOrnament: "none",
     showChapterKicker: true,
   },
@@ -93,7 +95,7 @@ export const LAYOUT_THEMES: LayoutTheme[] = [
     hyphenate: true,
     lineBreak: "balanced",
     dropCap: false,
-    chapterTopRatio: 0.14,
+    chapterTopRatio: 0,
     chapterOrnament: "dots",
     showChapterKicker: true,
   },
@@ -114,7 +116,7 @@ export const LAYOUT_THEMES: LayoutTheme[] = [
     hyphenate: false,
     lineBreak: "balanced",
     dropCap: false,
-    chapterTopRatio: 0.22,
+    chapterTopRatio: 0,
     chapterOrnament: "none",
     showChapterKicker: false,
   },
@@ -135,7 +137,7 @@ export const LAYOUT_THEMES: LayoutTheme[] = [
     hyphenate: true,
     lineBreak: "balanced",
     dropCap: true,
-    chapterTopRatio: 0.18,
+    chapterTopRatio: 0,
     chapterOrnament: "rule",
     showChapterKicker: true,
   },
@@ -156,7 +158,7 @@ export const LAYOUT_THEMES: LayoutTheme[] = [
     hyphenate: true,
     lineBreak: "balanced",
     dropCap: false,
-    chapterTopRatio: 0.12,
+    chapterTopRatio: 0,
     chapterOrnament: "none",
     showChapterKicker: false,
   },
