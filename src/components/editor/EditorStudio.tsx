@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
@@ -22,8 +22,10 @@ import {
   dropSession,
   type CheckKind,
   type EditorSession,
+  type FixAction,
+  type TextChange,
 } from "@/lib/editor/session";
-import { TextTIcon, MagicWandIcon, CheckCircleIcon, BookIcon, WarningIcon } from "@/components/PhosphorIcons";
+import { TextTIcon, CheckCircleIcon, BookIcon } from "@/components/PhosphorIcons";
 
 // Aşama 2: yazım ve dilbilgisi kontrolü Claude'a bağlı. Öneriler tek tek
 // Kabul/Yoksay edilir; karar her zaman kullanıcıda.
@@ -424,6 +426,43 @@ function splitDiff(a: string, b: string): { pre: string; aMid: string; bMid: str
     bMid: bt.slice(i, bt.length - j).join(""),
     post: at.slice(at.length - j).join(""),
   };
+}
+
+// ——— Toplu düzeltme + geri alma yardımcıları ———
+
+// Toplu düzeltmeye uygun mu? Yalnız YAZIM hatası ve tek kelimelik değişiklik
+// ("birşey" → "bir şey", "yinede" → "yine de"). Dilbilgisi düzeltmeleri bağlama
+// bağlıdır (aynı kelime başka cümlede doğru olabilir) → toplu sunulmaz.
+function bulkPair(s: Suggestion): { from: string; to: string } | null {
+  if (s.kind !== "fix" || s.category !== "spelling" || !s.suggestion) return null;
+  const d = splitDiff(s.original, s.suggestion);
+  const from = d.aMid.trim();
+  const to = d.bMid.trim();
+  if (from.length < 3 || /\s/.test(from) || !/\p{L}/u.test(from) || !to || from === to) return null;
+  return { from, to };
+}
+
+const escapeRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const isUpperTr = (ch: string) => ch !== ch.toLocaleLowerCase("tr");
+const capTr = (x: string) => x.charAt(0).toLocaleUpperCase("tr") + x.slice(1);
+
+// Kelimenin metindeki tüm geçişleri: kelime sınırlı; ilk harf büyük/küçük
+// fark etmez (cümle başı "Birşey" de yakalanır; Türkçe İ/i doğru eşlenir).
+function wordRegex(word: string): RegExp {
+  const f = word.charAt(0);
+  const first = `[${escapeRe(f.toLocaleLowerCase("tr"))}${escapeRe(f.toLocaleUpperCase("tr"))}]`;
+  return new RegExp(`(?<![\\p{L}\\p{N}])${first}${escapeRe(word.slice(1))}(?![\\p{L}\\p{N}])`, "gu");
+}
+
+// `near` konumuna en yakın `needle` geçişi (araya başka düzeltmeler girip
+// metin kaydıysa da doğru yeri bulmak için).
+function nearestIndexOf(text: string, needle: string, near: number): number {
+  if (text.startsWith(needle, near)) return near;
+  const after = text.indexOf(needle, near);
+  const before = text.lastIndexOf(needle, near);
+  if (after === -1) return before;
+  if (before === -1) return after;
+  return near - before <= after - near ? before : after;
 }
 
 // ——— Yayına hazırlık (Kategori 4): yerel/ücretsiz tipografi ———
@@ -866,6 +905,7 @@ export default function EditorStudio({
     // metin düzeltmeleri (dışa aktarırken orijinalin içine işlenir).
     originalDocx,
     docxEdits,
+    fixActions,
   } = session;
   const checking = running === "check";
   const reviewing = running === "review";
@@ -878,6 +918,8 @@ export default function EditorStudio({
     patchSession(sessionKey, (s) => ({ decisions: typeof v === "function" ? v(s.decisions) : v }));
   const setDocxEdits = (v: SetStateAction<DocxEdit[]>) =>
     patchSession(sessionKey, (s) => ({ docxEdits: typeof v === "function" ? v(s.docxEdits) : v }));
+  const setFixActions = (v: SetStateAction<FixAction[]>) =>
+    patchSession(sessionKey, (s) => ({ fixActions: typeof v === "function" ? v(s.fixActions) : v }));
 
   // Anonim editörden çıkınca iş durur ve oturum unutulur (metin de kaybolduğu
   // için sonuçları saklamanın anlamı yok). Projeli editörde iş SÜRER.
@@ -914,6 +956,7 @@ export default function EditorStudio({
     patch({
       suggestions: null,
       decisions: {},
+      fixActions: [],
       checkError: null,
       checkedText: "",
       stopped: null,
@@ -1268,7 +1311,7 @@ export default function EditorStudio({
 
   // Yerel görünümler (3 ve 4) açılınca önceki AI sonuçları paneli bırakır.
   function clearAiResults() {
-    patch({ suggestions: null, decisions: {}, checkedText: "", checkError: null, stopped: null });
+    patch({ suggestions: null, decisions: {}, fixActions: [], checkedText: "", checkError: null, stopped: null });
   }
 
   // Kitap yapısı (Kategori 3): tamamen yerel, API harcaması yok. Metni
@@ -1362,24 +1405,102 @@ export default function EditorStudio({
   function acceptSuggestion(index: number) {
     const s = suggestions?.[index];
     if (!s) return;
-    setRaw((prev) => {
-      const at = prev.indexOf(s.original);
-      if (at === -1) return prev;
-      return prev.slice(0, at) + s.suggestion + prev.slice(at + s.original.length);
-    });
+    const action: FixAction = { indices: [index], changes: [], docx: [] };
+    const at = raw.indexOf(s.original);
+    if (at !== -1) {
+      setRaw(raw.slice(0, at) + s.suggestion + raw.slice(at + s.original.length));
+      action.changes.push({ at, from: s.original, to: s.suggestion });
+    }
     setDecisions((prev) => ({ ...prev, [index]: "accepted" }));
     // Yüklenen docx'e de işlenebilmesi için kabul edilen metin düzeltmesini sakla.
     if (s.kind === "fix" && s.suggestion && originalDocx) {
-      setDocxEdits((prev) => [
-        ...prev,
-        { original: s.original, suggestion: s.suggestion },
-      ]);
+      const edit = { original: s.original, suggestion: s.suggestion };
+      action.docx.push(edit);
+      setDocxEdits((prev) => [...prev, edit]);
     }
+    setFixActions((prev) => [...prev, action]);
+  }
+
+  // Aynı yazım hatasını metnin TAMAMINDA düzeltir ("birşey" 25 yerde → hepsi).
+  // Aynı değişikliği öneren diğer bekleyen kartlar da "Düzeltildi" olur.
+  function bulkFix(index: number) {
+    const pair = suggestions?.[index] ? bulkPair(suggestions[index]) : null;
+    if (!suggestions || !pair) return;
+    const changes: TextChange[] = [];
+    const docx: DocxEdit[] = [];
+    let out = "";
+    let last = 0;
+    let shift = 0;
+    for (const m of raw.matchAll(wordRegex(pair.from))) {
+      const from = m[0];
+      const to = isUpperTr(from.charAt(0)) ? capTr(pair.to) : pair.to;
+      out += raw.slice(last, m.index) + to;
+      changes.push({ at: m.index + shift, from, to });
+      shift += to.length - from.length;
+      last = m.index + from.length;
+      if (originalDocx) docx.push({ original: from, suggestion: to });
+    }
+    if (changes.length === 0) return;
+    setRaw(out + raw.slice(last));
+    const key = pair.from.toLocaleLowerCase("tr");
+    const indices = suggestions.flatMap((x, j) => {
+      if (decisions[j] && j !== index) return [];
+      const q = bulkPair(x);
+      return q && q.from.toLocaleLowerCase("tr") === key && q.to.toLocaleLowerCase("tr") === pair.to.toLocaleLowerCase("tr")
+        ? [j]
+        : [];
+    });
+    setDecisions((prev) => {
+      const next = { ...prev };
+      for (const j of indices) next[j] = "accepted";
+      return next;
+    });
+    if (docx.length) setDocxEdits((prev) => [...prev, ...docx]);
+    setFixActions((prev) => [...prev, { indices, changes, docx }]);
   }
 
   function rejectSuggestion(index: number) {
     setDecisions((prev) => ({ ...prev, [index]: "rejected" }));
   }
+
+  // Kararı geri al: düzeltme uygulandıysa metin eski hâline döner (toplu
+  // düzeltmede tüm yerler), Word dışa aktarımından da çıkarılır; kart yeniden
+  // "bekliyor" olur. Yoksayılan kart için yalnız karar silinir.
+  function undoDecision(index: number) {
+    const action = fixActions.find((a) => a.indices.includes(index));
+    const indices = action ? action.indices : [index];
+    if (action) {
+      let text = raw;
+      // Sondan başa: öndeki değişikliklerin konumu kaymasın.
+      for (const c of [...action.changes].sort((a, b) => b.at - a.at)) {
+        const at = nearestIndexOf(text, c.to, c.at);
+        if (at === -1) continue;
+        text = text.slice(0, at) + c.from + text.slice(at + c.to.length);
+      }
+      if (text !== raw) setRaw(text);
+      if (action.docx.length) setDocxEdits((prev) => prev.filter((e) => !action.docx.includes(e)));
+      setFixActions((prev) => prev.filter((a) => a !== action));
+    }
+    setDecisions((prev) => {
+      const next = { ...prev };
+      for (const j of indices) delete next[j];
+      return next;
+    });
+  }
+
+  // Toplu düzeltme önerisi için: her yazım hatasının metinde kaç kez geçtiği.
+  // Yazarken her tuşta yeniden saymasın diye ertelenmiş metinle hesaplanır.
+  const deferredRaw = useDeferredValue(raw);
+  const bulkCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    suggestions?.forEach((s, i) => {
+      if (decisions[i]) return;
+      const pair = bulkPair(s);
+      if (!pair || counts.has(pair.from)) return;
+      counts.set(pair.from, deferredRaw.match(wordRegex(pair.from))?.length ?? 0);
+    });
+    return counts;
+  }, [suggestions, decisions, deferredRaw]);
 
   const pendingCount = suggestions
     ? suggestions.filter((_, i) => !decisions[i]).length
@@ -1791,6 +1912,24 @@ export default function EditorStudio({
                       {t.revealCta}
                     </button>
 
+                    {!decision && s.kind === "fix" && (() => {
+                      const pair = bulkPair(s);
+                      const n = pair ? (bulkCounts.get(pair.from) ?? 0) : 0;
+                      if (!pair || n < 2) return null;
+                      return (
+                        <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                          {t.bulkInfo.replace("{word}", pair.from).replace("{count}", String(n))}
+                          <button
+                            onClick={() => bulkFix(i)}
+                            className="mt-2 flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+                          >
+                            <CheckCircleIcon className="h-3.5 w-3.5" />
+                            {t.bulkCta.replace("{count}", String(n))}
+                          </button>
+                        </div>
+                      );
+                    })()}
+
                     {!decision && s.kind === "fix" && (
                       <div className="mt-3 flex gap-2">
                         <button
@@ -1820,22 +1959,42 @@ export default function EditorStudio({
                       </div>
                     )}
 
-                    {decision === "accepted" && (
-                      <div className="mt-3 flex items-start gap-2 rounded-md border border-accent/30 bg-accent-soft px-3 py-2">
-                        <CheckCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-                        <div className="text-xs">
-                          <div className="font-semibold text-accent">{t.accepted}</div>
-                          <div className="mt-0.5 text-foreground">
-                            «{s.original}» → «<span className="font-medium">{s.suggestion}</span>»
+                    {decision === "accepted" && (() => {
+                      const action = fixActions.find((a) => a.indices.includes(i));
+                      const many = action && action.changes.length > 1 ? action.changes.length : 0;
+                      const pair = many ? bulkPair(s) : null;
+                      return (
+                        <div className="mt-3 flex items-start gap-2 rounded-md border border-accent/30 bg-accent-soft px-3 py-2">
+                          <CheckCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                          <div className="min-w-0 flex-1 text-xs">
+                            <div className="font-semibold text-accent">{t.accepted}</div>
+                            <div className="mt-0.5 text-foreground">
+                              «{pair ? pair.from : s.original}» → «
+                              <span className="font-medium">{pair ? pair.to : s.suggestion}</span>»
+                            </div>
+                            <div className="mt-0.5 text-muted">
+                              {many ? t.bulkDone.replace("{count}", String(many)) : t.appliedNote}
+                            </div>
                           </div>
-                          <div className="mt-0.5 text-muted">{t.appliedNote}</div>
+                          <button
+                            onClick={() => undoDecision(i)}
+                            className="shrink-0 rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-muted transition hover:text-foreground"
+                          >
+                            {t.undoCta}
+                          </button>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {decision === "rejected" && (
-                      <div className="mt-3 text-xs text-muted">
-                        {s.kind === "notice" ? t.dismissed : t.rejected}
+                      <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted">
+                        <span>{s.kind === "notice" ? t.dismissed : t.rejected}</span>
+                        <button
+                          onClick={() => undoDecision(i)}
+                          className="rounded-md border border-border px-2.5 py-1 font-medium transition hover:text-foreground"
+                        >
+                          {t.undoCta}
+                        </button>
                       </div>
                     )}
                   </li>

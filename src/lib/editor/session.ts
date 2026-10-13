@@ -20,6 +20,18 @@ export type CheckKind = "check" | "review" | "risk" | "genre";
 
 export type Progress = { done: number; total: number };
 
+/** Kabul edilen düzeltmenin metne yaptığı tek değişiklik (konum = değişiklik
+ *  SONRASI metinde). "Geri al" bunu tersine çevirir. */
+export type TextChange = { at: number; from: string; to: string };
+
+/** Bir "Kabul et" ya da "Hepsini düzelt" işlemi: hangi kartları kapattı, metinde
+ *  neyi değiştirdi, Word dışa aktarımına neyi ekledi. Geri alınca hepsi döner. */
+export type FixAction = {
+  indices: number[];
+  changes: TextChange[];
+  docx: DocxEdit[];
+};
+
 export type EditorSession = {
   /** Şu an çalışan AI kontrolü (yoksa null). */
   running: CheckKind | null;
@@ -27,6 +39,8 @@ export type EditorSession = {
   progress: Progress | null;
   suggestions: Suggestion[] | null;
   decisions: Record<number, Decision>;
+  /** Uygulanan düzeltmeler (geri alınabilsin diye). */
+  fixActions: FixAction[];
   checkError: string | null;
   /** Kontrol anındaki metnin sabit kopyası (öneri bağlamı bundan hesaplanır). */
   checkedText: string;
@@ -42,6 +56,7 @@ const EMPTY: EditorSession = {
   progress: null,
   suggestions: null,
   decisions: {},
+  fixActions: [],
   checkError: null,
   checkedText: "",
   stopped: null,
@@ -102,6 +117,7 @@ export function beginJob(key: string, kind: CheckKind): AbortSignal {
     checkError: null,
     suggestions: null,
     decisions: {},
+    fixActions: [],
     checkedText: "",
   });
   return c.signal;

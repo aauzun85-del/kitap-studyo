@@ -51,7 +51,10 @@ export async function proxy(request: NextRequest) {
   if (PROTECTED.has(seg) && !user && !isAction) {
     const url = request.nextUrl.clone();
     url.pathname = `/${lang}/giris`;
-    url.searchParams.set("next", pathname);
+    // Sorgu da korunur (?project=…&export=1): oturum düşmüşse girişten sonra
+    // aynı kitaba ve aynı işe (ör. PDF indirme) geri dönülür.
+    url.search = "";
+    url.searchParams.set("next", pathname + request.nextUrl.search);
     const redirectRes = NextResponse.redirect(url);
     // Tazelenmiş çerezleri yönlendirme yanıtına da taşı (kaybolmasın).
     response.cookies.getAll().forEach((c) => redirectRes.cookies.set(c));

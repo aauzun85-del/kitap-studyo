@@ -688,6 +688,10 @@ type EditorStudioCopy = {
   dismissCta: string;
   accepted: string;
   appliedNote: string;
+  undoCta: string;
+  bulkInfo: string;
+  bulkCta: string;
+  bulkDone: string;
   rejected: string;
   dismissed: string;
   // Kitap yapısı (yerel, ücretsiz).
@@ -1855,6 +1859,10 @@ const tr: Dictionary = {
     dismissCta: "Tamam, anladım",
     accepted: "Düzeltildi",
     appliedNote: "Bu düzeltme metne uygulandı.",
+    undoCta: "Geri al",
+    bulkInfo: "«{word}» metinde {count} yerde aynı şekilde yazılmış.",
+    bulkCta: "Hepsini düzelt ({count} yer)",
+    bulkDone: "Metnin tamamında {count} yerde düzeltildi.",
     rejected: "Yok sayıldı",
     dismissed: "Görüldü",
     structureCta: "Kitap yapısı",
@@ -3021,6 +3029,10 @@ const en: Dictionary = {
     dismissCta: "OK, got it",
     accepted: "Fixed",
     appliedNote: "This fix was applied to your text.",
+    undoCta: "Undo",
+    bulkInfo: "“{word}” is written the same way in {count} places.",
+    bulkCta: "Fix all ({count} places)",
+    bulkDone: "Fixed in {count} places across the text.",
     rejected: "Ignored",
     dismissed: "Seen",
     structureCta: "Book structure",
