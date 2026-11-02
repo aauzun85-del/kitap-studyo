@@ -59,11 +59,18 @@ export function textToDocx(text: string): Promise<Blob> {
 }
 
 // Dosya adı için metinden güvenli bir taban üretir (ilk birkaç kelime).
-export function suggestDocxName(text: string, fallback: string): string {
+// `stamp` verilirse sonuna GünAyYıl_SaatDakika eklenir → "Kriptid_19102026_2300.docx":
+// aynı kitabın sürümleri masaüstünde karışmaz, hangisinin yeni olduğu belli olur.
+export function suggestDocxName(text: string, fallback: string, stamp?: Date): string {
   const firstLine = text.trim().split("\n")[0] ?? "";
   const base = firstLine
     .replace(/[\\/:*?"<>|]/g, "")
     .trim()
     .slice(0, 40);
-  return (base || fallback) + ".docx";
+  const name = base || fallback;
+  if (!stamp) return name + ".docx";
+  const p = (n: number) => String(n).padStart(2, "0");
+  const d = `${p(stamp.getDate())}${p(stamp.getMonth() + 1)}${stamp.getFullYear()}`;
+  const t = `${p(stamp.getHours())}${p(stamp.getMinutes())}`;
+  return `${name}_${d}_${t}.docx`;
 }

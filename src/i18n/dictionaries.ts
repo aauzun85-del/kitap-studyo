@@ -634,6 +634,8 @@ type EditorStudioCopy = {
   exportDocxDoneKept: string;
   exportDocxDonePlain: string;
   exportDocxFilename: string;
+  saveCta: string;
+  saveHint: string;
   // Kontrol düğmesi ve durumlar.
   checkCta: string;
   checkHint: string;
@@ -1810,6 +1812,8 @@ const tr: Dictionary = {
       "İndirildi. Orijinal biçim korundu, {count} düzeltme dosyaya işlendi.",
     exportDocxDonePlain: "İndirildi (düz metin .docx).",
     exportDocxFilename: "duzenlenmis-metin",
+    saveCta: "Kaydet",
+    saveHint: "Yazdıkça otomatik kaydedilir; emin olmak için Kaydet'e bas (⌘S / Ctrl+S).",
     checkCta: "Genel Kontrol",
     checkHint: "Dilbilgisi, yazım yanlışı ve noktalama hatalarını bulur; her düzeltmeyi tek tek onaylarsınız.",
     checking: "Kontrol ediliyor…",
@@ -2980,6 +2984,8 @@ const en: Dictionary = {
       "Downloaded. Original formatting kept, {count} corrections written into the file.",
     exportDocxDonePlain: "Downloaded (plain-text .docx).",
     exportDocxFilename: "edited-text",
+    saveCta: "Save",
+    saveHint: "Saved automatically as you type; press Save (⌘S / Ctrl+S) to be sure.",
     checkCta: "General Check",
     checkHint: "Finds grammar, spelling and punctuation mistakes; you approve each fix one by one.",
     checking: "Checking…",

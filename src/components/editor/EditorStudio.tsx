@@ -6,6 +6,7 @@ import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
 import { useManuscriptSync } from "@/lib/projects/useSync";
+import { useSaveStatus, formatSavedTime, SAVE_LABELS } from "@/lib/projects/saveStatus";
 import { genreEditorMode } from "@/lib/projects/genres";
 import { chunkText } from "@/lib/editor/chunk";
 import { docxToText } from "@/lib/editor/docxText";
@@ -875,7 +876,25 @@ export default function EditorStudio({
 
   // Editör yalnız paylaşılan kitap METNİNİ tutar (başlık/yazar yok).
   const [raw, setRaw] = useState(initialProject?.data.manuscript.text ?? "");
-  useManuscriptSync(projectId, raw, "editor");
+  const { saveNow, canSave } = useManuscriptSync(
+    projectId,
+    raw,
+    "editor",
+    initialProject?.data.manuscript.updatedAt ?? null,
+  );
+  const saveStatus = useSaveStatus();
+  // ⌘S / Ctrl+S → tarayıcının "sayfayı kaydet"i yerine kitabı buluta kaydet.
+  useEffect(() => {
+    if (!canSave) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        saveNow();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canSave, saveNow]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1101,7 +1120,7 @@ export default function EditorStudio({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = suggestDocxName(raw, t.exportDocxFilename);
+      a.download = suggestDocxName(raw, t.exportDocxFilename, new Date());
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1621,6 +1640,41 @@ export default function EditorStudio({
           </p>
           {exportInfo && (
             <p className="mt-1 text-xs text-accent">{exportInfo}</p>
+          )}
+
+          {/* KAYDET — otomatik kayıt zaten var; bu düğme GÜVENCE verir
+              ("buraya kadar kaydet"). Altındaki satır gerçek durumu söyler. */}
+          {canSave && (
+            <>
+              <button
+                onClick={saveNow}
+                disabled={saveStatus?.state === "saving"}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <CheckCircleIcon className="h-4 w-4" />
+                {saveStatus?.state === "saving" ? SAVE_LABELS[lang].saving : t.saveCta}
+              </button>
+              <p
+                className={`mt-1.5 text-xs ${
+                  saveStatus?.state === "error"
+                    ? "text-red-500"
+                    : saveStatus?.state === "dirty"
+                      ? "text-amber-600"
+                      : "text-muted"
+                }`}
+              >
+                {saveStatus
+                  ? `${SAVE_LABELS[lang][saveStatus.state]}${
+                      saveStatus.state === "saved" && saveStatus.savedAt
+                        ? ` · ${formatSavedTime(saveStatus.savedAt, lang)}`
+                        : ""
+                    }`
+                  : t.saveHint}
+              </p>
+              {saveStatus?.state === "saved" && (
+                <p className="mt-0.5 text-[11px] text-muted">{t.saveHint}</p>
+              )}
+            </>
           )}
 
           {/* KONTROLLER — numaralı adımlar (1-6). Derin kontrol artık standart;

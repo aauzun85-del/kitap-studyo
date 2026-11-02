@@ -4,6 +4,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { Locale } from "@/i18n/config";
+import { useSaveStatus, formatSavedTime, SAVE_LABELS } from "@/lib/projects/saveStatus";
 
 /**
  * Laycoty uygulama kabuğu — giriş yapmış kullanıcının gördüğü çatı.
@@ -211,6 +212,54 @@ export type AppShellContext = {
 };
 
 const AVATAR_GRADIENT = "linear-gradient(135deg,#f0a,#a0f)";
+
+// Üst çubuktaki kayıt göstergesi: modül canlı durum yayınlıyorsa onu
+// ("Kaydediliyor… / Kaydedildi · 21:14 / Kaydedilmemiş değişiklik / Kayıt
+// başarısız"), yayınlamıyorsa sunucudan gelen sabit etiketi gösterir.
+function SaveStatusPill({ lang, fallback }: { lang: Locale; fallback: string }) {
+  const live = useSaveStatus();
+  const base: CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    fontSize: 13,
+    fontWeight: 600,
+    flex: "none",
+    whiteSpace: "nowrap",
+  };
+  if (!live) {
+    return (
+      <span style={{ ...base, color: "#16a34a" }}>
+        <Icon name="check" size={16} sw={2.4} style={{ color: "#16a34a" }} />
+        {fallback}
+      </span>
+    );
+  }
+  const color =
+    live.state === "saved" ? "#16a34a" : live.state === "error" ? "#dc2626" : live.state === "dirty" ? "#b45309" : "#6b7280";
+  const time = formatSavedTime(live.savedAt, lang);
+  const label = SAVE_LABELS[lang][live.state];
+  return (
+    <span style={{ ...base, color }} title={time ? `${SAVE_LABELS[lang].saved} · ${time}` : undefined}>
+      {live.state === "saved" ? (
+        <Icon name="check" size={16} sw={2.4} style={{ color }} />
+      ) : (
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 99,
+            background: color,
+            display: "inline-block",
+            opacity: live.state === "saving" ? 0.6 : 1,
+          }}
+        />
+      )}
+      {label}
+      {live.state === "saved" && time ? ` · ${time}` : ""}
+    </span>
+  );
+}
 
 export default function AppShell({
   lang,
@@ -801,10 +850,7 @@ export default function AppShell({
             </span>
             <div style={{ flex: 1 }} />
             {context.savedLabel && (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#16a34a", fontWeight: 600, flex: "none" }}>
-                <Icon name="check" size={16} sw={2.4} style={{ color: "#16a34a" }} />
-                {context.savedLabel}
-              </span>
+              <SaveStatusPill lang={lang} fallback={context.savedLabel} />
             )}
           </div>
         )}
