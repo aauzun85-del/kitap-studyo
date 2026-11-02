@@ -862,6 +862,25 @@ function fuzzyFind(
   return null;
 }
 
+type SuggestionContext = { before: string; match: string; after: string };
+
+// Önerinin kontrol metnindeki yerini, çevresindeki birkaç kelimeyle bulur
+// (hatalı kısım ayrı döner ki vurgulanabilsin). SAF fonksiyon: bileşen dışında,
+// böylece sonuçları kontrol metni değişince BİR kez hesaplayıp saklayabiliriz.
+function contextIn(src: string, original: string): SuggestionContext | null {
+  if (!src) return null;
+  const hit = fuzzyFind(src, original);
+  if (!hit) return null;
+  const { at, len } = hit;
+  const PAD = 45;
+  const start = Math.max(0, at - PAD);
+  const end = Math.min(src.length, at + len + PAD);
+  const before = (start > 0 ? "…" : "") + src.slice(start, at).replace(/\s+/g, " ");
+  const match = src.slice(at, at + len).replace(/\s+/g, " ");
+  const after = src.slice(at + len, end).replace(/\s+/g, " ") + (end < src.length ? "…" : "");
+  return { before, match, after };
+}
+
 export default function EditorStudio({
   lang,
   dict,
@@ -876,6 +895,9 @@ export default function EditorStudio({
 
   // Editör yalnız paylaşılan kitap METNİNİ tutar (başlık/yazar yok).
   const [raw, setRaw] = useState(initialProject?.data.manuscript.text ?? "");
+  // Ertelenmiş metin: ağır sayımlar (kelime, boşluk, tipografi fişleri, toplu
+  // düzeltme adetleri) tuş vuruşunu bloklamasın; yazma durunca güncellenir.
+  const deferredRaw = useDeferredValue(raw);
   const { saveNow, canSave } = useManuscriptSync(
     projectId,
     raw,
@@ -955,16 +977,18 @@ export default function EditorStudio({
   const [structure, setStructure] = useState<StructureReport | null>(null);
   const [prep, setPrep] = useState(false);
 
+  // Bu üç sayım tüm metin üzerinde ~11 geçiş yapar; her tuşta değil, yazma
+  // durunca (ertelenmiş metinle) hesaplanır → tuş vuruşu takılmaz.
   const stats = useMemo(
-    () => ({ words: countWords(raw), chars: raw.length }),
-    [raw],
+    () => ({ words: countWords(deferredRaw), chars: deferredRaw.length }),
+    [deferredRaw],
   );
 
-  const wsIssues = useMemo(() => countWhitespace(raw), [raw]);
+  const wsIssues = useMemo(() => countWhitespace(deferredRaw), [deferredRaw]);
 
-  // Yayına hazırlık fişleri canlı: bir düzeltme uygulayınca `raw` değişir,
-  // sayımlar kendiliğinden güncellenir.
-  const prepFixes = useMemo(() => scanPrep(raw), [raw]);
+  // Yayına hazırlık fişleri canlı: bir düzeltme uygulayınca metin değişir,
+  // sayımlar (kısa bir gecikmeyle) kendiliğinden güncellenir.
+  const prepFixes = useMemo(() => scanPrep(deferredRaw), [deferredRaw]);
 
   const hasText = raw.trim().length > 0;
 
@@ -988,22 +1012,21 @@ export default function EditorStudio({
     setExportInfo(null);
   }
 
-  // Önerinin metindeki yerini, çevresindeki birkaç kelimeyle birlikte bulur.
-  // Hatalı kısım ayrı döner ki arayüzde vurgulanabilsin.
-  function contextFor(original: string): { before: string; match: string; after: string } | null {
-    const src = checkedText;
-    if (!src) return null;
-    const hit = fuzzyFind(src, original);
-    if (!hit) return null;
-    const { at, len } = hit;
-    const PAD = 45;
-    const start = Math.max(0, at - PAD);
-    const end = Math.min(src.length, at + len + PAD);
-    const before = (start > 0 ? "…" : "") + src.slice(start, at).replace(/\s+/g, " ");
-    const match = src.slice(at, at + len).replace(/\s+/g, " ");
-    const after = src.slice(at + len, end).replace(/\s+/g, " ") + (end < src.length ? "…" : "");
-    return { before, match, after };
-  }
+  // PERFORMANS (29 bin kelimelik kitapta donma): eskiden her kart her render'da
+  // kontrol metnini (200 bin karakter) baştan tarıyordu → her tuşta N kart × tam
+  // tarama. Kontrol metni yazarken DEĞİŞMEZ; bağlamlar ve farklar yalnız
+  // öneriler / kontrol metni değişince BİR kez hesaplanıp saklanır.
+  const contexts = useMemo<(SuggestionContext | null)[]>(
+    () => (suggestions ?? []).map((s) => contextIn(checkedText, s.original)),
+    [suggestions, checkedText],
+  );
+  const diffs = useMemo(
+    () =>
+      (suggestions ?? []).map((s) =>
+        s.kind === "fix" ? splitDiff(s.original, s.suggestion) : null,
+      ),
+    [suggestions],
+  );
 
   // Bir pasajı `raw` içinde bulur. Karakter (tırnak/tire/üç nokta) + boşluk
   // farklarına toleranslı. Tam pasaj bulunamazsa, en azından yakınına götürmek
@@ -1509,7 +1532,6 @@ export default function EditorStudio({
 
   // Toplu düzeltme önerisi için: her yazım hatasının metinde kaç kez geçtiği.
   // Yazarken her tuşta yeniden saymasın diye ertelenmiş metinle hesaplanır.
-  const deferredRaw = useDeferredValue(raw);
   const bulkCounts = useMemo(() => {
     const counts = new Map<string, number>();
     suggestions?.forEach((s, i) => {
@@ -1889,7 +1911,7 @@ export default function EditorStudio({
                     {s.kind === "fix" &&
                       (() => {
                         // Yalnız değişen kısım renkli: fark tek bakışta görünsün.
-                        const d = splitDiff(s.original, s.suggestion);
+                        const d = diffs[i] ?? splitDiff(s.original, s.suggestion);
                         return (
                           <div className="mt-2 space-y-1 text-sm">
                             <div className="flex gap-2">
@@ -1940,7 +1962,7 @@ export default function EditorStudio({
                     )}
 
                     {(() => {
-                      const ctx = contextFor(s.original);
+                      const ctx = contexts[i] ?? null;
                       if (!ctx) return null;
                       return (
                         <div className="mt-2">
