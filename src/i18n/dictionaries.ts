@@ -112,6 +112,12 @@ type CoverStudioCopy = {
   aiBusy: string;
   aiErrorToken: string;
   aiErrorGeneric: string;
+  aiErrorTimeout: string;
+  aiRetry: string;
+  aiCancel: string;
+  aiDismiss: string;
+  aiSlowHint: string;
+  aiNoTitle: string;
   aiTip: string;
   elemHeading: string;
   elemHint: string;
@@ -1233,6 +1239,15 @@ const tr: Dictionary = {
       "Henüz API anahtarı eklenmemiş. .env.local dosyasına Replicate token’ını yapıştırıp sunucuyu yeniden başlat.",
     aiErrorGeneric:
       "Görsel üretilemedi. Birkaç saniye sonra tekrar dene; sorun sürerse anahtarı ve bakiyeni kontrol et.",
+    aiErrorTimeout:
+      "Üretim çok uzun sürdü ve durduruldu — sağlayıcıda yoğunluk olabilir. Birkaç saniye sonra tekrar dene.",
+    aiRetry: "Tekrar dene",
+    aiCancel: "Vazgeç",
+    aiDismiss: "Kapat",
+    aiSlowHint:
+      "Sağlayıcıda yoğunluk var, biraz daha sürebilir. Beklemek istemezsen Vazgeç'e bas.",
+    aiNoTitle:
+      "Kitap adı boş olduğu için otomatik kapak üretilmedi. Adı yazdığında üretim kendiliğinden başlar.",
     aiTip:
       "Üretilen görsel ‘kapak görseli’ olarak yerleşir. Beğenmezsen tekrar üret ya da Görsel panelinden karartmayı ayarla.",
     elemHeading: "AI ile tasarım öğesi",
@@ -2405,6 +2420,15 @@ const en: Dictionary = {
       "No API key yet. Paste your Replicate token into .env.local and restart the server.",
     aiErrorGeneric:
       "Couldn't generate the image. Try again in a few seconds; if it persists, check your key and balance.",
+    aiErrorTimeout:
+      "Generation took too long and was stopped — the provider may be busy. Try again in a few seconds.",
+    aiRetry: "Try again",
+    aiCancel: "Cancel",
+    aiDismiss: "Dismiss",
+    aiSlowHint:
+      "The provider is busy; this may take a little longer. Press Cancel if you'd rather not wait.",
+    aiNoTitle:
+      "No cover was generated because the book title is empty. Generation starts on its own once you enter a title.",
     aiTip:
       "The generated image is placed as the ‘cover image’. Regenerate if you don't like it, or adjust darkening in the Image panel.",
     elemHeading: "AI design element",

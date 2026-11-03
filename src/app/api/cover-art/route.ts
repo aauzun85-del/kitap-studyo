@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import { runReplicate, fetchImageAsDataUrl } from "@/lib/server/replicate";
 
 // FLUX 1.1 Pro (yüksek kalite / sanatsal). Sağlayıcıyı veya modeli değiştirmek
 // istersek yalnız bu dosya değişir. Hızlı/ucuz alternatif: "flux-schnell".
 const MODEL = "black-forest-labs/flux-1.1-pro";
-// Prefer: wait ile senkron bekleme uzun sürebilir → fonksiyon süresini uzat.
-export const maxDuration = 60;
+// Üretim bütçesi + görsel indirme, fonksiyon süresinin (maxDuration) İÇİNDE
+// biter → Vercel isteği ortadan kesmez; zaman aşımı temiz bir hata olarak döner.
+export const maxDuration = 120;
+const RUN_BUDGET_MS = 90_000;
 
 type Body = {
   prompt?: string;
@@ -49,45 +52,25 @@ export async function POST(request: Request) {
   }
 
   try {
-    const res = await fetch(
-      `https://api.replicate.com/v1/models/${MODEL}/predictions`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          Prefer: "wait", // sonucu doğrudan bu istekte bekle
-        },
-        body: JSON.stringify({ input }),
-      },
-    );
-
-    if (!res.ok) {
-      const detail = (await res.text()).slice(0, 300);
+    const run = await runReplicate({
+      token,
+      model: MODEL,
+      input,
+      budgetMs: RUN_BUDGET_MS,
+      signal: request.signal, // kullanıcı Vazgeç dedi → sağlayıcıda da durdur
+    });
+    if (!run.ok) {
+      // 504 → ön yüz "zaman aşımı" der; diğerleri genel sağlayıcı hatası.
       return NextResponse.json(
-        { error: "provider", status: res.status, detail },
-        { status: 502 },
+        { error: run.error, status: run.status, detail: run.detail },
+        { status: run.error === "timeout" || run.error === "canceled" ? 504 : 502 },
       );
     }
-
-    const data = (await res.json()) as { status?: string; output?: unknown };
-    const out = Array.isArray(data.output) ? data.output[0] : data.output;
-    if (!out || typeof out !== "string") {
-      return NextResponse.json(
-        { error: "no-output", status: data.status ?? "unknown" },
-        { status: 502 },
-      );
-    }
-
-    // Görseli sunucuda indirip data URL'e çevir: link süresi dolmaz, tuval
-    // çapraz-köken (CORS) yüzünden kirlenmez → PDF dışa aktarımı sorunsuz çalışır.
-    const imgRes = await fetch(out);
-    if (!imgRes.ok) {
+    const img = await fetchImageAsDataUrl(run.output);
+    if (!img.ok) {
       return NextResponse.json({ error: "fetch-image" }, { status: 502 });
     }
-    const buf = Buffer.from(await imgRes.arrayBuffer());
-    const dataUrl = `data:image/png;base64,${buf.toString("base64")}`;
-    return NextResponse.json({ image: dataUrl });
+    return NextResponse.json({ image: img.dataUrl });
   } catch (e) {
     return NextResponse.json(
       { error: "exception", detail: String(e).slice(0, 300) },

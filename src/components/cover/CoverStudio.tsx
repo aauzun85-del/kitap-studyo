@@ -124,6 +124,19 @@ type PanelId =
   | "layers"
   | "library";
 
+// AI üretim seçenekleri (panel düğmesi ve sihirbaz aynı yolu kullanır).
+type AiGenOpts = {
+  styleId?: string;
+  desc?: string;
+  model?: "flux" | "nano" | "ideogram";
+  scope?: "front" | "wrap";
+  embedText?: boolean;
+};
+// Tarayıcı tarafı SON ÇARE zaman aşımları. Sunucu 120 sn içinde kendi temiz
+// hatasını döndürür; bunlar ancak bağlantı tamamen koparsa devreye girer.
+const CLIENT_AI_TIMEOUT_MS = 135_000;
+const WIZARD_PROMPT_TIMEOUT_MS = 45_000;
+
 export default function CoverStudio({
   lang,
   dict,
@@ -195,7 +208,17 @@ export default function CoverStudio({
   const [aiBusy, setAiBusy] = useState(false);
   // Sihirbaz otomatik üretiminde tuval üstünde gösterilecek yükleme mesajı.
   const [coverGenMsg, setCoverGenMsg] = useState<string | null>(null);
-  const [aiError, setAiError] = useState<"none" | "token" | "generic">("none");
+  // Bekleme ekranı sayacı (sn) — kullanıcı "takıldı mı" diye kuşkulanmasın.
+  const [aiElapsed, setAiElapsed] = useState(0);
+  // Süren AI isteğini iptal etmek için (Vazgeç düğmesi + zaman aşımı).
+  const aiAbortRef = useRef<AbortController | null>(null);
+  // Üretim sürerken ikinci tetiklemeyi engeller (state asenkron; ref anında).
+  const aiBusyRef = useRef(false);
+  // "Tekrar dene" için son üretim seçenekleri.
+  const lastAiOptsRef = useRef<AiGenOpts | null>(null);
+  const [aiError, setAiError] = useState<
+    "none" | "token" | "generic" | "timeout"
+  >("none");
   // Üretim sonrası bilgilendirme (ör. başlık görsele gömülünce yazı katmanları gizlendi).
   const [aiNotice, setAiNotice] = useState<"none" | "embed">("none");
   // AI ile TASARIM ÖĞESİ üretimi (mühür/rozet/amblem… → saydam PNG nesnesi).
@@ -1432,14 +1455,17 @@ export default function CoverStudio({
   };
 
   // AI kapak görseli üret → mevcut "kapak görseli" boru hattına aktar.
-  const generateAiCover = async (opts?: {
-    styleId?: string;
-    desc?: string;
-    model?: "flux" | "nano" | "ideogram";
-    scope?: "front" | "wrap";
-    embedText?: boolean;
-  }) => {
+  // Başarıyla görsel yerleştiyse true döner (sihirbaz arka kapak yazısını
+  // yalnız o zaman ekler).
+  const generateAiCover = async (opts?: AiGenOpts): Promise<boolean> => {
+    if (aiBusyRef.current) return false; // zaten üretiliyor → çift istek yok
+    aiBusyRef.current = true;
+    lastAiOptsRef.current = opts ?? {};
+    const ctrl = new AbortController();
+    aiAbortRef.current = ctrl;
+    const timer = setTimeout(() => ctrl.abort("timeout"), CLIENT_AI_TIMEOUT_MS);
     setAiBusy(true);
+    setAiElapsed(0);
     setAiError("none");
     setAiNotice("none");
     try {
@@ -1501,19 +1527,24 @@ export default function CoverStudio({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: ctrl.signal,
       });
+      if (res.status === 504) {
+        setAiError("timeout"); // sunucu bütçesi doldu, üretim iptal edildi
+        return false;
+      }
       if (res.status === 503) {
         setAiError("token");
-        return;
+        return false;
       }
       if (!res.ok) {
         setAiError("generic");
-        return;
+        return false;
       }
       const data = (await res.json()) as { image?: string };
       if (!data.image) {
         setAiError("generic");
-        return;
+        return false;
       }
       setCoverImage(data.image);
       setCoverScope(wrap ? "wrap" : "front");
@@ -1533,12 +1564,38 @@ export default function CoverStudio({
         }));
         setAiNotice("embed");
       }
+      return true;
     } catch {
-      setAiError("generic");
+      // Vazgeç: sessiz. Zaman aşımı: özel mesaj. Diğer: genel hata.
+      const reason = ctrl.signal.aborted ? ctrl.signal.reason : null;
+      if (reason === "user") setAiError("none");
+      else setAiError(reason === "timeout" ? "timeout" : "generic");
+      return false;
     } finally {
+      clearTimeout(timer);
+      if (aiAbortRef.current === ctrl) aiAbortRef.current = null;
+      aiBusyRef.current = false;
       setAiBusy(false);
     }
   };
+  // Süren AI üretimini kullanıcı isteğiyle durdur (bekleme ekranı → Vazgeç).
+  const cancelAiGeneration = () => {
+    aiAbortRef.current?.abort("user");
+  };
+  // Tuval üstündeki hata şeridinin metni.
+  const aiErrorText =
+    aiError === "token"
+      ? t.aiErrorToken
+      : aiError === "timeout"
+        ? t.aiErrorTimeout
+        : t.aiErrorGeneric;
+  // Sihirbaz kapak adımı, kitap adı boşken SESSİZCE atlıyordu → açıkla.
+  // (title state'i yüklemeden önce boş olabilir; meta'daki ad da boşsa gerçekten boştur.)
+  const wizardMissingTitle =
+    !!wizardAuto &&
+    !autoExport &&
+    !title.trim() &&
+    !(initialProject?.data.meta.title ?? "").trim();
 
   // ── SİHİRBAZ: kapak adımına girince kitap bilgisinden OTOMATİK kapak üret ──
   // Kitap asistanı (tür+bilgi → art-direction promtu) → Flux arka plan → başlık/
@@ -1554,12 +1611,18 @@ export default function CoverStudio({
       let desc = "";
       let styleId = aiStyle;
       let blurb = "";
+      // 1. aşama (kitap asistanı): iptal edilebilir + zaman aşımlı.
+      const ctrl = new AbortController();
+      aiAbortRef.current = ctrl;
+      const timer = setTimeout(() => ctrl.abort("timeout"), WIZARD_PROMPT_TIMEOUT_MS);
+      setAiElapsed(0);
       setCoverGenMsg(lang === "tr" ? "Kitap asistanı kapak fikrini yazıyor…" : "The book assistant is sketching your cover…");
       try {
         const res = await fetch("/api/cover-prompt", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title, author, genre, summary, lang }),
+          signal: ctrl.signal,
         });
         if (res.ok) {
           const data = (await res.json()) as {
@@ -1572,20 +1635,39 @@ export default function CoverStudio({
           if (data.backCover) blurb = data.backCover;
         }
       } catch {
-        // asistan başarısız olsa da yine de stil presetiyle bir kapak üretelim
+        // asistan başarısız / zaman aşımı olsa da stil presetiyle bir kapak üretelim
+      } finally {
+        clearTimeout(timer);
+        if (aiAbortRef.current === ctrl) aiAbortRef.current = null;
       }
-      setAiStyle(styleId);
-      setAiDesc(desc);
-      setAiModel("flux");
-      setAiScope("wrap");
-      setCoverGenMsg(lang === "tr" ? "Kapak görseli üretiliyor… (~30 sn)" : "Generating cover artwork… (~30s)");
-      await generateAiCover({ styleId, desc, model: "flux", scope: "wrap", embedText: false });
-      // Arka kapak yazısını arka kapağa düzenlenebilir metin olarak ekle.
-      if (blurb) addBackCoverBlurb(blurb);
-      setCoverGenMsg(null);
+      try {
+        if (ctrl.signal.aborted && ctrl.signal.reason === "user") return; // Vazgeç
+        setAiStyle(styleId);
+        setAiDesc(desc);
+        setAiModel("flux");
+        setAiScope("wrap");
+        setCoverGenMsg(lang === "tr" ? "Kapak görseli üretiliyor…" : "Generating cover artwork…");
+        const done = await generateAiCover({ styleId, desc, model: "flux", scope: "wrap", embedText: false });
+        // Arka kapak yazısını arka kapağa düzenlenebilir metin olarak ekle.
+        if (done && blurb) addBackCoverBlurb(blurb);
+      } finally {
+        setCoverGenMsg(null); // ne olursa olsun bekleme ekranı kapanır
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wizardAuto, title, coverImage]);
+
+  // Bekleme ekranı sayacı: üretim (asistan + görsel) sürerken her saniye artar.
+  const aiWaiting = aiBusy || !!coverGenMsg;
+  useEffect(() => {
+    if (!aiWaiting) return;
+    const t0 = Date.now();
+    const id = setInterval(
+      () => setAiElapsed(Math.floor((Date.now() - t0) / 1000)),
+      1000,
+    );
+    return () => clearInterval(id);
+  }, [aiWaiting]);
 
   // ── KDY logosu ──
   // Akademi profilinde Akademi logosu, diğer her durumda KDY marka logosu.
@@ -1987,6 +2069,11 @@ export default function CoverStudio({
             {aiError === "generic" && (
               <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">
                 {t.aiErrorGeneric}
+              </p>
+            )}
+            {aiError === "timeout" && (
+              <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">
+                {t.aiErrorTimeout}
               </p>
             )}
             {aiNotice === "embed" && (
@@ -3066,17 +3153,57 @@ export default function CoverStudio({
 
           {/* Tuval, kalan yüksekliği doldurur; içinde hem ene hem boya sığar. */}
           <div className="relative min-h-0 flex-1">
-            {(coverGenMsg || aiBusy) && (
+            {aiWaiting && (
               <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-lg bg-background/85 backdrop-blur-[2px]">
                 <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-accent/25 border-t-accent" />
                 <div className="text-sm font-semibold text-foreground">
                   {coverGenMsg ?? (lang === "tr" ? "Kapak görseli üretiliyor…" : "Generating cover…")}
                 </div>
-                <div className="max-w-[240px] text-center text-xs text-muted">
-                  {lang === "tr"
-                    ? "Yapay zekâ kapağını çiziyor — bu biraz sürebilir."
-                    : "AI is painting your cover — this can take a moment."}
+                <div className="max-w-[260px] text-center text-xs text-muted">
+                  {aiElapsed >= 45
+                    ? t.aiSlowHint
+                    : lang === "tr"
+                      ? "Yapay zekâ kapağını çiziyor — genelde 20-40 sn sürer."
+                      : "AI is painting your cover — usually 20-40s."}
                 </div>
+                <div className="font-mono text-xs tabular-nums text-muted">
+                  {aiElapsed} {lang === "tr" ? "sn" : "s"}
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelAiGeneration}
+                  className="mt-1 rounded-lg border border-foreground/15 bg-background px-4 py-2 text-xs font-semibold text-foreground transition hover:bg-accent-soft"
+                >
+                  {t.aiCancel}
+                </button>
+              </div>
+            )}
+            {/* Üretim bitti ama hata var → tuvalin üstünde görünür şerit (eskiden
+                yalnız sağ paneldeki küçük yazıydı; kullanıcı fark etmiyordu). */}
+            {!aiWaiting && aiError !== "none" && (
+              <div className="absolute left-1/2 top-3 z-20 flex w-[min(92%,480px)] -translate-x-1/2 items-start gap-2 rounded-lg border border-accent/40 bg-background px-4 py-3 text-xs shadow-lg">
+                <p className="flex-1 text-foreground">{aiErrorText}</p>
+                {aiError !== "token" && (
+                  <button
+                    type="button"
+                    onClick={() => void generateAiCover(lastAiOptsRef.current ?? undefined)}
+                    className="rounded-md bg-accent px-3 py-1.5 font-semibold text-white transition hover:opacity-90"
+                  >
+                    {t.aiRetry}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setAiError("none")}
+                  className="rounded-md border border-foreground/15 px-3 py-1.5 font-semibold text-foreground transition hover:bg-accent-soft"
+                >
+                  {t.aiDismiss}
+                </button>
+              </div>
+            )}
+            {!aiWaiting && aiError === "none" && wizardMissingTitle && (
+              <div className="absolute left-1/2 top-3 z-20 w-[min(92%,480px)] -translate-x-1/2 rounded-lg border border-amber-500/40 bg-amber-50 px-4 py-3 text-xs text-amber-800 shadow-lg">
+                {t.aiNoTitle}
               </div>
             )}
             <CoverCanvas
