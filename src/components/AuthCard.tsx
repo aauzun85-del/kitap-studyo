@@ -172,6 +172,36 @@ export default function AuthCard({
             {pending ? "…" : isSignup ? t.signupCta : t.loginCta}
           </button>
 
+          {isSignup && (
+            <p className="text-center text-xs leading-relaxed text-muted">
+              {lang === "tr" ? (
+                <>
+                  Üye olarak{" "}
+                  <Link href={`/${lang}/yasal/kullanim-kosullari`} className="underline hover:text-foreground">
+                    Kullanım Koşulları
+                  </Link>
+                  &apos;nı kabul etmiş olursun. Kişisel verilerin{" "}
+                  <Link href={`/${lang}/yasal/kvkk-aydinlatma-metni`} className="underline hover:text-foreground">
+                    KVKK Aydınlatma Metni
+                  </Link>{" "}
+                  kapsamında işlenir.
+                </>
+              ) : (
+                <>
+                  By signing up you accept the{" "}
+                  <Link href={`/${lang}/yasal/kullanim-kosullari`} className="underline hover:text-foreground">
+                    Terms of Use
+                  </Link>
+                  . Your data is processed under our{" "}
+                  <Link href={`/${lang}/yasal/kvkk-aydinlatma-metni`} className="underline hover:text-foreground">
+                    Personal Data Notice
+                  </Link>
+                  .
+                </>
+              )}
+            </p>
+          )}
+
           {state.error && (
             <p className="rounded-lg border border-red-300 bg-red-50 p-3 text-center text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
               {state.error}
@@ -235,9 +265,6 @@ export default function AuthCard({
         </p>
       </div>
 
-      {isSignup && (
-        <p className="mt-4 text-center text-xs text-muted/80">{t.terms}</p>
-      )}
     </div>
   );
 }

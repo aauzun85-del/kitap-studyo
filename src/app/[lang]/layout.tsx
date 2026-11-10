@@ -6,6 +6,7 @@ import { isLocale, locales } from "@/i18n/config";
 import { getDictionary } from "@/i18n/dictionaries";
 import SiteHeader from "@/components/SiteHeader";
 import SiteChrome from "@/components/SiteChrome";
+import SiteFooter from "@/components/SiteFooter";
 import ProjectBar from "@/components/ProjectBar";
 
 const manrope = Manrope({
@@ -20,15 +21,20 @@ const plexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
 });
 
-export const metadata: Metadata = {
-  metadataBase: new URL("https://laycoty.com"),
-  title: {
-    default: "Laycoty — Kapak, mizanpaj ve AI editör",
-    template: "%s · Laycoty",
-  },
-  description:
-    "Kapak, mizanpaj ve AI destekli editör — kitabını baştan sona profesyonelce hazırla.",
-};
+export async function generateMetadata({ params }: LayoutProps<"/[lang]">): Promise<Metadata> {
+  const { lang } = await params;
+  const en = lang === "en";
+  return {
+    metadataBase: new URL("https://laycoty.com"),
+    title: {
+      default: en ? "Laycoty — Cover, layout and AI editor" : "Laycoty — Kapak, mizanpaj ve AI editör",
+      template: "%s · Laycoty",
+    },
+    description: en
+      ? "Cover, layout and AI-assisted editor — prepare your book professionally from start to finish."
+      : "Kapak, mizanpaj ve AI destekli editör — kitabını baştan sona profesyonelce hazırla.",
+  };
+}
 
 export function generateStaticParams() {
   return locales.map((lang) => ({ lang }));
@@ -69,90 +75,7 @@ export default async function LangLayout({
         <SiteChrome
           projectBar={<ProjectBar lang={lang} labels={dict.nav} />}
           header={<SiteHeader lang={lang} dict={dict} />}
-          footer={
-            <footer className="border-t border-border bg-surface">
-              <div className="mx-auto max-w-6xl px-4 py-12">
-                <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-                  {/* Brand */}
-                  <div className="lg:col-span-1">
-                    <span className="font-sans text-xl font-extrabold lowercase tracking-tight">
-                      {dict.brand}
-                    </span>
-                    <p className="mt-3 text-xs leading-relaxed text-muted">
-                      {lang === "tr"
-                        ? "Yazarlar için kapak, iç tasarım ve AI editör — hepsi tek yerde."
-                        : "Cover, layout and AI editor for authors — all in one place."}
-                    </p>
-                  </div>
-
-                  {/* Modüller */}
-                  <div>
-                    <div className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted">
-                      {lang === "tr" ? "Modüller" : "Modules"}
-                    </div>
-                    <ul className="space-y-2 text-sm">
-                      {[
-                        { href: `/${lang}/kapak`,       label: dict.nav.cover },
-                        { href: `/${lang}/mizanpaj`,    label: dict.nav.layout },
-                        { href: `/${lang}/editor`,      label: dict.nav.editor },
-                        { href: `/${lang}/ekitap`,      label: dict.nav.publish },
-                        { href: `/${lang}/sesli-kitap`, label: dict.nav.audiobook },
-                        { href: `/${lang}/tanitim`,     label: dict.nav.promo },
-                      ].map((l) => (
-                        <li key={l.href}>
-                          <a href={l.href} className="text-muted transition hover:text-foreground">
-                            {l.label}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Hesap */}
-                  <div>
-                    <div className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted">
-                      {lang === "tr" ? "Hesap" : "Account"}
-                    </div>
-                    <ul className="space-y-2 text-sm">
-                      {[
-                        { href: `/${lang}/giris`,  label: dict.nav.login },
-                        { href: `/${lang}/kayit`,  label: dict.nav.signup },
-                      ].map((l) => (
-                        <li key={l.href}>
-                          <a href={l.href} className="text-muted transition hover:text-foreground">
-                            {l.label}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Destek */}
-                  <div>
-                    <div className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-widest text-muted">
-                      {lang === "tr" ? "Destek" : "Support"}
-                    </div>
-                    <ul className="space-y-2 text-sm text-muted">
-                      <li>KDP &amp; KDY {lang === "tr" ? "uyumlu" : "compatible"}</li>
-                      <li>300 DPI {lang === "tr" ? "baskı çıkışı" : "print output"}</li>
-                      <li>{lang === "tr" ? "ISBN barkod otomatik" : "Auto ISBN barcode"}</li>
-                    </ul>
-                  </div>
-                </div>
-
-                <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-border pt-6 sm:flex-row">
-                  <p className="text-xs text-muted">
-                    © 2025 {dict.brand}. {lang === "tr" ? "Tüm hakları saklıdır." : "All rights reserved."}
-                  </p>
-                  <p className="text-xs text-muted">
-                    {lang === "tr"
-                      ? "KDP ve KDY uyumlu baskıya hazır çıkışlar"
-                      : "Print-ready output compatible with KDP & KDY"}
-                  </p>
-                </div>
-              </div>
-            </footer>
-          }
+          footer={<SiteFooter lang={lang} dict={dict} />}
         >
           {children}
         </SiteChrome>

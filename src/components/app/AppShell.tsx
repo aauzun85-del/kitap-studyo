@@ -604,7 +604,7 @@ export default function AppShell({
           <div style={{ flex: 1 }} />
           {/* Jeton bakiyesi pili — giriş yapmış kullanıcıya güncel bakiye,
               admin'e "∞ Sınırsız". Değer toShellUser'da sunucuda hesaplanır. */}
-          {user && (
+          {user && user.balance != null && (
             <Link
               href={`/${lang}/jetonlar`}
               title={user.balance == null ? t.unlimited : t.jetonTitle}

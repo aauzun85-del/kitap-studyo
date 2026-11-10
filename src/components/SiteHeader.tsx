@@ -22,6 +22,7 @@ export default async function SiteHeader({
     { href: `/${lang}/ekitap`, label: dict.nav.publish },
     { href: `/${lang}/sesli-kitap`, label: dict.nav.audiobook },
     { href: `/${lang}/tanitim`, label: dict.nav.promo },
+    { href: `/${lang}/fiyatlar`, label: lang === "tr" ? "Fiyatlar" : "Pricing" },
   ];
 
   return (
@@ -38,7 +39,7 @@ export default async function SiteHeader({
             {dict.brand}
           </span>
         </Link>
-        <nav className="hidden items-center gap-6 text-sm font-medium text-muted sm:flex">
+        <nav className="hidden items-center gap-6 whitespace-nowrap text-sm font-medium text-muted lg:flex">
           {links.map((link) => (
             <Link key={link.href} href={link.href} className="transition hover:text-foreground">
               {link.label}
@@ -79,6 +80,12 @@ export default async function SiteHeader({
             </>
           ) : (
             <>
+              <Link
+                href={`/${lang}/fiyatlar`}
+                className="text-sm font-medium text-muted transition hover:text-foreground lg:hidden"
+              >
+                {lang === "tr" ? "Fiyatlar" : "Pricing"}
+              </Link>
               <Link
                 href={`/${lang}/giris`}
                 className="hidden text-sm font-medium text-muted transition hover:text-foreground sm:block"

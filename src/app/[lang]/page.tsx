@@ -11,6 +11,7 @@ import {
   HeadphonesIcon,
   MegaphoneIcon,
 } from "@/components/PhosphorIcons";
+import PackageCards from "@/components/marketing/PackageCards";
 
 const moduleIcons = {
   cover: PaletteIcon,
@@ -19,188 +20,6 @@ const moduleIcons = {
   publish: BookIcon,
   audiobook: HeadphonesIcon,
   promo: MegaphoneIcon,
-};
-
-// ─── Pricing ─────────────────────────────────────────────────────────────────
-const PRICING = {
-  tr: {
-    badge: "Fiyatlandırma",
-    heading: "Şeffaf fiyatlandırma",
-    subtitle: "İhtiyacına göre seç. İstediğin zaman yükselt veya düşür.",
-    plans: [
-      {
-        name: "Eco",
-        emoji: "🌱",
-        price: "₺499",
-        period: "/ ay",
-        desc: "Başlayan yazarlar için",
-        tag: null,
-        features: [
-          "Kapak tasarımcısı (sınırsız)",
-          "Mizanpaj (50 sayfa/ay)",
-          "AI Editör (10.000 kelime/ay)",
-          "E-kitap üretimi (EPUB)",
-          "Sesli kitap (5 bölüm/ay)",
-          "Baskıya hazır PDF (300 DPI)",
-        ],
-        cta: "Eco'yu seç",
-        featured: false,
-        accentColor: "#22c55e",   // green
-        accentBg: "#f0fdf4",
-      },
-      {
-        name: "Pro",
-        emoji: "🚀",
-        price: "₺999",
-        period: "/ ay",
-        desc: "Aktif yazarlar için",
-        tag: "En popüler",
-        features: [
-          "Eco'nun her şeyi +",
-          "Sınırsız mizanpaj ve AI Editör",
-          "AI görsel üretimi",
-          "Tanıtım içerikleri (sosyal medya, bülten)",
-          "AI seslendirme (tüm bölümler)",
-          "Öncelikli destek",
-        ],
-        cta: "Pro'ya geç →",
-        featured: true,
-        accentColor: null,        // brand accent
-        accentBg: null,
-      },
-      {
-        name: "Ultra",
-        emoji: "⚡",
-        price: "₺19.999",
-        period: "/ ay",
-        desc: "Ajans & yayınevi için",
-        tag: "Kurumsal",
-        features: [
-          "Pro'nun her şeyi +",
-          "10 takım üyesi hesabı",
-          "White-label (markalı çıktı)",
-          "API erişimi",
-          "Özel kapak şablonları",
-          "Öncelikli telefon desteği",
-        ],
-        cta: "Teklif al →",
-        featured: false,
-        accentColor: "#8b5cf6",   // purple
-        accentBg: "#faf5ff",
-      },
-    ],
-  },
-  en: {
-    badge: "Pricing",
-    heading: "Transparent pricing",
-    subtitle: "Pick the plan that fits. Upgrade or downgrade anytime.",
-    plans: [
-      {
-        name: "Eco",
-        emoji: "🌱",
-        price: "$49",
-        period: "/ month",
-        desc: "For emerging authors",
-        tag: null,
-        features: [
-          "Cover designer (unlimited)",
-          "Layout (50 pages/month)",
-          "AI Editor (10,000 words/month)",
-          "E-book generation (EPUB)",
-          "Audiobook (5 chapters/month)",
-          "Print-ready PDF (300 DPI)",
-        ],
-        cta: "Choose Eco",
-        featured: false,
-        accentColor: "#22c55e",
-        accentBg: "#f0fdf4",
-      },
-      {
-        name: "Pro",
-        emoji: "🚀",
-        price: "$99",
-        period: "/ month",
-        desc: "For active authors",
-        tag: "Most popular",
-        features: [
-          "Everything in Eco +",
-          "Unlimited layout & AI Editor",
-          "AI image generation",
-          "Promo content (social, newsletter)",
-          "AI narration (all chapters)",
-          "Priority support",
-        ],
-        cta: "Go Pro →",
-        featured: true,
-        accentColor: null,
-        accentBg: null,
-      },
-      {
-        name: "Ultra",
-        emoji: "⚡",
-        price: "$1,999",
-        period: "/ month",
-        desc: "For agencies & publishers",
-        tag: "Enterprise",
-        features: [
-          "Everything in Pro +",
-          "10 team member accounts",
-          "White-label output",
-          "API access",
-          "Custom cover templates",
-          "Priority phone support",
-        ],
-        cta: "Get a quote →",
-        featured: false,
-        accentColor: "#8b5cf6",
-        accentBg: "#faf5ff",
-      },
-    ],
-  },
-};
-
-// ─── Testimonials ─────────────────────────────────────────────────────────────
-const TESTIMONIALS = {
-  tr: [
-    {
-      text: "İlk kitabımın kapağını Canva'da 3 günde yapmıştım. Laycoty'de 20 dakikada, üstelik baskıya hazır PDF ile çıktım.",
-      author: "Selin A.",
-      role: "Bağımsız Yazar",
-      avatar: "SA",
-    },
-    {
-      text: "Mizanpaj modülü KDY ölçülerini otomatik uyguluyor. Manuel hesap yapmaktan kurtuldum.",
-      author: "Burak T.",
-      role: "Teknik Kitap Yazarı",
-      avatar: "BT",
-    },
-    {
-      text: "AI Editör 47 yazım hatasını buldu. Editörüme vermeden önce bu filtreden geçirmek için ideal.",
-      author: "Merve K.",
-      role: "Roman Yazarı",
-      avatar: "MK",
-    },
-  ],
-  en: [
-    {
-      text: "I used to spend 3 days on my cover in Canva. With Laycoty I was done in 20 minutes, with a print-ready PDF.",
-      author: "Sarah A.",
-      role: "Indie Author",
-      avatar: "SA",
-    },
-    {
-      text: "The layout module applies the right margins automatically. No more manual calculations.",
-      author: "Brian T.",
-      role: "Technical Author",
-      avatar: "BT",
-    },
-    {
-      text: "The AI Editor caught 47 mistakes. Perfect for filtering before sending to my editor.",
-      author: "Maria K.",
-      role: "Fiction Writer",
-      avatar: "MK",
-    },
-  ],
 };
 
 export default async function HomePage({ params }: PageProps<"/[lang]">) {
@@ -215,8 +34,6 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
   const dict = getDictionary(lang);
 
   const isTr = lang === "tr";
-  const pricing = PRICING[isTr ? "tr" : "en"];
-  const testimonials = TESTIMONIALS[isTr ? "tr" : "en"];
 
   const cards = [
     { key: "cover" as const,     href: `/${lang}/kapak`,      copy: dict.modules.cover },
@@ -285,7 +102,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                 {[
                   { value: "6",              label: isTr ? "Modül" : "Modules" },
                   { value: "300 DPI",        label: isTr ? "Baskı kalitesi" : "Print quality" },
-                  { value: isTr ? "₺0" : "$0", label: isTr ? "Başlangıç" : "To start" },
+                  { value: "₺0", label: isTr ? "Üyelik" : "Membership" },
                 ].map((s) => (
                   <div key={s.label}>
                     <div className="text-2xl font-extrabold">{s.value}</div>
@@ -322,7 +139,7 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
 
                 {/* Panel tabs */}
                 <div className="flex border-b border-border bg-background">
-                  {["Şablon", "AI", "Metin", "Ayar"].map((tab, i) => (
+                  {(isTr ? ["Şablon", "AI", "Metin", "Ayar"] : ["Template", "AI", "Text", "Settings"]).map((tab, i) => (
                     <div
                       key={tab}
                       className={`flex-1 py-1.5 text-center font-mono text-[9px] font-semibold ${
@@ -441,9 +258,6 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
                   <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent transition-transform duration-200 group-hover:scale-110">
                     <Icon className="h-6 w-6" />
                   </span>
-                  <span className="rounded-full bg-foreground/[0.06] px-2.5 py-1 font-mono text-[10px] font-medium uppercase tracking-wide text-muted">
-                    {dict.common.comingSoon}
-                  </span>
                 </div>
                 <h3 className="mt-5 font-sans text-2xl font-extrabold">{copy.title}</h3>
                 <p className="mt-2 flex-1 text-sm leading-relaxed text-muted">
@@ -487,132 +301,30 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
 
       {/* ── 4. PRICING ──────────────────────────────────────────────── */}
       <section className="border-t border-border py-20">
-        <div className="mx-auto max-w-4xl px-4">
-          <div className="mb-12 text-center">
+        <div className="mx-auto max-w-5xl px-4">
+          <div className="mb-10 text-center">
             <span className="mb-4 inline-block rounded-full border border-accent/30 bg-accent-soft px-3 py-1 font-mono text-xs font-medium uppercase tracking-wide text-accent">
-              {pricing.badge}
+              {isTr ? "Fiyatlar" : "Pricing"}
             </span>
-            <h2 className="font-sans text-3xl font-extrabold">{pricing.heading}</h2>
-            <p className="mt-3 text-muted">{pricing.subtitle}</p>
+            <h2 className="font-sans text-3xl font-extrabold">
+              {isTr ? "Abonelik yok, sürpriz yok" : "No subscription, no surprises"}
+            </h2>
+            <p className="mt-3 text-muted">
+              {isTr
+                ? "Paketi bir kez al, 30 gün kullan. Kendiliğinden yenilenmez."
+                : "Buy a package once and use it for 30 days. It never auto-renews."}
+            </p>
           </div>
-
-          <div className="mx-auto grid max-w-5xl gap-5 sm:grid-cols-3">
-            {pricing.plans.map((plan) => {
-              const isAccent = plan.featured;
-              const color   = plan.accentColor ?? "var(--color-accent)";
-              const bgSoft  = plan.accentBg   ?? "var(--color-accent-soft)";
-
-              return (
-                <div
-                  key={plan.name}
-                  className="relative flex flex-col gap-5 rounded-2xl border p-7 transition-all duration-200 hover:-translate-y-1"
-                  style={{
-                    borderColor: isAccent ? color : "var(--color-border)",
-                    background:  isAccent ? bgSoft : "var(--color-surface)",
-                    boxShadow:   isAccent
-                      ? `0 10px 40px color-mix(in srgb, ${color} 22%, transparent)`
-                      : undefined,
-                  }}
-                >
-                  {/* Tag badge */}
-                  {plan.tag && (
-                    <span
-                      className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full px-4 py-1 font-mono text-[10px] font-bold uppercase tracking-wide text-white whitespace-nowrap"
-                      style={{ background: color }}
-                    >
-                      {plan.tag}
-                    </span>
-                  )}
-
-                  {/* Plan header */}
-                  <div className="flex items-center gap-2 pt-1">
-                    <span className="text-2xl">{plan.emoji}</span>
-                    <div>
-                      <div className="font-sans text-base font-extrabold">{plan.name}</div>
-                      <div className="text-[11px] text-muted">{plan.desc}</div>
-                    </div>
-                  </div>
-
-                  {/* Price */}
-                  <div
-                    className="flex items-end gap-1 border-b pb-5"
-                    style={{ borderColor: "var(--color-border)" }}
-                  >
-                    <span className="text-4xl font-extrabold" style={{ color }}>{plan.price}</span>
-                    <span className="pb-1 text-sm text-muted">{plan.period}</span>
-                  </div>
-
-                  {/* Features */}
-                  <ul className="flex-1 space-y-2.5">
-                    {plan.features.map((f) => (
-                      <li key={f} className="flex items-start gap-2 text-sm text-foreground/80">
-                        <span className="mt-0.5 flex-shrink-0 font-bold" style={{ color }}>✓</span>
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
-
-                  {/* CTA */}
-                  <Link
-                    href={`/${lang}/kayit`}
-                    className="mt-2 rounded-full py-3 text-center text-sm font-bold transition hover:-translate-y-0.5 hover:opacity-90"
-                    style={
-                      isAccent
-                        ? {
-                            background: `linear-gradient(135deg, var(--color-accent) 0%, #7c3aed 100%)`,
-                            color: "#fff",
-                            boxShadow: `0 3px 14px color-mix(in srgb, var(--color-accent) 35%, transparent)`,
-                          }
-                        : plan.accentColor
-                        ? {
-                            background: plan.accentColor,
-                            color: "#fff",
-                            boxShadow: `0 3px 14px color-mix(in srgb, ${plan.accentColor} 30%, transparent)`,
-                          }
-                        : {
-                            border: "1px solid var(--color-border)",
-                            background: "var(--color-background)",
-                          }
-                    }
-                  >
-                    {plan.cta}
-                  </Link>
-                </div>
-              );
-            })}
+          <PackageCards lang={lang} />
+          <div className="mt-4 text-center">
+            <Link href={`/${lang}/fiyatlar`} className="text-sm font-semibold text-accent hover:underline">
+              {isTr ? "Jetonlar nereye harcanır? Ayrıntılı fiyatlar →" : "What do credits pay for? Full pricing →"}
+            </Link>
           </div>
         </div>
       </section>
 
-      {/* ── 5. TESTIMONIALS ─────────────────────────────────────────── */}
-      <section className="py-20 mx-auto max-w-6xl px-4">
-        <h2 className="mb-10 text-center font-sans text-3xl font-extrabold">
-          {isTr ? "Yazarlar ne diyor?" : "What authors say"}
-        </h2>
-        <div className="grid gap-6 sm:grid-cols-3">
-          {testimonials.map((t) => (
-            <div
-              key={t.author}
-              className="flex flex-col gap-5 rounded-2xl border border-border bg-surface p-7 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-accent/6"
-            >
-              <p className="flex-1 text-sm italic leading-relaxed text-foreground/80">
-                &ldquo;{t.text}&rdquo;
-              </p>
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-accent-soft font-mono text-xs font-bold text-accent">
-                  {t.avatar}
-                </div>
-                <div>
-                  <div className="text-sm font-bold">{t.author}</div>
-                  <div className="text-xs text-muted">{t.role}</div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── 6. BOTTOM CTA ───────────────────────────────────────────── */}
+      {/* ── 5. BOTTOM CTA ───────────────────────────────────────────── */}
       <section className="border-t border-border py-24">
         <div className="relative mx-auto max-w-2xl px-4 text-center">
           {/* Glow */}
@@ -630,8 +342,8 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
           </h2>
           <p className="mt-5 text-lg text-muted">
             {isTr
-              ? "Ücretsiz başla, her an yükselt. Kredi kartı gerekmez."
-              : "Start free, upgrade anytime. No credit card required."}
+              ? "Üye olmak ücretsiz; tüm araçları hemen deneyebilirsin."
+              : "Membership is free; try every tool right away."}
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Link
@@ -645,10 +357,10 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
               {isTr ? "Ücretsiz hesap aç" : "Create free account"} →
             </Link>
             <Link
-              href={`/${lang}/kapak`}
+              href={`/${lang}/fiyatlar`}
               className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-8 py-4 text-sm font-semibold transition hover:-translate-y-0.5 hover:border-foreground/30"
             >
-              {isTr ? "Önce keşfet" : "Explore first"}
+              {isTr ? "Paketleri gör" : "See packages"}
             </Link>
           </div>
         </div>

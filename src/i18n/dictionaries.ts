@@ -1135,7 +1135,7 @@ const tr: Dictionary = {
       title: "Sesli Kitap",
       tagline: "Yapay zekâ sesiyle seslendirme",
       description:
-        "Kitabını doğal bir insan sesiyle seslendir. Mikrofon gerekmez; her bölümü ayrı ayrı seslendirip dinle ve indir.",
+        "Kitabını yapay zekâ ile, insan sesine yakın doğal bir sesle seslendir. Mikrofon gerekmez; her bölümü ayrı ayrı seslendirip dinle ve indir.",
       features: [
         "Doğal yapay zekâ sesi (Türkçe dahil)",
         "Bölüm bölüm seslendirme ve indirme",
@@ -2316,7 +2316,7 @@ const en: Dictionary = {
       title: "Audiobook",
       tagline: "AI-voiced narration",
       description:
-        "Narrate your book in a natural human voice. No microphone needed; narrate each chapter separately, then listen and download.",
+        "Narrate your book with a natural-sounding AI voice. No microphone needed; narrate each chapter separately, then listen and download.",
       features: [
         "Natural AI voice (Turkish included)",
         "Chapter-by-chapter narration and download",
