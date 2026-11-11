@@ -12,7 +12,7 @@ export const COMPANY = {
   tradeRegistry: "İstanbul Ticaret Sicili 81917-5",
   mersis: "0621053048800001", // MERSİS no — TTSG 3 Mayıs 2017 / 9318 kuruluş ilanından
   phone: "0532 342 68 56", // Müşteri hizmetleri telefonu
-  email: "aauzun85@gmail.com", // Destek e-postası (destek@laycoty.com kurulunca değiştir)
+  email: "destek@laycoty.com", // ImprovMX ile aauzun85@gmail.com adresine yönlenir
   website: "laycoty.com",
 };
 
