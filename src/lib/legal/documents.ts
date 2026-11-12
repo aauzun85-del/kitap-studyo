@@ -2,7 +2,7 @@
 //
 // Metinlerdeki yer tutucular sayfada doldurulur (bkz. LegalText):
 //   {unvan} {kisaUnvan} {adres} {vergiDairesi} {vergiNo} {mersis} {sicil} {telefon}
-//   {eposta} {site} {marka} {gecerlilik} {hosgeldin} {iadeGun} {paketler}
+//   {eposta} {site} {marka} {gecerlilik} {hosgeldin} {iadeGun} {paketler} {ekJetonlar}
 //   [[slug]] → o sayfaya bağlantı (yasal belge, "fiyatlar", "iletisim", "hakkimizda").
 //
 // Bağlayıcı dil Türkçedir; İngilizce sayfada aynı Türkçe metin bir notla gösterilir.
@@ -67,7 +67,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
       {
         h: "4. Fiyat ve ödeme",
         p: [
-          "Paketlerin adı, jeton miktarı ve satış fiyatı sipariş sırasında ve [[fiyatlar]] sayfasında gösterilir: {paketler}. Fiyatlar Türk lirasıdır ve KDV dahildir.",
+          "Paketlerin adı, jeton miktarı ve satış fiyatı sipariş sırasında ve [[fiyatlar]] sayfasında gösterilir: {paketler}. Aktif paketi olan üyeler ayrıca ek jeton satın alabilir: {ekJetonlar}. Ek jeton, satın alındığı andan itibaren {gecerlilik} gün geçerlidir ve tek başına indirme hakkı vermez. Üst pakete geçmek isteyen üye yeni paketi kendi fiyatından satın alır; kalan jetonları silinmez. Fiyatlar Türk lirasıdır ve KDV dahildir.",
           "Ödeme, banka/kredi kartıyla lisanslı ödeme kuruluşunun güvenli ödeme sayfası üzerinden yapılır. Kart bilgileri SATICI tarafından görülmez ve saklanmaz; doğrudan ödeme kuruluşu tarafından işlenir.",
         ],
       },
@@ -142,7 +142,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
       },
       {
         h: "Toplam fiyat",
-        p: ["{paketler}. Fiyatlar Türk lirasıdır ve KDV dahildir. Ek bir ücret (kargo vb.) yoktur."],
+        p: ["Paketler: {paketler}. Ek jeton (aktif paketi olan üyeler için, {gecerlilik} gün geçerli, indirme hakkı içermez): {ekJetonlar}. Fiyatlar Türk lirasıdır ve KDV dahildir. Ek bir ücret (kargo vb.) yoktur."],
       },
       {
         h: "Ödeme ve ifa",

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { isLocale } from "@/i18n/config";
-import { PRICING, PACKAGE_VALIDITY_DAYS } from "@/lib/credits/pricing";
+import { CREDIT_ADDONS, PRICING, PACKAGE_VALIDITY_DAYS } from "@/lib/credits/pricing";
 import { REFUND_WINDOW_DAYS } from "@/lib/legal/company";
 import PackageCards from "@/components/marketing/PackageCards";
 import LegalText from "@/components/legal/LegalText";
@@ -126,6 +127,38 @@ export default async function PricingPage({ params }: PageProps<"/[lang]/fiyatla
             ? "Teknik bir hata yüzünden tamamlanamayan işlemin jetonu otomatik olarak geri yüklenir. Paketler yazılım kullanım hizmetidir; jeton yalnızca Laycoty içindeki işlemleri ölçen bir kullanım birimidir, para yerine geçmez ve başkasına devredilemez."
             : "If an action fails due to a technical error, its credits are restored automatically. Packages are a software service; credits only measure usage inside Laycoty, are not money and cannot be transferred."}
         </p>
+      </section>
+
+      {/* Ek jeton */}
+      <section className="mx-auto mt-14 max-w-3xl">
+        <h2 className="mb-1 font-sans text-2xl font-extrabold">{tr ? "Ek jeton" : "Extra credits"}</h2>
+        <p className="mb-4 text-sm text-muted">
+          {tr
+            ? `Paketindeki jeton bittiyse yeni paket almadan üstüne ekleyebilirsin. Aktif paketi olan üyeler içindir; ${PACKAGE_VALIDITY_DAYS} gün geçerlidir, indirme hakkı paketle gelir. Üst pakete geçmek istersen yeni paketi kendi fiyatından alırsın; kalan jetonların silinmez.`
+            : `Out of credits? Top up without buying a new package. For members with an active package; valid for ${PACKAGE_VALIDITY_DAYS} days; download rights come with a package. To upgrade, buy the higher package at its own price; your remaining credits are kept.`}
+        </p>
+        <div className="overflow-hidden rounded-xl border border-border">
+          <table className="w-full text-sm">
+            <tbody>
+              {CREDIT_ADDONS.map((a) => (
+                <tr key={a.id} className="border-b border-border last:border-0">
+                  <td className="px-4 py-3 font-semibold">
+                    {a.credits.toLocaleString(tr ? "tr-TR" : "en-US")} {tr ? "jeton" : "credits"}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right font-mono font-semibold">
+                    {a.priceTry.toLocaleString(tr ? "tr-TR" : "en-US")} ₺
+                  </td>
+                  <td className="w-px whitespace-nowrap px-4 py-3 text-right">
+                    <Link href={`/${lang}/satin-al?paket=${a.id}`} className="font-semibold text-accent hover:underline">
+                      {tr ? "Satın al" : "Buy"}
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-xs text-muted">{tr ? "Fiyatlara KDV dahildir." : "Prices include VAT."}</p>
       </section>
 
       {/* SSS */}

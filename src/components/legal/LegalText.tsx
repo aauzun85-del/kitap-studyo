@@ -4,6 +4,7 @@ import type { Locale } from "@/i18n/config";
 import { COMPANY, REFUND_WINDOW_DAYS } from "@/lib/legal/company";
 import { LEGAL_DOCS } from "@/lib/legal/documents";
 import {
+  CREDIT_ADDONS,
   CREDIT_PACKAGES,
   PACKAGE_VALIDITY_DAYS,
   WELCOME_CREDITS,
@@ -17,6 +18,10 @@ const tl = (n: number) => `${n.toLocaleString("tr-TR")} TL`;
 
 export const packagesSummary = CREDIT_PACKAGES.map(
   (p) => `${p.name.tr}: ${p.credits.toLocaleString("tr-TR")} jeton – ${tl(p.priceTry)}`,
+).join("; ");
+
+export const addonsSummary = CREDIT_ADDONS.map(
+  (p) => `${p.credits.toLocaleString("tr-TR")} jeton – ${tl(p.priceTry)}`,
 ).join("; ");
 
 // Yer tutucu → [değer, boşsa gösterilecek etiket]
@@ -36,6 +41,7 @@ const TOKENS: Record<string, [string, string]> = {
   hosgeldin: [String(WELCOME_CREDITS), "Hoş geldin jetonu"],
   iadeGun: [String(REFUND_WINDOW_DAYS), "İade süresi"],
   paketler: [packagesSummary, "Paketler"],
+  ekJetonlar: [addonsSummary, "Ek jetonlar"],
 };
 
 const PAGES: Record<string, Record<Locale, string>> = {

@@ -602,6 +602,26 @@ export default function AppShell({
             <Icon name="panel" size={19} />
           </button>
           <div style={{ flex: 1 }} />
+          {user && (
+            <Link
+              href={`/${lang}/fiyatlar`}
+              title={lang === "tr" ? "Paket al, üyeliğini yükselt ya da ek jeton al" : "Buy a package, upgrade or get extra credits"}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "8px 14px",
+                borderRadius: 10,
+                fontSize: 13,
+                fontWeight: 700,
+                color: "#fff",
+                background: "var(--pri)",
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {lang === "tr" ? "Yükselt" : "Upgrade"}
+            </Link>
+          )}
           {/* Jeton bakiyesi pili — giriş yapmış kullanıcıya güncel bakiye,
               admin'e "∞ Sınırsız". Değer toShellUser'da sunucuda hesaplanır. */}
           {user && user.balance != null && (

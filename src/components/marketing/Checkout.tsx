@@ -3,7 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { Locale } from "@/i18n/config";
-import { CREDIT_PACKAGES, PACKAGE_VALIDITY_DAYS } from "@/lib/credits/pricing";
+import { CREDIT_ADDONS, CREDIT_PACKAGES, PACKAGE_VALIDITY_DAYS } from "@/lib/credits/pricing";
+
+const ALL = [...CREDIT_PACKAGES, ...CREDIT_ADDONS];
 
 // Satın alma adımları: paket → sipariş özeti → sözleşme onayı → ödeme.
 // Kart ödemesi ödeme kuruluşu onayından sonra son adıma bağlanacak; o güne kadar
@@ -13,6 +15,10 @@ const COPY = {
     title: "Satın al",
     subtitle: "Paketini seç, sipariş özetini kontrol et, sözleşmeyi onayla.",
     step1: "Paket",
+    addons: "Ek jeton",
+    addonsHint: "Aktif paketi olan üyeler içindir; bakiyene eklenir, indirme hakkı paketle gelir.",
+    addonItem: (name: string) => `Laycoty ${name}`,
+    addonContent: (c: string) => `${c} jeton; ${PACKAGE_VALIDITY_DAYS} gün geçerli. İndirme hakkı içermez.`,
     step2: "Sipariş özeti",
     step3: "Onay ve ödeme",
     credits: "jeton",
@@ -45,6 +51,10 @@ const COPY = {
     title: "Checkout",
     subtitle: "Choose your package, review your order and accept the agreement.",
     step1: "Package",
+    addons: "Extra credits",
+    addonsHint: "For members with an active package; added to your balance. Download rights come with a package.",
+    addonItem: (name: string) => `Laycoty ${name}`,
+    addonContent: (c: string) => `${c} credits; valid for ${PACKAGE_VALIDITY_DAYS} days. Does not include download rights.`,
     step2: "Order summary",
     step3: "Agreement and payment",
     credits: "credits",
@@ -80,11 +90,12 @@ export default function Checkout({ lang, initialId }: { lang: Locale; initialId?
   const nf = lang === "tr" ? "tr-TR" : "en-US";
   const fallback = CREDIT_PACKAGES.find((p) => p.badge) ?? CREDIT_PACKAGES[0];
   const [id, setId] = useState(
-    CREDIT_PACKAGES.some((p) => p.id === initialId) ? (initialId as string) : fallback.id,
+    ALL.some((p) => p.id === initialId) ? (initialId as string) : fallback.id,
   );
   const [accepted, setAccepted] = useState(false);
   const [note, setNote] = useState<"agree" | "closed" | null>(null);
-  const pkg = CREDIT_PACKAGES.find((p) => p.id === id) ?? fallback;
+  const pkg = ALL.find((p) => p.id === id) ?? fallback;
+  const isAddon = CREDIT_ADDONS.some((p) => p.id === pkg.id);
   const credits = pkg.credits.toLocaleString(nf);
 
   const heading = "mb-3 font-sans text-lg font-extrabold";
@@ -99,11 +110,18 @@ export default function Checkout({ lang, initialId }: { lang: Locale; initialId?
       <section className="mt-8">
         <h2 id="paket-baslik" className={heading}>1. {t.step1}</h2>
         <div role="radiogroup" aria-labelledby="paket-baslik" className="space-y-2">
-          {CREDIT_PACKAGES.map((p) => {
+          {ALL.map((p, idx) => {
             const on = p.id === id;
+            const firstAddon = idx === CREDIT_PACKAGES.length;
             return (
+              <div key={p.id}>
+                {firstAddon && (
+                  <div className="mb-2 mt-5">
+                    <div className="font-sans text-base font-extrabold">{t.addons}</div>
+                    <div className="text-xs text-muted">{t.addonsHint}</div>
+                  </div>
+                )}
               <label
-                key={p.id}
                 className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-4 py-3 transition ${
                   on ? "border-accent bg-accent-soft" : "border-border bg-surface"
                 }`}
@@ -128,6 +146,7 @@ export default function Checkout({ lang, initialId }: { lang: Locale; initialId?
                 </span>
                 <span className="whitespace-nowrap font-extrabold">{p.priceTry.toLocaleString(nf)} ₺</span>
               </label>
+              </div>
             );
           })}
         </div>
@@ -137,8 +156,8 @@ export default function Checkout({ lang, initialId }: { lang: Locale; initialId?
         <h2 className={heading}>2. {t.step2}</h2>
         <dl className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface text-sm">
           {[
-            [t.item, t.itemValue(pkg.name[lang])],
-            [t.content, t.contentValue(credits)],
+            [t.item, isAddon ? t.addonItem(pkg.name[lang]) : t.itemValue(pkg.name[lang])],
+            [t.content, isAddon ? t.addonContent(credits) : t.contentValue(credits)],
             [t.delivery, t.deliveryValue],
             [t.renewal, t.renewalValue],
           ].map(([k, v]) => (
