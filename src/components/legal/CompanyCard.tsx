@@ -48,6 +48,14 @@ export default function CompanyCard({
     },
     { k: "MERSİS", v: v(COMPANY.mersis, "MERSİS no") },
     { k: tr ? "Ticaret sicil" : "Trade registry", v: v(COMPANY.tradeRegistry, "Ticaret sicil no") },
+    {
+      k: tr ? "Meslek odası" : "Chamber",
+      v: (
+        <a href={COMPANY.chamberUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
+          {COMPANY.chamber}
+        </a>
+      ),
+    },
   ];
   const rows = contact ? [...contactRows, ...companyRows] : [...companyRows, ...contactRows];
 

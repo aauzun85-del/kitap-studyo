@@ -10,6 +10,8 @@ export const COMPANY = {
   taxOffice: "Hocapaşa",
   taxNumber: "6210530488",
   tradeRegistry: "İstanbul Ticaret Sicili 81917-5",
+  chamber: "İstanbul Ticaret Odası (İTO)",
+  chamberUrl: "https://www.ito.org.tr",
   mersis: "0621053048800001", // MERSİS no — TTSG 3 Mayıs 2017 / 9318 kuruluş ilanından
   phone: "0532 342 68 56", // Müşteri hizmetleri telefonu
   email: "destek@laycoty.com", // ImprovMX ile aauzun85@gmail.com adresine yönlenir
