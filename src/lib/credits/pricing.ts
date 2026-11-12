@@ -109,13 +109,13 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
 // jeton. İndirme hakkı vermez (o hak paketle gelir); satın alındığı andan
 // itibaren PACKAGE_VALIDITY_DAYS gün geçerlidir. Fiyat/adet için SADECE burası.
 export const CREDIT_ADDONS: CreditPackage[] = [
-  { id: "ek100", name: { tr: "100 ek jeton", en: "100 extra credits" }, credits: 100, priceTry: 2000 },
-  { id: "ek500", name: { tr: "500 ek jeton", en: "500 extra credits" }, credits: 500, priceTry: 8000 },
+  { id: "ek100", name: { tr: "100 ek jeton", en: "100 extra credits" }, credits: 100, priceTry: 900 },
+  { id: "ek500", name: { tr: "500 ek jeton", en: "500 extra credits" }, credits: 500, priceTry: 3500 },
   {
     id: "ek10000",
     name: { tr: "10.000 ek jeton", en: "10,000 extra credits" },
     credits: 10000,
-    priceTry: 90000,
+    priceTry: 45000,
   },
 ];
 
