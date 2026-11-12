@@ -88,19 +88,19 @@ export type CreditPackage = {
 
 // Jeton paketleri. Fiyat/adet değiştirmek için SADECE burayı düzenle.
 export const CREDIT_PACKAGES: CreditPackage[] = [
-  { id: "eco", name: { tr: "Eco", en: "Eco" }, credits: 200, priceTry: 699 },
+  { id: "eco", name: { tr: "Eco", en: "Eco" }, credits: 200, priceTry: 2900 },
   {
     id: "pro",
     name: { tr: "Pro", en: "Pro" },
     credits: 700,
-    priceTry: 999,
+    priceTry: 4900,
     badge: { tr: "Popüler", en: "Popular" },
   },
   {
     id: "mega",
     name: { tr: "Mega", en: "Mega" },
     credits: 2000,
-    priceTry: 1999,
+    priceTry: 9900,
     badge: { tr: "En avantajlı", en: "Best value" },
   },
 ];
