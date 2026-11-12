@@ -5,15 +5,19 @@ import Link from "next/link";
 import type { Locale } from "@/i18n/config";
 import { CREDIT_ADDONS, CREDIT_PACKAGES, PACKAGE_VALIDITY_DAYS } from "@/lib/credits/pricing";
 
+import BillingForm, { EMPTY_BILLING, validateBilling, type BillingErrors } from "./BillingForm";
+
 const ALL = [...CREDIT_PACKAGES, ...CREDIT_ADDONS];
 
-// Satın alma adımları: paket → sipariş özeti → sözleşme onayı → ödeme.
+// Satın alma adımları: paket → sipariş özeti → fatura bilgileri → sözleşme onayı → ödeme.
 // Kart ödemesi ödeme kuruluşu onayından sonra son adıma bağlanacak; o güne kadar
 // bu ekran hiçbir ücret almaz ve bunu açıkça söyler.
 const COPY = {
   tr: {
     title: "Satın al",
-    subtitle: "Paketini seç, sipariş özetini kontrol et, sözleşmeyi onayla.",
+    subtitle: "Paketini seç, sipariş özetini kontrol et, fatura bilgilerini gir, sözleşmeyi onayla.",
+    stepBilling: "Fatura bilgileri",
+    needBilling: "Devam etmek için fatura bilgilerindeki eksikleri tamamla.",
     step1: "Paket",
     addons: "Ek jeton",
     addonsHint: "Aktif paketi olan üyeler içindir; bakiyene eklenir, indirme hakkı paketle gelir.",
@@ -49,7 +53,9 @@ const COPY = {
   },
   en: {
     title: "Checkout",
-    subtitle: "Choose your package, review your order and accept the agreement.",
+    subtitle: "Choose your package, review your order, enter your invoice details and accept the agreement.",
+    stepBilling: "Invoice details",
+    needBilling: "Please complete the invoice details to continue.",
     step1: "Package",
     addons: "Extra credits",
     addonsHint: "For members with an active package; added to your balance. Download rights come with a package.",
@@ -93,7 +99,9 @@ export default function Checkout({ lang, initialId }: { lang: Locale; initialId?
     ALL.some((p) => p.id === initialId) ? (initialId as string) : fallback.id,
   );
   const [accepted, setAccepted] = useState(false);
-  const [note, setNote] = useState<"agree" | "closed" | null>(null);
+  const [note, setNote] = useState<"billing" | "agree" | "closed" | null>(null);
+  const [billing, setBilling] = useState(EMPTY_BILLING);
+  const [billingErrors, setBillingErrors] = useState<BillingErrors>({});
   const pkg = ALL.find((p) => p.id === id) ?? fallback;
   const isAddon = CREDIT_ADDONS.some((p) => p.id === pkg.id);
   const credits = pkg.credits.toLocaleString(nf);
@@ -174,7 +182,22 @@ export default function Checkout({ lang, initialId }: { lang: Locale; initialId?
       </section>
 
       <section className="mt-8">
-        <h2 className={heading}>3. {t.step3}</h2>
+        <h2 className={heading}>3. {t.stepBilling}</h2>
+        <BillingForm
+          lang={lang}
+          value={billing}
+          errors={billingErrors}
+          onChange={(next) => {
+            setBilling(next);
+            // Hata gösterildikten sonra yazdıkça güncellensin.
+            if (Object.keys(billingErrors).length) setBillingErrors(validateBilling(next, lang));
+            setNote(null);
+          }}
+        />
+      </section>
+
+      <section className="mt-8">
+        <h2 className={heading}>4. {t.step3}</h2>
         <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
           {t.notOpen}
         </p>
@@ -207,7 +230,16 @@ export default function Checkout({ lang, initialId }: { lang: Locale; initialId?
 
         <button
           type="button"
-          onClick={() => setNote(accepted ? "closed" : "agree")}
+          onClick={() => {
+            const errs = validateBilling(billing, lang);
+            setBillingErrors(errs);
+            if (Object.keys(errs).length) {
+              setNote("billing");
+              document.getElementById(`fatura-${Object.keys(errs)[0]}`)?.focus();
+              return;
+            }
+            setNote(accepted ? "closed" : "agree");
+          }}
           className="mt-4 w-full rounded-full py-3.5 text-sm font-bold text-white transition hover:opacity-90"
           style={{ background: "linear-gradient(135deg, var(--color-accent) 0%, #7c3aed 100%)" }}
         >
@@ -220,7 +252,7 @@ export default function Checkout({ lang, initialId }: { lang: Locale; initialId?
             role="status"
             className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
           >
-            {note === "agree" ? t.needAgree : t.notOpen}
+            {note === "billing" ? t.needBilling : note === "agree" ? t.needAgree : t.notOpen}
             {note === "closed" && (
               <>
                 {" "}

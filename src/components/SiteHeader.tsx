@@ -82,7 +82,7 @@ export default async function SiteHeader({
             <>
               <Link
                 href={`/${lang}/fiyatlar`}
-                className="text-sm font-medium text-muted transition hover:text-foreground lg:hidden"
+                className="hidden text-sm font-medium text-muted transition hover:text-foreground min-[480px]:block lg:hidden"
               >
                 {lang === "tr" ? "Fiyatlar" : "Pricing"}
               </Link>
@@ -94,7 +94,7 @@ export default async function SiteHeader({
               </Link>
               <Link
                 href={`/${lang}/kayit`}
-                className="rounded-full px-5 py-2 text-sm font-bold text-white shadow-md transition hover:-translate-y-0.5 hover:opacity-90 hover:shadow-lg"
+                className="whitespace-nowrap rounded-full px-5 py-2 text-sm font-bold text-white shadow-md transition hover:-translate-y-0.5 hover:opacity-90 hover:shadow-lg"
                 style={{
                   background:
                     "linear-gradient(135deg, var(--color-accent) 0%, #7c3aed 100%)",

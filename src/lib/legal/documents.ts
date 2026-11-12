@@ -240,7 +240,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
         list: [
           "Hesap bilgileri: ad, e-posta adresi, şifren (yalnızca şifrelenmiş hâliyle saklanır; biz göremeyiz). Google ile girersen Google'ın paylaştığı ad ve e-posta.",
           "Çalışmaların: yüklediğin kitap metinleri, görseller ve platformda hazırladığın kapak, mizanpaj ve diğer dosyalar.",
-          "Satın alma kayıtları: aldığın paket, tutar, tarih, jeton hareketleri. Kart bilgilerin bize hiç ulaşmaz; ödeme kuruluşu tarafından işlenir.",
+          "Satın alma kayıtları: aldığın paket, tutar, tarih, jeton hareketleri ve fatura bilgilerin (ad soyad veya unvan, adres; verirsen TC kimlik no ya da vergi no). Faturan, anlaşmalı e-fatura hizmet sağlayıcımız üzerinden düzenlenir. Kart bilgilerin bize hiç ulaşmaz; ödeme kuruluşu tarafından işlenir.",
           "Teknik kayıtlar: IP adresi, tarayıcı bilgisi, giriş zamanları ve hata kayıtları (güvenlik ve hizmetin çalışması için).",
         ],
       },
@@ -311,7 +311,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
       {
         h: "2. İşlenen kişisel veriler",
         list: [
-          "Kimlik ve iletişim: ad, e-posta adresi.",
+          "Kimlik ve iletişim: ad, e-posta adresi; satın almada fatura bilgileri (ad soyad veya unvan, adres, isteğe bağlı TC kimlik no ya da vergi no ve vergi dairesi).",
           "Müşteri işlem: sipariş, ödeme tutarı ve tarihi, jeton hareketleri, destek yazışmaları.",
           "İşlem güvenliği: IP adresi, giriş kayıtları, şifrelenmiş şifre.",
           "Kullanıcı içeriği: yüklenen metinler, görseller ve hazırlanan dosyalar (bunların içinde kişisel veri bulunması kullanıcının tercihine bağlıdır).",
