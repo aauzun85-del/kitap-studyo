@@ -434,6 +434,27 @@ export function parseBlocks(raw: string, detectHeadings: boolean, media?: MediaM
 //  3) Bölüm işareti KULLANAN kitaplarda, işaret almamış (kicker'sız) ana-bölüm
 //     başlıklarını alt-bölüme (level 2 — akış içi kalın başlık, yeni sayfa açmaz)
 //     indir. İşaretsiz kitaplarda hiyerarşi DEĞİŞMEZ (geriye dönük uyum).
+//  4) Ayrı işaret YOK ama bölümler "BÖLÜM N — Başlık" biçiminde TEK SATIRSA
+//     (birleşik işaret; en az 3 başlık): kalıba uymayan ve bölüm sözcüğü
+//     (giriş/önsöz/kapanış…) taşımayan ana-bölüm başlıkları metin-İÇİ küçük
+//     başlıktır ("MATMAZEL SNOBKY.", şarkı/mektup/resim-altı satırları) →
+//     alt-bölüme iner: içindekilere GİRMEZ, yeni sayfa AÇMAZ. (Züppeler
+//     Kitabı vakası: içindekiler bu satırlarla dolmuştu.)
+
+// Birleşik bölüm başlığı: satır "BÖLÜM N" ile BAŞLAR, başlık aynı satırda sürer
+// ("BÖLÜM XXI — KITA AVRUPASI'NDAN…"). isChapterMarker'dan farkı: satır işaretle
+// bitmek zorunda değil.
+const COMBINED_CHAPTER = /^(bölüm|bolum|kısım|kisim|chapter|part)\s+([ivxlcdm]+|\d+)\b/i;
+
+// Ön/arka bölüm sözcükleri: bunları taşıyan başlıklar "BÖLÜM N" kalıbına uymasa
+// da GERÇEK bölümdür (içindekilerde kalmalı). Küçük harfe indirilmiş metinde
+// aranır (Türkçe İ/ı için toLocaleLowerCase("tr") şart; /i bayrağı İ'yi ıskalar).
+const SECTION_WORD =
+  /(^|\P{L})(giriş|giris|önsöz|onsoz|sunuş|sunus|sonsöz|sonsoz|son söz|kapanış|kapanis|epilog|prolog|teşekkür|tesekkur|kaynakça|kaynakca|dizin|notlar|ekler|appendix|afterword|conclusion|closing|foreword|introduction|preface|prologue|index)(\P{L}|$)/u;
+function hasSectionWord(text: string): boolean {
+  return SECTION_WORD.test(text.toLocaleLowerCase("tr"));
+}
+
 export function restructureHeadings(input: Block[]): Block[] {
   // 1) Arka kapak metnini kes.
   const bcIdx = input.findIndex(
@@ -444,7 +465,23 @@ export function restructureHeadings(input: Block[]): Block[] {
   const hasMarkers = blocks.some(
     (b) => b.type === "heading" && isChapterMarker(plainOf(b.runs)),
   );
-  if (!hasMarkers) return blocks;
+  if (!hasMarkers) {
+    // 4) Birleşik işaretli kitap: "BÖLÜM N — Başlık" kalıbındaki level-1 sayısı
+    // yeterliyse, kalıp dışı + bölüm-sözcüksüz level-1'leri akışa indir.
+    const combinedCount = blocks.filter(
+      (b) => b.type === "heading" && b.level === 1 && COMBINED_CHAPTER.test(plainOf(b.runs)),
+    ).length;
+    if (combinedCount >= 3) {
+      for (const b of blocks) {
+        if (b.type !== "heading" || b.level !== 1) continue;
+        const plain = plainOf(b.runs);
+        if (COMBINED_CHAPTER.test(plain)) continue;
+        if (hasSectionWord(plain) || isClosingWord(plain)) continue;
+        b.level = 2;
+      }
+    }
+    return blocks;
+  }
 
   // 2) İşaretleri sonraki başlığa kicker olarak bağla.
   const out: Block[] = [];
