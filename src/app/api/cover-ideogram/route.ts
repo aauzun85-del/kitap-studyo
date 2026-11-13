@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { chargeCredits } from "@/lib/credits/server";
 import { runReplicate, fetchImageAsDataUrl } from "@/lib/server/replicate";
 
 // Ideogram v3 (Quality). Tipografi/yazıyı en temiz basan modellerden biri →
@@ -42,6 +43,10 @@ export async function POST(request: Request) {
     magic_prompt_option: "Auto",
   };
 
+  const gate = await chargeCredits("cover-ideogram");
+  if (!gate.ok) return gate.response;
+
+  let ok = false;
   try {
     // Ideogram çıktısı çoğunlukla tek URL string; dizi gelirse yardımcı ilkini alır.
     const run = await runReplicate({
@@ -61,11 +66,14 @@ export async function POST(request: Request) {
     if (!img.ok) {
       return NextResponse.json({ error: "fetch-image" }, { status: 502 });
     }
+    ok = true;
     return NextResponse.json({ image: img.dataUrl });
   } catch (e) {
     return NextResponse.json(
       { error: "exception", detail: String(e).slice(0, 300) },
       { status: 500 },
     );
+  } finally {
+    if (!ok) await gate.refund();
   }
 }

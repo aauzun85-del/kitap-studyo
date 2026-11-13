@@ -1,8 +1,10 @@
 // AppShell için kullanıcı kimliği türetme (sunucu tarafı paylaşılan yardımcı).
 import { isAdminEmail } from "@/lib/admin";
+import { getBalanceById } from "@/lib/credits/server";
 import type { ShellUser } from "@/components/app/AppShell";
 
 type SupabaseUserLike = {
+  id?: string | null;
   email?: string | null;
   user_metadata?: Record<string, unknown> | null;
 } | null;
@@ -21,13 +23,18 @@ export function deriveIdentity(email: string, fullName?: string): { name: string
   return { name, initials };
 }
 
-/** Supabase user → AppShell ShellUser (yoksa null). */
-export function toShellUser(user: SupabaseUserLike): ShellUser | null {
+/** Supabase user → AppShell ShellUser (yoksa null). Jeton bakiyesini de çeker
+ *  (admin için null = sınırsız → üst barda "∞" gösterilir). */
+export async function toShellUser(
+  user: SupabaseUserLike,
+): Promise<ShellUser | null> {
   if (!user) return null;
   const email = user.email ?? "";
   const fullName =
     (user.user_metadata?.full_name as string | undefined) ??
     (user.user_metadata?.name as string | undefined);
   const { name, initials } = deriveIdentity(email, fullName);
-  return { name, initials, email, isAdmin: isAdminEmail(email) };
+  const isAdmin = isAdminEmail(email);
+  const balance = isAdmin || !user.id ? null : await getBalanceById(user.id);
+  return { name, initials, email, isAdmin, balance };
 }

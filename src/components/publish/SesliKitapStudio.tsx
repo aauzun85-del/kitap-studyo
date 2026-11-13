@@ -4,6 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
+import { requireExport } from "@/lib/credits/exportGate";
+import { creditCost } from "@/lib/credits/pricing";
+import CreditNotice, { creditProblemFrom, type CreditProblem } from "@/components/credits/CreditNotice";
 import { useMetaSync, useManuscriptSync } from "@/lib/projects/useSync";
 import { docxToText } from "@/lib/editor/docxText";
 import { splitChapters } from "@/lib/publish/chapters";
@@ -30,15 +33,19 @@ Pencerenin önünde durup sokağa baktı. Şehir uyanıyordu ama o, bir süredir
 Belki de mesele uyku değildi. Belki de mesele, dün gece okuduğu o mektuptu. Mektup hâlâ ceketinin cebindeydi.`;
 
 type AudioVoice = "ai" | "own";
+type AudioErr = "token" | "generic" | "too-long" | "timeout" | "slow-down";
 
 export default function SesliKitapStudio({
   lang,
   dict,
   initialProject,
+  canExport,
 }: {
   lang: Locale;
   dict: Dictionary;
   initialProject?: { id: string; data: ProjectEnvelope };
+  /** Aktif jeton paketi var mı? false ise mp3 indirme kilitli. */
+  canExport: boolean;
 }) {
   const t = dict.publishStudio;
   const projectId = initialProject?.id ?? null;
@@ -68,7 +75,11 @@ export default function SesliKitapStudio({
   const [previewBusy, setPreviewBusy] = useState(false);
   const [chapterAudio, setChapterAudio] = useState<Record<number, string>>({});
   const [genIdx, setGenIdx] = useState<number | null>(null);
-  const [audioErr, setAudioErr] = useState<"token" | "generic" | null>(null);
+  const [audioErr, setAudioErr] = useState<AudioErr | null>(null);
+  // Jeton yetmedi (402) / oturum kapandı (401) → ortak uyarı kutusu.
+  const [creditProblem, setCreditProblem] = useState<CreditProblem | null>(null);
+  // Bölüm başına seslendirme fiyatı tek kaynaktan (pricing.ts) gelir.
+  const ttsCost = String(creditCost("tts"));
   // Dinleme hızı: üretilen sesi yeniden üretmeden (kredi harcamadan) hızlı/yavaş
   // oynatır. TTS "okuma hızı"ndan farklı; yalnız oynatıcıya uygulanır.
   const [listenRate, setListenRate] = useState(1);
@@ -98,6 +109,8 @@ export default function SesliKitapStudio({
   // gelmesin diye temizlenir.
   function resetAudio() {
     setChapterAudio({});
+    setAudioErr(null);
+    setCreditProblem(null);
   }
 
   // Motor değişince o motorun ilk sesine geç, önceki sesleri temizle (eski motorun
@@ -130,17 +143,39 @@ export default function SesliKitapStudio({
   }
 
   // Metni /api/tts'e gönderir; başarılıysa çalınabilir/indirilebilir data URL
-  // döner. Hata durumunda audioErr'i ayarlayıp null döndürür.
-  async function callTts(text: string): Promise<string | null> {
+  // döner. Hata durumunda audioErr / creditProblem'i ayarlayıp null döndürür.
+  // preview=true → ücretsiz ses denemesi (sunucu sabit bir örnek cümle okur).
+  async function callTts(text: string, preview = false): Promise<string | null> {
     setAudioErr(null);
+    setCreditProblem(null);
     try {
       const res = await fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voiceId: aiVoice, speed: aiSpeed, engine }),
+        body: JSON.stringify(
+          preview
+            ? { preview: true, voiceId: aiVoice, speed: aiSpeed, engine }
+            : { text, voiceId: aiVoice, speed: aiSpeed, engine },
+        ),
       });
-      if (res.status === 503) {
-        setAudioErr("token");
+      const problem = await creditProblemFrom(res);
+      if (problem) {
+        setCreditProblem(problem);
+        return null;
+      }
+      // Ücretsiz denemede jeton düşülmez; "jetonun geri yüklendi" demek yanlış olur.
+      if (res.status === 504 && preview) {
+        setAudioErr("generic");
+        return null;
+      }
+      const known: Record<number, AudioErr> = {
+        503: "token",
+        413: "too-long",
+        504: "timeout",
+        429: "slow-down",
+      };
+      if (known[res.status]) {
+        setAudioErr(known[res.status]);
         return null;
       }
       if (!res.ok) {
@@ -162,7 +197,7 @@ export default function SesliKitapStudio({
   async function handlePreview() {
     setPreviewBusy(true);
     setPreviewUrl(null);
-    const url = await callTts(t.audioPreviewText);
+    const url = await callTts("", true);
     if (url) setPreviewUrl(url);
     setPreviewBusy(false);
   }
@@ -381,7 +416,9 @@ export default function SesliKitapStudio({
 
               <div className="border-t border-border pt-3">
                 <div className="text-sm font-semibold text-foreground">{t.audioChaptersHeading}</div>
-                <p className="mt-1 text-xs text-muted">{t.audioChaptersHint}</p>
+                <p className="mt-1 text-xs text-muted">
+                  {t.audioChaptersHint.replace("{cost}", ttsCost)}
+                </p>
                 {hasText && chapters.length > 0 ? (
                   <ul className="mt-2 flex flex-col gap-2">
                     {chapters.map((c, i) => {
@@ -415,6 +452,9 @@ export default function SesliKitapStudio({
                               <a
                                 href={audioUrl}
                                 download={`${suggestFilename(bookTitle.trim() || t.untitledBook).replace(/\.epub$/, "")}-${i + 1}.mp3`}
+                                onClick={(e) => {
+                                  if (!requireExport(canExport, lang)) e.preventDefault();
+                                }}
                                 className="self-start text-xs font-medium text-accent transition hover:underline"
                               >
                                 ↓ {t.audioDownload}
@@ -430,12 +470,27 @@ export default function SesliKitapStudio({
                 )}
               </div>
 
+              {creditProblem && (
+                <CreditNotice
+                  lang={lang}
+                  problem={creditProblem}
+                  onClose={() => setCreditProblem(null)}
+                />
+              )}
               {audioErr && (
-                <p className="text-xs text-red-500">
-                  {audioErr === "token" ? t.audioTokenError : t.audioGenericError}
+                <p role="alert" className="text-xs text-red-500">
+                  {audioErr === "token"
+                    ? t.audioTokenError
+                    : audioErr === "too-long"
+                      ? t.audioTooLongError
+                      : audioErr === "timeout"
+                        ? t.audioTimeoutError
+                        : audioErr === "slow-down"
+                          ? t.audioSlowDownError
+                          : t.audioGenericError}
                 </p>
               )}
-              <p className="text-xs text-muted">{t.audioCreditNote}</p>
+              <p className="text-xs text-muted">{t.audioCreditNote.replace("{cost}", ttsCost)}</p>
             </div>
           ) : (
             <p className="mt-3 text-center text-xs text-muted">{t.audioOwnSoonNote}</p>

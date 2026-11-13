@@ -56,7 +56,7 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
   return (
     <AppShell
       lang={lang}
-      user={toShellUser(user)}
+      user={await toShellUser(user)}
       signOut={signOutAction.bind(null, lang)}
       active="kapak"
       context={context}

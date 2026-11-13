@@ -3,7 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { Locale } from "@/i18n/config";
-import { CREDIT_ADDONS, CREDIT_PACKAGES, PACKAGE_VALIDITY_DAYS } from "@/lib/credits/pricing";
+import {
+  CREDIT_ADDONS,
+  CREDIT_PACKAGES,
+  PACKAGE_VALIDITY_DAYS,
+  PAYMENT_OPEN,
+} from "@/lib/credits/pricing";
 
 import BillingForm, { EMPTY_BILLING, validateBilling, type BillingErrors } from "./BillingForm";
 
@@ -11,7 +16,9 @@ const ALL = [...CREDIT_PACKAGES, ...CREDIT_ADDONS];
 
 // Satın alma adımları: paket → sipariş özeti → fatura bilgileri → sözleşme onayı → ödeme.
 // Kart ödemesi ödeme kuruluşu onayından sonra son adıma bağlanacak; o güne kadar
-// bu ekran hiçbir ücret almaz ve bunu açıkça söyler.
+// (PAYMENT_OPEN = false) bu ekran hiçbir ücret almaz, bunu açıkça söyler ve üyeye
+// paketi BUGÜN nasıl alacağını gösterir: bize yazar, paketi biz tanımlarız.
+// Dört adım ve kart açıklaması her durumda görünür kalır (ödeme kuruluşu inceler).
 const COPY = {
   tr: {
     title: "Satın al",
@@ -48,8 +55,13 @@ const COPY = {
     needAgree: "Devam etmek için sözleşmeyi onaylamalısın.",
     secure: "Kart bilgilerin ödeme kuruluşunun güvenli ekranına girilecek; Laycoty'ye ulaşmaz.",
     notOpen:
-      "Kartla ödeme henüz açık değil: ödeme kuruluşunun onayından sonra güvenli ödeme ekranı tam bu adımda açılacak. Şu anda hiçbir ücret alınmadı.",
-    contact: "Soruların için: İletişim",
+      "Kartla ödeme henüz açık değil: ödeme kuruluşunun onayından sonra güvenli ödeme ekranı tam bu adımda açılacak. Bu sayfada senden ücret alınmaz.",
+    today:
+      "Paketi bugün almak için bize yaz; hesabına biz tanımlarız. Mesajına paketin adını ve yukarıdaki fatura bilgilerini ekle; faturanı bu bilgilerle keseriz.",
+    request: "Paket talebi için bize yaz",
+    ready: "Talebin hazır. Şimdi bize yaz; mesajına paketin adını ve yukarıdaki fatura bilgilerini ekle.",
+    contact: "İletişim sayfasına git",
+    payFailed: "Ödeme ekranı şu an açılamadı. Bize yaz, yardımcı olalım.",
   },
   en: {
     title: "Checkout",
@@ -86,8 +98,13 @@ const COPY = {
     needAgree: "Please accept the agreement to continue.",
     secure: "Your card details are entered on the payment provider's secure page and never reach Laycoty.",
     notOpen:
-      "Card payment is not open yet: the secure payment page will open at this step once the payment provider approves us. You have not been charged.",
-    contact: "Contact us",
+      "Card payment is not open yet: the secure payment page will open at this step once the payment provider approves us. Nothing is charged on this page.",
+    today:
+      "To get the package today, contact us and we will add it to your account. Include the package name and the invoice details above in your message; we issue your invoice with them.",
+    request: "Contact us to get this package",
+    ready: "Your request is ready. Now contact us; include the package name and the invoice details above in your message.",
+    contact: "Go to the Contact page",
+    payFailed: "The payment page could not be opened. Contact us and we will help.",
   },
 } as const;
 
@@ -198,9 +215,14 @@ export default function Checkout({ lang, initialId }: { lang: Locale; initialId?
 
       <section className="mt-8">
         <h2 className={heading}>4. {t.step3}</h2>
-        <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-          {t.notOpen}
-        </p>
+        {!PAYMENT_OPEN && (
+          <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+            {t.notOpen} {t.today}{" "}
+            <Link href={`/${lang}/iletisim`} target="_blank" className="font-semibold underline">
+              {t.contact}
+            </Link>
+          </p>
+        )}
         <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-surface px-4 py-3 text-base leading-relaxed text-foreground/85">
           <input
             type="checkbox"
@@ -238,12 +260,14 @@ export default function Checkout({ lang, initialId }: { lang: Locale; initialId?
               document.getElementById(`fatura-${Object.keys(errs)[0]}`)?.focus();
               return;
             }
+            // TODO: ödeme yönlendirmesi buraya. PAYMENT_OPEN true yapılırken sanal POS
+            // çağrısı bu satırın yerine bağlanmalı; bağlanana kadar "closed" notu görünür.
             setNote(accepted ? "closed" : "agree");
           }}
           className="mt-4 w-full rounded-full py-3.5 text-sm font-bold text-white transition hover:opacity-90"
           style={{ background: "linear-gradient(135deg, var(--color-accent) 0%, #7c3aed 100%)" }}
         >
-          {t.pay} · {pkg.priceTry.toLocaleString(nf)} ₺
+          {PAYMENT_OPEN ? t.pay : t.request} · {pkg.priceTry.toLocaleString(nf)} ₺
         </button>
         <p className="mt-2 text-center text-xs text-muted">{t.secure}</p>
 
@@ -252,11 +276,18 @@ export default function Checkout({ lang, initialId }: { lang: Locale; initialId?
             role="status"
             className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
           >
-            {note === "billing" ? t.needBilling : note === "agree" ? t.needAgree : t.notOpen}
+            {note === "billing"
+              ? t.needBilling
+              : note === "agree"
+                ? t.needAgree
+                : PAYMENT_OPEN
+                  ? t.payFailed
+                  : t.ready}
             {note === "closed" && (
               <>
                 {" "}
-                <Link href={`/${lang}/iletisim`} className="font-semibold underline">
+                {/* Yeni sekmede açılır: girilen fatura bilgileri bu sayfada kalsın. */}
+                <Link href={`/${lang}/iletisim`} target="_blank" className="font-semibold underline">
                   {t.contact}
                 </Link>
               </>

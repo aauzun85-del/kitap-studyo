@@ -5,6 +5,13 @@ import type { Dispatch, SetStateAction } from "react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
+import { requireExport } from "@/lib/credits/exportGate";
+import { creditCost, type CreditAction } from "@/lib/credits/pricing";
+import CreditNotice, {
+  creditProblemFrom,
+  creditProblemText,
+  type CreditProblem,
+} from "@/components/credits/CreditNotice";
 import { useManuscriptSync } from "@/lib/projects/useSync";
 import { useSaveStatus, formatSavedTime, SAVE_LABELS } from "@/lib/projects/saveStatus";
 import { genreEditorMode } from "@/lib/projects/genres";
@@ -881,16 +888,41 @@ function contextIn(src: string, original: string): SuggestionContext | null {
   return { before, match, after };
 }
 
+// Her AI kontrolünün sunucuda yaktığı jeton kalemi (uç noktalardaki
+// chargeCredits ile aynı). Kontroller hep "deep" gönderildiği için editöryal
+// inceleme derin fiyattan düşer. Bedel PARÇA başınadır.
+const CHECK_ACTION: Record<CheckKind, CreditAction> = {
+  check: "editor-check",
+  review: "editor-review-deep",
+  risk: "editor-risk",
+  genre: "editor-genre",
+};
+// Toplam bedel bunu aşarsa başlamadan önce sorulur.
+const CONFIRM_OVER = 10;
+// "Kitabın ilk ~N sayfası" tahmini için: bir kitap sayfası ≈ 1800 karakter.
+const CHARS_PER_PAGE = 1800;
+
+/** Jeton yüzünden yarıda kalan / bilerek kısaltılan inceleme. `problem` null =
+ *  üye "yalnız jetonumun yettiği kadarını incele" dedi. */
+type CreditStop = { problem: CreditProblem | null; done: number; total: number };
+
 export default function EditorStudio({
   lang,
   dict,
   initialProject,
+  canExport,
+  creditBalance,
 }: {
   lang: Locale;
   dict: Dictionary;
   initialProject?: { id: string; data: ProjectEnvelope };
+  /** Aktif jeton paketi var mı? false ise Word indirme kilitli. */
+  canExport: boolean;
+  /** Sayfa açılırkenki jeton bakiyesi; yönetici için null (sınırsız). */
+  creditBalance: number | null;
 }) {
   const t = dict.editorStudio;
+  const isTr = lang === "tr";
   const projectId = initialProject?.id ?? null;
 
   // Editör yalnız paylaşılan kitap METNİNİ tutar (başlık/yazar yok).
@@ -977,6 +1009,34 @@ export default function EditorStudio({
   const [structure, setStructure] = useState<StructureReport | null>(null);
   const [prep, setPrep] = useState(false);
 
+  // JETON — bakiyenin yerel kopyası: başarılı her parçadan sonra düşülür, sunucu
+  // 402 ile bakiye bildirirse o sayı esas alınır. null = yönetici (sınırsız).
+  const [balance, setBalance] = useState<number | null>(creditBalance);
+  // Başlamadan önce bedeli onaylatılan kontrol (yoksa null).
+  const [pendingKind, setPendingKind] = useState<CheckKind | null>(null);
+  // Jeton/oturum yüzünden yarıda kalan ya da bilerek kısaltılan son inceleme.
+  const [creditStop, setCreditStop] = useState<CreditStop | null>(null);
+
+  // Sunucudan yeni bakiye gelirse (sayfa yenilendi, yönetici jeton tanımladı)
+  // yerel kopya ona eşitlenir.
+  const [seenBalance, setSeenBalance] = useState<number | null>(creditBalance);
+  if (seenBalance !== creditBalance) {
+    setSeenBalance(creditBalance);
+    setBalance(creditBalance);
+  }
+
+  // Bedel onayı dar ekranda düğmelerin altında kalır: açılınca görünür yere
+  // kaydırılır ve odak ilk düğmesine taşınır (üye "düğme çalışmadı" sanmasın).
+  const confirmRef = useRef<HTMLDivElement>(null);
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
+  function revealConfirm() {
+    confirmRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    confirmBtnRef.current?.focus({ preventScroll: true });
+  }
+  useEffect(() => {
+    if (pendingKind) revealConfirm();
+  }, [pendingKind]);
+
   // Bu üç sayım tüm metin üzerinde ~11 geçiş yapar; her tuşta değil, yazma
   // durunca (ertelenmiş metinle) hesaplanır → tuş vuruşu takılmaz.
   const stats = useMemo(
@@ -1010,6 +1070,8 @@ export default function EditorStudio({
     setStructure(null);
     setPrep(false);
     setExportInfo(null);
+    setPendingKind(null);
+    setCreditStop(null);
   }
 
   // PERFORMANS (29 bin kelimelik kitapta donma): eskiden her kart her render'da
@@ -1127,6 +1189,7 @@ export default function EditorStudio({
   // işlenir (mizanpaj için yapı bozulmaz). Yoksa düz metinden yeni docx üretilir.
   async function handleExportDocx() {
     if (!hasText) return;
+    if (!requireExport(canExport, lang)) return;
     setExporting(true);
     setExportInfo(null);
     try {
@@ -1180,28 +1243,45 @@ export default function EditorStudio({
   // İlerleme ve sonuçlar oturum deposuna yazılır; bu yüzden kullanıcı başka
   // adıma geçse de (bileşen kapansa da) iş sürer. `signal` iptal edilince
   // ("Durdur") kalan parçalar HİÇ gönderilmez — boşa istek ve maliyet yok.
+  // Bir parça 402/401 dönerse (jeton bitti / oturum kapandı) sonraki parçalar da
+  // gönderilmez; o ana kadar dönenler korunur ve `credit` ile bildirilir.
+  // `limit`: yalnız ilk N parça gönderilir (üyenin jetonu o kadarına yetiyorsa).
   async function runChunked<T>(
     text: string,
     signal: AbortSignal,
     endpoint: string,
     extract: (data: unknown) => T[] | undefined,
+    unit: number,
     extraBody?: Record<string, unknown>,
-  ): Promise<{ items: T[]; error: string | null; aborted: boolean; done: number; total: number }> {
-    const chunks = chunkText(text, CHUNK_SIZE);
+    limit?: number,
+  ): Promise<{
+    items: T[];
+    error: string | null;
+    aborted: boolean;
+    done: number;
+    /** Sonucu gerçekten dönen (jetonu düşen) parça sayısı. */
+    reviewed: number;
+    total: number;
+    credit: CreditProblem | null;
+  }> {
+    const all = chunkText(text, CHUNK_SIZE);
+    const chunks = limit ? all.slice(0, limit) : all;
     const total = chunks.length;
     let done = 0;
+    let reviewed = 0;
     const report = () => {
       if (total > 1 && isCurrentJob(sessionKey, signal)) patch({ progress: { done, total } });
     };
     report();
     const items: T[] = [];
     let firstError: string | null = null;
+    let credit: CreditProblem | null = null;
 
     for (let i = 0; i < chunks.length; i += CONCURRENCY) {
-      if (signal.aborted) break;
+      if (signal.aborted || credit) break;
       const batch = chunks.slice(i, i + CONCURRENCY);
       const results = await Promise.all(
-        batch.map(async (chunk): Promise<{ ok: T[] } | { err: string } | { aborted: true }> => {
+        batch.map(async (chunk): Promise<{ ok: T[] } | { err: string } | { aborted: true } | { credit: CreditProblem }> => {
           try {
             const res = await fetch(endpoint, {
               method: "POST",
@@ -1211,6 +1291,14 @@ export default function EditorStudio({
               body: JSON.stringify({ text: chunk, lang, mode: "deep", ...extraBody }),
               signal,
             });
+            // Jeton yetmedi / oturum kapandı: bu parça incelenmedi sayılır.
+            // (401 her zaman oturum değildir: AI anahtarı geçersizse de 401
+            // "bad-key" döner → o, aşağıdaki olağan hata yoluna düşer.)
+            const authLike =
+              res.status !== 401 ||
+              ((await res.clone().json().catch(() => ({}))) as { error?: string }).error === "auth";
+            const problem = authLike ? await creditProblemFrom(res) : null;
+            if (problem) return { credit: problem };
             let out: { ok: T[] } | { err: string };
             if (!res.ok) {
               const d = (await res.json().catch(() => ({}))) as { error?: string; max?: number };
@@ -1218,6 +1306,9 @@ export default function EditorStudio({
             } else {
               const d = (await res.json()) as unknown;
               out = { ok: extract(d) ?? [] };
+              reviewed += 1;
+              // Bu parçanın jetonu düştü → yerel bakiyeyi güncelle.
+              setBalance((b) => (b === null ? b : Math.max(0, b - unit)));
             }
             done += 1;
             report();
@@ -1233,16 +1324,23 @@ export default function EditorStudio({
       );
       for (const r of results) {
         if ("ok" in r) items.push(...r.ok);
+        else if ("credit" in r) credit = credit ?? r.credit;
         else if ("err" in r && !firstError) firstError = r.err;
       }
     }
+    // Sunucu bakiyeyi bildirdiyse (402) yerel tahmin yerine o sayı geçerli.
+    const hit = credit as CreditProblem | null; // (döngüde atanıyor; TS daraltmasın)
+    const reported = hit?.kind === "no-credits" ? hit.balance : undefined;
+    if (typeof reported === "number") setBalance((b) => (b === null ? b : reported));
     // Hiç sonuç yoksa ve hata varsa hatayı bildir; bazı parçalar başardıysa göster.
     return {
       items,
       error: items.length === 0 ? firstError : null,
       aborted: signal.aborted,
       done,
-      total,
+      reviewed,
+      total: all.length,
+      credit,
     };
   }
 
@@ -1254,13 +1352,25 @@ export default function EditorStudio({
     extract: (data: unknown) => T[] | undefined,
     toSuggestions: (items: T[], text: string) => Suggestion[],
     extraBody?: Record<string, unknown>,
+    limit?: number,
   ) {
     const text = raw;
     const signal = beginJob(sessionKey, kind);
     setStructure(null);
     setPrep(false);
+    setPendingKind(null);
+    setCreditStop(null);
     try {
-      const r = await runChunked<T>(text, signal, endpoint, extract, extraBody);
+      const r = await runChunked<T>(
+        text,
+        signal,
+        endpoint,
+        extract,
+        creditCost(CHECK_ACTION[kind]),
+        extraBody,
+        limit,
+      );
+      if (!isCurrentJob(sessionKey, signal)) return;
       if (r.aborted) {
         const found = r.items.length > 0 ? dedupeSuggestions(toSuggestions(r.items, text)) : null;
         finishJob(sessionKey, signal, {
@@ -1268,12 +1378,30 @@ export default function EditorStudio({
           suggestions: found,
           checkedText: found ? text : "",
         });
+      } else if (r.credit && r.reviewed === 0) {
+        // Hiçbir parça incelenemedi: sonuç yok, yalnız ortak jeton uyarısı.
+        // (Metin hâli oturumda da durur: ekrandan çıkıp dönünce kaybolmasın.)
+        setCreditStop({ problem: r.credit, done: 0, total: r.total });
+        finishJob(sessionKey, signal, { checkError: creditProblemText(r.credit, lang) });
+      } else if (r.credit) {
+        // Yarıda kaldı: o ana kadar bulunanlar gösterilir, üstünde kalıcı uyarı.
+        setCreditStop({ problem: r.credit, done: r.reviewed, total: r.total });
+        finishJob(sessionKey, signal, {
+          stopped: { done: r.reviewed, total: r.total },
+          suggestions: dedupeSuggestions(toSuggestions(r.items, text)),
+          checkedText: text,
+        });
       } else if (r.error && r.items.length === 0) {
         finishJob(sessionKey, signal, { checkError: r.error });
       } else {
+        // Bilerek kısaltılan incelemede (limit) kalan kısım açıkça belirtilir.
+        // Sayaç = sonucu gerçekten dönen parçalar (hata verip iade edilenler değil).
+        const partial = r.reviewed < r.total;
+        if (partial) setCreditStop({ problem: null, done: r.reviewed, total: r.total });
         finishJob(sessionKey, signal, {
           suggestions: dedupeSuggestions(toSuggestions(r.items, text)),
           checkedText: text,
+          ...(partial ? { stopped: { done: r.reviewed, total: r.total } } : {}),
         });
       }
     } catch {
@@ -1283,7 +1411,7 @@ export default function EditorStudio({
 
   // Genel Kontrol (Kategori 1-2): yazım/dilbilgisi düzeltmeleri + yerel uzun
   // cümle uyarıları.
-  function handleCheck() {
+  function startCheck(limit?: number) {
     void runAiCheck<AiSuggestion>(
       "check",
       "/api/editor-check",
@@ -1292,12 +1420,14 @@ export default function EditorStudio({
         ...items.map((s): Suggestion => ({ ...s, kind: "fix" })),
         ...findLongSentences(text),
       ],
+      undefined,
+      limit,
     );
   }
 
   // Editöryal inceleme (Aşama 3): akış, tekrar, üslup, paragraf. Gelen her
   // gözlem advisory bir "notice"; otomatik düzeltme yok.
-  function handleReview() {
+  function startReview(limit?: number) {
     void runAiCheck<ReviewNote>(
       "review",
       "/api/editor-review",
@@ -1311,12 +1441,14 @@ export default function EditorStudio({
           explanation: n.issue,
           severity: n.severity,
         })),
+      undefined,
+      limit,
     );
   }
 
   // Riskli içerik (Kategori 5): yalnız ciddi yayın/hukuk riskleri. Gelen her
   // gözlem advisory bir "notice"; otomatik düzeltme yok.
-  function handleRisk() {
+  function startRisk(limit?: number) {
     void runAiCheck<RiskNote>(
       "risk",
       "/api/editor-risk",
@@ -1329,12 +1461,14 @@ export default function EditorStudio({
           category: n.category,
           explanation: n.issue,
         })),
+      undefined,
+      limit,
     );
   }
 
   // Türe göre özel kontrol (Kategori 6): seçilen türe (roman, kişisel gelişim,
   // akademik) özel başlıklar. Gelen her gözlem advisory bir "notice".
-  function handleGenre() {
+  function startGenre(limit?: number) {
     void runAiCheck<GenreNote>(
       "genre",
       "/api/editor-genre",
@@ -1348,12 +1482,54 @@ export default function EditorStudio({
           explanation: n.issue,
         })),
       { genre },
+      limit,
     );
+  }
+
+  function launch(kind: CheckKind, limit?: number) {
+    if (kind === "check") startCheck(limit);
+    else if (kind === "review") startReview(limit);
+    else if (kind === "risk") startRisk(limit);
+    else startGenre(limit);
+  }
+
+  // Bir kontrolün bedeli: parça sayısı × parça başı jeton. `affordable` =
+  // bakiyenin yettiği parça sayısı (yöneticide hepsi).
+  function costOf(kind: CheckKind) {
+    const unit = creditCost(CHECK_ACTION[kind]);
+    const parts = chunkText(raw, CHUNK_SIZE).length;
+    const affordable =
+      balance === null || unit === 0 ? parts : Math.min(parts, Math.floor(balance / unit));
+    return { unit, parts, total: parts * unit, affordable };
+  }
+
+  // Ücretli kontrol düğmeleri buradan geçer: bedel küçükse ve bakiye yetiyorsa
+  // hemen başlar; değilse sonuç panelinde önce bedel gösterilip onay istenir.
+  // Yönetici jeton harcamaz → sorulmaz.
+  function requestRun(kind: CheckKind) {
+    const c = costOf(kind);
+    if (balance === null || (c.total <= CONFIRM_OVER && c.affordable >= c.parts)) {
+      launch(kind);
+      return;
+    }
+    // Aynı onay zaten açıksa effect yeniden çalışmaz → burada göster.
+    if (pendingKind === kind) revealConfirm();
+    setPendingKind(kind);
+  }
+
+  // Düğmelerin altındaki kısa bedel notu.
+  function costHint(kind: CheckKind): string {
+    const unit = creditCost(CHECK_ACTION[kind]);
+    return isTr
+      ? `parça başına ${unit} jeton`
+      : `${unit} ${unit === 1 ? "credit" : "credits"} per part`;
   }
 
   // Yerel görünümler (3 ve 4) açılınca önceki AI sonuçları paneli bırakır.
   function clearAiResults() {
     patch({ suggestions: null, decisions: {}, fixActions: [], checkedText: "", checkError: null, stopped: null });
+    setPendingKind(null);
+    setCreditStop(null);
   }
 
   // Kitap yapısı (Kategori 3): tamamen yerel, API harcaması yok. Metni
@@ -1547,6 +1723,41 @@ export default function EditorStudio({
     ? suggestions.filter((_, i) => !decisions[i]).length
     : 0;
 
+  // Başlamadan önce onay bekleyen kontrolün bedeli (yalnız onay ekranı açıkken
+  // hesaplanır). `pendingShort` = bakiye tamamına yetmiyor.
+  const pendingCost = pendingKind && !running ? costOf(pendingKind) : null;
+  const pendingShort = pendingCost !== null && pendingCost.affordable < pendingCost.parts;
+  const pendingPages = pendingCost
+    ? Math.max(1, Math.round((pendingCost.affordable * CHUNK_SIZE) / CHARS_PER_PAGE))
+    : 0;
+
+  // Jeton uyarısı yalnız ait olduğu sonuç hâlâ ekrandayken gösterilir.
+  const creditInfo = creditStop && (stopped || checkError) ? creditStop : null;
+  // Yarıda kalan / kısaltılan incelemenin sonuçların üstündeki kalıcı uyarısı.
+  const creditBanner =
+    creditInfo && !checkError ? (
+      <div className="mb-3 space-y-2">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+          {(() => {
+            const d = String(creditInfo.done);
+            const n = String(creditInfo.total);
+            if (creditInfo.problem?.kind === "auth")
+              return isTr
+                ? `Oturumun kapandı: ${d}/${n} parça incelendi, kalan kısım incelenmedi.`
+                : `Your session expired: ${d} of ${n} parts reviewed; the rest was not reviewed.`;
+            if (creditInfo.problem)
+              return isTr
+                ? `Jetonun bitti: ${d}/${n} parça incelendi, kalan kısım incelenmedi.`
+                : `Out of credits: ${d} of ${n} parts reviewed; the rest was not reviewed.`;
+            return isTr
+              ? `Jetonun yettiği kadarı incelendi: ${d}/${n} parça. Kalan kısım incelenmedi.`
+              : `Reviewed as far as your credits allowed: ${d} of ${n} parts. The rest was not reviewed.`;
+          })()}
+        </div>
+        {creditInfo.problem && <CreditNotice lang={lang} problem={creditInfo.problem} />}
+      </div>
+    ) : null;
+
   return (
     <div className="mx-auto flex min-h-full w-full max-w-[1400px] flex-col gap-4 px-4 py-6 lg:flex-row">
       <aside className="w-full shrink-0 lg:w-[380px]">
@@ -1566,6 +1777,8 @@ export default function EditorStudio({
               setRaw(e.target.value);
               setCheckError(null);
               setExportInfo(null);
+              // Metin değişti → gösterilen bedel artık eski; yeniden sorulsun.
+              setPendingKind(null);
             }}
             placeholder={t.textPlaceholder}
             rows={14}
@@ -1705,7 +1918,7 @@ export default function EditorStudio({
           <div className="mt-5 h-px bg-border" />
 
           <button
-            onClick={handleCheck}
+            onClick={() => requestRun("check")}
             disabled={!hasText || checking || reviewing || risking || genreLoading}
             className="mt-4 flex w-full items-center gap-2.5 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -1716,10 +1929,13 @@ export default function EditorStudio({
             )}
             {checking ? t.checking : t.checkCta}
           </button>
-          <p className="mt-1.5 pl-[30px] text-xs text-muted">{t.checkHint}</p>
+          <p className="mt-1.5 pl-[30px] text-xs text-muted">
+            {t.checkHint}{" "}
+            <span className="whitespace-nowrap opacity-80">· {costHint("check")}</span>
+          </p>
 
           <button
-            onClick={handleReview}
+            onClick={() => requestRun("review")}
             disabled={!hasText || checking || reviewing || risking || genreLoading}
             className="mt-2 flex w-full items-center gap-2.5 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition enabled:hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -1730,7 +1946,10 @@ export default function EditorStudio({
             )}
             {reviewing ? t.reviewing : t.reviewCta}
           </button>
-          <p className="mt-1.5 pl-[30px] text-xs text-muted">{t.reviewHint}</p>
+          <p className="mt-1.5 pl-[30px] text-xs text-muted">
+            {t.reviewHint}{" "}
+            <span className="whitespace-nowrap opacity-80">· {costHint("review")}</span>
+          </p>
 
           <button
             onClick={handleStructure}
@@ -1753,7 +1972,7 @@ export default function EditorStudio({
           <p className="mt-1.5 pl-[30px] text-xs text-muted">{t.prepHint}</p>
 
           <button
-            onClick={handleRisk}
+            onClick={() => requestRun("risk")}
             disabled={!hasText || checking || reviewing || risking || genreLoading}
             className="mt-2 flex w-full items-center gap-2.5 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition enabled:hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -1764,10 +1983,13 @@ export default function EditorStudio({
             )}
             {risking ? t.risking : t.riskCta}
           </button>
-          <p className="mt-1.5 pl-[30px] text-xs text-muted">{t.riskHint}</p>
+          <p className="mt-1.5 pl-[30px] text-xs text-muted">
+            {t.riskHint}{" "}
+            <span className="whitespace-nowrap opacity-80">· {costHint("risk")}</span>
+          </p>
 
           <button
-            onClick={handleGenre}
+            onClick={() => requestRun("genre")}
             disabled={!hasText || checking || reviewing || risking || genreLoading}
             className="mt-2 flex w-full items-center gap-2.5 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition enabled:hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -1789,7 +2011,10 @@ export default function EditorStudio({
             <option value="selfhelp">{t.genreSelfhelp}</option>
             <option value="academic">{t.genreAcademic}</option>
           </select>
-          <p className="mt-1.5 pl-[30px] text-xs text-muted">{t.genreHint}</p>
+          <p className="mt-1.5 pl-[30px] text-xs text-muted">
+            {t.genreHint}{" "}
+            <span className="whitespace-nowrap opacity-80">· {costHint("genre")}</span>
+          </p>
         </div>
       </aside>
 
@@ -1806,10 +2031,76 @@ export default function EditorStudio({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          {checkError ? (
-            <div className="mx-auto mt-6 max-w-md rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              {checkError}
+          {pendingCost && pendingKind ? (
+            // BAŞLAMADAN ÖNCE BEDEL — kaç jeton gideceği ve bakiye; onay üyede.
+            <div
+              ref={confirmRef}
+              role="status"
+              className="mx-auto mt-6 max-w-md rounded-lg border border-border bg-surface p-4 text-sm text-foreground"
+            >
+              <p className="leading-relaxed">
+                {isTr
+                  ? `Bu inceleme ${pendingCost.parts} parça × ${pendingCost.unit} = ${pendingCost.total} jeton harcar.`
+                  : `This review uses ${pendingCost.parts} ${pendingCost.parts === 1 ? "part" : "parts"} × ${pendingCost.unit} = ${pendingCost.total} credits.`}
+                {balance !== null && (isTr ? ` Bakiyen: ${balance}.` : ` Your balance: ${balance}.`)}
+              </p>
+              {pendingShort && pendingCost.affordable > 0 && (
+                <p className="mt-2 font-semibold leading-relaxed">
+                  {isTr
+                    ? `Jetonun ${pendingCost.affordable} parçaya yetiyor (kitabın ilk ~${pendingPages} sayfası). Yalnız o kadarını incele?`
+                    : `Your credits cover ${pendingCost.affordable} ${pendingCost.affordable === 1 ? "part" : "parts"} (about the first ${pendingPages} pages of the book). Review only that much?`}
+                </p>
+              )}
+              {pendingShort && (
+                <CreditNotice
+                  lang={lang}
+                  className="mt-3"
+                  problem={{ kind: "no-credits", cost: pendingCost.total, balance: balance ?? undefined }}
+                />
+              )}
+              <div className="mt-4 flex flex-wrap gap-2">
+                {!pendingShort || pendingCost.affordable > 0 ? (
+                  <button
+                    ref={confirmBtnRef}
+                    onClick={() => launch(pendingKind, pendingShort ? pendingCost.affordable : undefined)}
+                    className="rounded-lg bg-accent px-4 py-1.5 text-sm font-semibold text-white transition hover:opacity-90"
+                  >
+                    {pendingShort
+                      ? isTr
+                        ? `İlk ${pendingCost.affordable} parçayı incele`
+                        : `Review the first ${pendingCost.affordable} ${pendingCost.affordable === 1 ? "part" : "parts"}`
+                      : isTr
+                        ? "Başlat"
+                        : "Start"}
+                  </button>
+                ) : (
+                  // Yerel bakiye bayat olabilir (jeton az önce tanımlanmış
+                  // olabilir): tek parça denenir; sunucu 402 dönerse jeton
+                  // harcanmaz ve gerçek bakiye yerel kopyayı düzeltir.
+                  <button
+                    ref={confirmBtnRef}
+                    onClick={() => launch(pendingKind, 1)}
+                    className="rounded-lg border border-border px-4 py-1.5 text-sm font-semibold text-foreground transition hover:border-accent"
+                  >
+                    {isTr ? "Yine de dene" : "Try anyway"}
+                  </button>
+                )}
+                <button
+                  onClick={() => setPendingKind(null)}
+                  className="rounded-lg border border-border px-4 py-1.5 text-sm font-semibold text-foreground transition hover:border-accent"
+                >
+                  {isTr ? "Vazgeç" : "Cancel"}
+                </button>
+              </div>
             </div>
+          ) : checkError ? (
+            creditInfo?.problem ? (
+              <CreditNotice lang={lang} problem={creditInfo.problem} className="mx-auto mt-6 max-w-md" />
+            ) : (
+              <div className="mx-auto mt-6 max-w-md rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                {checkError}
+              </div>
+            )
           ) : structure ? (
             <StructureView report={structure} t={t} />
           ) : prep ? (
@@ -1841,6 +2132,12 @@ export default function EditorStudio({
                 {projectId && <p className="text-xs text-muted">{t.stopHint}</p>}
               </div>
             </div>
+          ) : creditBanner && suggestions && suggestions.length === 0 ? (
+            // Yarıda kaldı ve incelenen kısımda sorun çıkmadı.
+            <>
+              {creditBanner}
+              <p className="mt-4 text-center text-sm text-muted">{t.noIssues}</p>
+            </>
           ) : stopped && (suggestions === null || suggestions.length === 0) ? (
             <div className="flex h-full items-center justify-center p-4">
               <div className="max-w-sm text-center">
@@ -1865,7 +2162,8 @@ export default function EditorStudio({
             </div>
           ) : (
             <>
-            {stopped && (
+            {creditBanner}
+            {stopped && !creditBanner && (
               <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 <span className="font-semibold">{t.stoppedTitle}</span>{" "}
                 {stopped.total > 1

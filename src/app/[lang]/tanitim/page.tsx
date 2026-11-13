@@ -26,7 +26,7 @@ export default async function TanitimPage({ params, searchParams }: PageProps<"/
     initialProject = await loadInitialProject(supabase, sp.project);
   }
 
-  const shellUser = toShellUser(user);
+  const shellUser = await toShellUser(user);
   const collapsed = await getSidebarCollapsed();
   const meta = initialProject?.data.meta;
   const context: AppShellContext = {

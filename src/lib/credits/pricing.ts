@@ -68,6 +68,11 @@ export function creditCost(action: CreditAction): number {
 
 // ───────────────────────── SATIN ALMA / PAKETLER ─────────────────────────
 
+// Kartla ödeme açık mı? false iken üye sitede satın alamaz; paket ve jetonu
+// yönetici elle tanımlar (Yönetim → üye → "Paket / ek jeton tanımla"). Mesajlar
+// buna göre "bize yaz" der. Sanal POS bağlanınca true yapılacak.
+export const PAYMENT_OPEN = false;
+
 // Satın alınan jetonların geçerlilik süresi (gün). Bu süre sonunda o paketin
 // jetonları yanar. Supabase tarafında da aynı sayı kullanılır (approve).
 export const PACKAGE_VALIDITY_DAYS = 30;
@@ -121,6 +126,26 @@ export const CREDIT_ADDONS: CreditPackage[] = [
 
 export function findPackage(id: string): CreditPackage | undefined {
   return CREDIT_PACKAGES.find((p) => p.id === id);
+}
+
+// Paket mi ek jeton mu? Paket indirme hakkı da verir; ek jeton yalnız bakiye ekler.
+export type ProductKind = "package" | "addon";
+
+export function findProduct(
+  id: string,
+): { product: CreditPackage; kind: ProductKind } | undefined {
+  const pkg = CREDIT_PACKAGES.find((p) => p.id === id);
+  if (pkg) return { product: pkg, kind: "package" };
+  const addon = CREDIT_ADDONS.find((p) => p.id === id);
+  if (addon) return { product: addon, kind: "addon" };
+  return undefined;
+}
+
+// KDV oranı (%). Fiyatlar KDV DAHİLDİR; fatura için ayrıştırılır.
+export const VAT_RATE = 20;
+export function splitVat(grossTry: number): { net: number; vat: number } {
+  const net = Math.round((grossTry / (1 + VAT_RATE / 100)) * 100) / 100;
+  return { net, vat: Math.round((grossTry - net) * 100) / 100 };
 }
 
 // Havale/EFT bilgileri — satın alma sayfasında gösterilir.

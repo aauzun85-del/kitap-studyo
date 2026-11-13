@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { chargeCredits } from "@/lib/credits/server";
 import { runReplicate, fetchImageAsDataUrl } from "@/lib/server/replicate";
 
 // FLUX 1.1 Pro (yüksek kalite / sanatsal). Sağlayıcıyı veya modeli değiştirmek
@@ -51,6 +52,10 @@ export async function POST(request: Request) {
     input.height = body.height ?? 960;
   }
 
+  const gate = await chargeCredits("cover-art");
+  if (!gate.ok) return gate.response;
+
+  let ok = false;
   try {
     const run = await runReplicate({
       token,
@@ -70,11 +75,14 @@ export async function POST(request: Request) {
     if (!img.ok) {
       return NextResponse.json({ error: "fetch-image" }, { status: 502 });
     }
+    ok = true;
     return NextResponse.json({ image: img.dataUrl });
   } catch (e) {
     return NextResponse.json(
       { error: "exception", detail: String(e).slice(0, 300) },
       { status: 500 },
     );
+  } finally {
+    if (!ok) await gate.refund();
   }
 }

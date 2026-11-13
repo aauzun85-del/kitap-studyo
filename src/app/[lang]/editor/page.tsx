@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/user";
 import { loadInitialProject } from "@/lib/projects/server";
 import { toShellUser } from "@/lib/app/identity";
+import { getBalanceById, hasActivePackageById } from "@/lib/credits/server";
+import { isAdminEmail } from "@/lib/admin";
 import { getSidebarCollapsed } from "@/lib/app/prefs";
 import { signOutAction } from "@/app/[lang]/auth-actions";
 import AppShell, { type AppShellContext } from "@/components/app/AppShell";
@@ -24,6 +26,10 @@ export default async function EditorPage({ params, searchParams }: PageProps<"/[
   const supabase = await createClient();
   const initialProject = await loadInitialProject(supabase, sp.project);
   const collapsed = await getSidebarCollapsed();
+  const canExport = await hasActivePackageById(user.id, user.email);
+  // Jeton bakiyesi: editör, incelemeye başlamadan önce bedeli bununla kıyaslar.
+  // Yönetici jeton harcamaz → null (sınırsız).
+  const creditBalance = isAdminEmail(user.email) ? null : await getBalanceById(user.id);
 
   const meta = initialProject?.data.meta;
   const context: AppShellContext = {
@@ -51,7 +57,7 @@ export default async function EditorPage({ params, searchParams }: PageProps<"/[
   return (
     <AppShell
       lang={lang}
-      user={toShellUser(user)}
+      user={await toShellUser(user)}
       signOut={signOutAction.bind(null, lang)}
       active="editor"
       context={context}
@@ -63,6 +69,8 @@ export default async function EditorPage({ params, searchParams }: PageProps<"/[
         lang={lang}
         dict={dict}
         initialProject={initialProject}
+        canExport={canExport}
+        creditBalance={creditBalance}
       />
     </AppShell>
   );

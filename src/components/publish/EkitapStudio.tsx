@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
+import { requireExport } from "@/lib/credits/exportGate";
 import { useMetaSync, useManuscriptSync } from "@/lib/projects/useSync";
 import { docxToText } from "@/lib/editor/docxText";
 import { splitChapters } from "@/lib/publish/chapters";
@@ -36,10 +37,12 @@ export default function EkitapStudio({
   lang,
   dict,
   initialProject,
+  canExport,
 }: {
   lang: Locale;
   dict: Dictionary;
   initialProject?: { id: string; data: ProjectEnvelope };
+  canExport: boolean;
 }) {
   const t = dict.publishStudio;
   const projectId = initialProject?.id ?? null;
@@ -138,6 +141,7 @@ export default function EkitapStudio({
   }
 
   function download(blob: Blob, name: string) {
+    if (!requireExport(canExport, lang)) return;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -151,6 +155,8 @@ export default function EkitapStudio({
   // Seçili tüm formatları tarayıcıda üretip indirir. Kindle = Amazon KDP'nin
   // doğrudan kabul ettiği EPUB (aynı motor, farklı dosya adı).
   async function handleBuild() {
+    // Paket yoksa hiç üretme: tek soru, boşuna dosya ve yanlış "hazır" notu yok.
+    if (!requireExport(canExport, lang)) return;
     setBuilding(true);
     resetBuild();
     try {

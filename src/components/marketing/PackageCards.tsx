@@ -3,7 +3,9 @@ import type { Locale } from "@/i18n/config";
 import {
   CREDIT_PACKAGES,
   PACKAGE_VALIDITY_DAYS,
+  PAYMENT_OPEN,
   PRICING,
+  WELCOME_CREDITS,
 } from "@/lib/credits/pricing";
 
 // Jeton paketleri — ana sayfa ve Fiyatlar sayfası AYNI kartları gösterir.
@@ -13,6 +15,9 @@ export default function PackageCards({ lang }: { lang: Locale }) {
   const nf = tr ? "tr-TR" : "en-US";
   const coverCost = PRICING["cover-art"];
   const deepCost = PRICING["editor-review-deep"];
+  // Derin inceleme PARÇA başına ücretlenir (≈12.000 karakter ≈ 6 kitap sayfası);
+  // kartta "kaç inceleme" değil, yaklaşık kaç SAYFA incelenebileceği yazılır.
+  const PAGES_PER_PART = 6;
 
   return (
     <div>
@@ -24,8 +29,8 @@ export default function PackageCards({ lang }: { lang: Locale }) {
           </div>
           <div className="text-sm text-muted">
             {tr
-              ? "Üye olmak ücretsiz; tüm araçları dene. Paketler, kartla ödeme açıldığında yürürlüğe girer."
-              : "Membership is free; try every tool. Packages take effect once card payment opens."}
+              ? `Üye olmak ücretsiz; ${WELCOME_CREDITS} hoş geldin jetonuyla araçları dene. Dosya indirmek için paket gerekir.`
+              : `Membership is free; try the tools with ${WELCOME_CREDITS} welcome credits. Downloading files needs a package.`}
           </div>
         </div>
         <Link
@@ -87,8 +92,8 @@ export default function PackageCards({ lang }: { lang: Locale }) {
                 <li className="flex gap-2">
                   <span className="font-bold text-accent">✓</span>
                   {tr
-                    ? `≈ ${Math.floor(p.credits / coverCost)} AI kapak görseli ya da ${Math.floor(p.credits / deepCost)} derin editör incelemesi`
-                    : `≈ ${Math.floor(p.credits / coverCost)} AI cover images or ${Math.floor(p.credits / deepCost)} deep editor reviews`}
+                    ? `≈ ${Math.floor(p.credits / coverCost)} AI kapak görseli ya da ≈ ${(Math.floor(p.credits / deepCost) * PAGES_PER_PART).toLocaleString(nf)} sayfalık derin editör incelemesi`
+                    : `≈ ${Math.floor(p.credits / coverCost)} AI cover images or a deep editor review of ≈ ${(Math.floor(p.credits / deepCost) * PAGES_PER_PART).toLocaleString(nf)} pages`}
                 </li>
                 <li className="flex gap-2">
                   <span className="font-bold text-accent">✓</span>
@@ -116,6 +121,17 @@ export default function PackageCards({ lang }: { lang: Locale }) {
           );
         })}
       </div>
+
+      {/* Kartla ödeme kapalıyken paketin BUGÜN nasıl alınacağını söyle. */}
+      {!PAYMENT_OPEN && (
+        <p className="mx-auto mt-6 max-w-3xl text-center text-sm leading-relaxed text-muted">
+          {tr ? "Kartla ödeme henüz açık değil. Paket için " : "Card payment is not open yet. To get a package, "}
+          <Link href={`/${lang}/iletisim`} className="font-semibold text-accent hover:underline">
+            {tr ? "bize yaz" : "contact us"}
+          </Link>
+          {tr ? "; hesabına biz tanımlarız, faturan e-postana gelir." : "; we add it to your account and e-mail your invoice."}
+        </p>
+      )}
 
       <p className="mx-auto mt-6 max-w-3xl text-center text-xs leading-relaxed text-muted">
         {tr ? (

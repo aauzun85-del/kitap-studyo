@@ -5,6 +5,7 @@ import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
 import { useMetaSync } from "@/lib/projects/useSync";
+import CreditNotice, { creditProblemFrom, type CreditProblem } from "@/components/credits/CreditNotice";
 import {
   MegaphoneIcon,
   BookIcon,
@@ -72,6 +73,10 @@ export default function TanitimStudio({
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const [image, setImage] = useState<string | null>(null);
+  // Jeton yetmedi (402) / oturum kapandı (401) → ortak uyarı kutusu. Metin ve
+  // görsel ayrı istekler olduğundan ayrı tutulur (biri ötekini silmesin).
+  const [creditProblem, setCreditProblem] = useState<CreditProblem | null>(null);
+  const [imageCreditProblem, setImageCreditProblem] = useState<CreditProblem | null>(null);
 
   // Bilgiler kitaptan getirildi mi (kullanıcıya bilgi notu için).
   const [pulled, setPulled] = useState(false);
@@ -107,6 +112,8 @@ export default function TanitimStudio({
     setResult(null);
     setImage(null);
     setImageError(null);
+    setCreditProblem(null);
+    setImageCreditProblem(null);
     setPulled(false);
   }
 
@@ -170,6 +177,7 @@ export default function TanitimStudio({
   async function generateText() {
     setLoading(true);
     setError(null);
+    setCreditProblem(null);
     const selected = (Object.keys(materials) as Material[]).filter(
       (m) => materials[m],
     );
@@ -179,6 +187,21 @@ export default function TanitimStudio({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...bookPayload(), materials: selected }),
       });
+      // Rota, yapay zekâ anahtarı geçersizken de 401 döner ("bad-key"); bu bir
+      // oturum sorunu değildir, "giriş yap" uyarısına düşmesin.
+      if (res.status === 401) {
+        const peek = (await res.clone().json().catch(() => ({}))) as { error?: string };
+        if (peek.error === "bad-key") {
+          setError(mapError("bad-key"));
+          return;
+        }
+      }
+      // Jeton/oturum sorununda yeni iş hiç başlamadı: eski çıktı ekranda kalır.
+      const problem = await creditProblemFrom(res);
+      if (problem) {
+        setCreditProblem(problem);
+        return;
+      }
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         setError(mapError(data.error));
@@ -198,17 +221,21 @@ export default function TanitimStudio({
   async function generateImage() {
     setImageLoading(true);
     setImageError(null);
+    setImageCreditProblem(null);
     try {
       const res = await fetch("/api/promo-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(bookPayload()),
       });
+      const problem = await creditProblemFrom(res);
+      if (problem) {
+        setImageCreditProblem(problem);
+        return;
+      }
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        setImageError(
-          data.error === "no-token" ? t.errorNoImageKey : t.errorImageGeneric,
-        );
+        setImageError(data.error === "no-token" ? t.errorNoImageKey : t.errorImageGeneric);
         setImage(null);
         return;
       }
@@ -229,6 +256,9 @@ export default function TanitimStudio({
 
   function generate() {
     if (!hasInfo || !anyOutput || busy) return;
+    // Önceki denemeden kalan jeton uyarıları bayatlamasın: ikisini de temizle.
+    setCreditProblem(null);
+    setImageCreditProblem(null);
     // Metin ve görsel üretimi bağımsız; ikisi birden seçiliyse paralel çalışır.
     if (anyMaterial) void generateText();
     if (withImage) void generateImage();
@@ -430,6 +460,18 @@ export default function TanitimStudio({
             <p className="mt-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
               {error}
             </p>
+          )}
+          {/* Metin ve görsel aynı nedenle durduysa tek uyarı yeter. */}
+          {(creditProblem ?? imageCreditProblem) && (
+            <CreditNotice
+              lang={lang}
+              problem={(creditProblem ?? imageCreditProblem)!}
+              className="mt-2"
+              onClose={() => {
+                setCreditProblem(null);
+                setImageCreditProblem(null);
+              }}
+            />
           )}
         </div>
       </aside>

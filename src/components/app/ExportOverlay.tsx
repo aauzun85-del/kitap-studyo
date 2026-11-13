@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { creditProblemText } from "@/components/credits/CreditNotice";
+import { PAYMENT_OPEN } from "@/lib/credits/pricing";
 
 /**
  * Sihirbazın indirme ekranından bir modüle "?export=1" ile gelindiğinde,
@@ -10,6 +12,8 @@ import Link from "next/link";
  *  - done:    "indirildi ✓" + (tarayıcı otomatik indirmeyi engellediyse) elle
  *             "İndir" düğmesi + "İndirme ekranına dön".
  *  - error:   hata + "Tekrar dene" + dön.
+ *  - locked:  aktif paket yok → indirme başlamaz; açıklama + "Paketleri gör" +
+ *             dön (indir / tekrar dene düğmesi YOK).
  * onDownload = modülün export fonksiyonu (kullanıcı tıklayınca = jest → indirme
  * garanti). Otomatik deneme + bu düğme birlikte hem tek-tık hem güvence verir.
  */
@@ -22,7 +26,7 @@ export default function ExportOverlay({
 }: {
   lang: "tr" | "en";
   kind: "ic" | "kapak";
-  status: "working" | "done" | "error";
+  status: "working" | "done" | "error" | "locked";
   backHref: string;
   onDownload: () => void;
 }) {
@@ -37,9 +41,13 @@ export default function ExportOverlay({
         ? tr
           ? `${label} indirildi`
           : `${label} downloaded`
-        : tr
-          ? "Bir sorun oldu"
-          : "Something went wrong";
+        : status === "locked"
+          ? tr
+            ? "İndirmek için paket gerekli"
+            : "A package is needed to download"
+          : tr
+            ? "Bir sorun oldu"
+            : "Something went wrong";
   const sub =
     status === "working"
       ? tr
@@ -49,9 +57,11 @@ export default function ExportOverlay({
         ? tr
           ? "Tarayıcının indirilenler klasörüne kaydedildi. İnmediyse aşağıdaki düğmeye bas."
           : "Saved to your browser's downloads. If it didn't start, use the button below."
-        : tr
-          ? "PDF üretilemedi. Tekrar dene; sürerse modülden elle indir."
-          : "Couldn't generate the PDF. Try again; if it persists, download from the module.";
+        : status === "locked"
+          ? creditProblemText({ kind: "no-package" }, lang)
+          : tr
+            ? "PDF üretilemedi. Tekrar dene; sürerse modülden elle indir."
+            : "Couldn't generate the PDF. Try again; if it persists, download from the module.";
 
   return (
     <div
@@ -81,7 +91,7 @@ export default function ExportOverlay({
         }}
       >
         <div style={{ fontSize: 40, lineHeight: 1 }}>
-          {status === "working" ? "📄" : status === "done" ? "✅" : "⚠️"}
+          {status === "working" ? "📄" : status === "done" ? "✅" : status === "locked" ? "🔒" : "⚠️"}
         </div>
         <h2 style={{ margin: "14px 0 6px", fontSize: 21, fontWeight: 800, letterSpacing: "-.3px" }}>{head}</h2>
         <p style={{ margin: "0 auto", fontSize: 14, color: "#6b7280", lineHeight: 1.55, maxWidth: 360 }}>{sub}</p>
@@ -90,22 +100,59 @@ export default function ExportOverlay({
 
         {status !== "working" && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginTop: 22 }}>
-            <button
-              type="button"
-              onClick={onDownload}
-              style={{
-                background: "#4f46e5",
-                color: "#fff",
-                fontWeight: 700,
-                fontSize: 14,
-                padding: "11px 20px",
-                borderRadius: 11,
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              {status === "error" ? (tr ? "Tekrar dene" : "Try again") : tr ? "İndir" : "Download"}
-            </button>
+            {status === "locked" ? (
+              <Link
+                href={`/${lang}/fiyatlar`}
+                style={{
+                  display: "inline-block",
+                  background: "#4f46e5",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  padding: "11px 20px",
+                  borderRadius: 11,
+                  textDecoration: "none",
+                }}
+              >
+                {tr ? "Paketleri gör" : "See packages"}
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={onDownload}
+                style={{
+                  background: "#4f46e5",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  padding: "11px 20px",
+                  borderRadius: 11,
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                {status === "error" ? (tr ? "Tekrar dene" : "Try again") : tr ? "İndir" : "Download"}
+              </button>
+            )}
+            {/* Kartla ödeme kapalıyken paket elle tanımlanır → yazma yolu da görünsün. */}
+            {status === "locked" && !PAYMENT_OPEN && (
+              <Link
+                href={`/${lang}/iletisim`}
+                style={{
+                  display: "inline-block",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  padding: "11px 20px",
+                  borderRadius: 11,
+                  textDecoration: "none",
+                  color: "#3b3f52",
+                  border: "1px solid #e5e7f0",
+                  background: "#fff",
+                }}
+              >
+                {tr ? "Bize yaz" : "Contact us"}
+              </Link>
+            )}
             <Link
               href={backHref}
               style={{

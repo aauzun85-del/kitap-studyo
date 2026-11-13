@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/user";
 import { loadInitialProject } from "@/lib/projects/server";
 import { toShellUser } from "@/lib/app/identity";
+import { hasActivePackageById } from "@/lib/credits/server";
 import { getSidebarCollapsed } from "@/lib/app/prefs";
 import { signOutAction } from "@/app/[lang]/auth-actions";
 import AppShell, { type AppShellContext } from "@/components/app/AppShell";
@@ -23,6 +24,7 @@ export default async function SesliKitapPage({ params, searchParams }: PageProps
   const supabase = await createClient();
   const initialProject = await loadInitialProject(supabase, sp.project);
   const collapsed = await getSidebarCollapsed();
+  const canExport = await hasActivePackageById(user.id, user.email);
 
   const meta = initialProject?.data.meta;
   const context: AppShellContext = {
@@ -37,7 +39,7 @@ export default async function SesliKitapPage({ params, searchParams }: PageProps
   return (
     <AppShell
       lang={lang}
-      user={toShellUser(user)}
+      user={await toShellUser(user)}
       signOut={signOutAction.bind(null, lang)}
       active="sesli-kitap"
       context={context}
@@ -48,6 +50,7 @@ export default async function SesliKitapPage({ params, searchParams }: PageProps
         lang={lang}
         dict={dict}
         initialProject={initialProject}
+        canExport={canExport}
       />
     </AppShell>
   );

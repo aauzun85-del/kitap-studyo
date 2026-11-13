@@ -2,7 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { isLocale } from "@/i18n/config";
-import { CREDIT_ADDONS, PRICING, PACKAGE_VALIDITY_DAYS } from "@/lib/credits/pricing";
+import {
+  CREDIT_ADDONS,
+  PACKAGE_VALIDITY_DAYS,
+  PAYMENT_OPEN,
+  PRICING,
+  WELCOME_CREDITS,
+} from "@/lib/credits/pricing";
 import { REFUND_WINDOW_DAYS } from "@/lib/legal/company";
 import PackageCards from "@/components/marketing/PackageCards";
 import LegalText from "@/components/legal/LegalText";
@@ -13,16 +19,26 @@ export async function generateMetadata({ params }: PageProps<"/[lang]/fiyatlar">
 }
 
 // Jeton nereye harcanır? — değerler pricing.ts'ten (tek kaynak).
+// AI Editör uzun metni ≈12.000 karakterlik parçalara böler ve HER PARÇA için
+// ayrı jeton harcar (bkz. EditorStudio → runChunked); satırlar bunu açıkça söyler.
 const SPEND = [
   { tr: "AI kapak görseli üretme", en: "AI cover image", cost: PRICING["cover-art"] },
   { tr: "Kapak düzenleme · tasarım öğesi", en: "Cover edit · design element", cost: PRICING["cover-edit"] },
   { tr: "Tanıtım görseli (Instagram vb.)", en: "Promo image (Instagram etc.)", cost: PRICING["promo-image"] },
   { tr: "Seslendirme (bölüm başına)", en: "Narration (per chapter)", cost: PRICING.tts },
-  { tr: "AI Editör — derin inceleme", en: "AI Editor — deep review", cost: PRICING["editor-review-deep"] },
-  { tr: "AI Editör — hızlı inceleme · yazım denetimi", en: "AI Editor — quick review · spell check", cost: PRICING["editor-review"] },
   {
-    tr: "Kısa yardımcılar (tür tespiti, risk taraması, etiket, tanıtım metni)",
-    en: "Small helpers (genre, risk scan, tags, promo copy)",
+    tr: "AI Editör — derin inceleme, parça başına (≈12.000 karakter, yaklaşık 6–7 kitap sayfası)",
+    en: "AI Editor — deep review, per part (≈12,000 characters, about 6–7 book pages)",
+    cost: PRICING["editor-review-deep"],
+  },
+  {
+    tr: "AI Editör — yazım denetimi · risk taraması · türe özel kontrol (her biri parça başına)",
+    en: "AI Editor — spell check · risk scan · genre check (each per part)",
+    cost: PRICING["editor-check"],
+  },
+  {
+    tr: "Kısa yardımcılar (etiket, kapak komutu önerisi, tanıtım metni)",
+    en: "Small helpers (tags, cover prompt suggestion, promo copy)",
     cost: PRICING["promo-generate"],
   },
 ];
@@ -43,12 +59,18 @@ export default async function PricingPage({ params }: PageProps<"/[lang]/fiyatla
           a: `Paketin ${PACKAGE_VALIDITY_DAYS}. günün sonunda kullanılmayan jetonlar geçersiz olur.`,
         },
         {
+          q: "Hoş geldin jetonlarının süresi var mı?",
+          a: `Hayır. Üye olunca hesabına gelen ${WELCOME_CREDITS} jetonun süresi dolmaz. Bu jetonlar paraya çevrilemez ve tek başına indirme hakkı vermez; indirmek için aktif paket gerekir.`,
+        },
+        {
           q: "Hangi işler jeton harcamaz?",
           a: "Mizanpaj (iç sayfa düzeni), kapağı elle tasarlamak, önizleme ve projelerini kaydetmek jeton harcamaz. Yalnızca yapay zekâ işlemleri jeton harcar.",
         },
         {
           q: "Nasıl ödeyebilirim?",
-          a: "Kredi veya banka kartınla, güvenli ödeme ekranından ödersin; kart bilgilerin bize ulaşmaz. Ödeme onaylanınca paketin hesabına tanımlanır. Kargo yoktur. Kartla ödeme, ödeme kuruluşu onayından sonra açılacak.",
+          a: PAYMENT_OPEN
+            ? "Kredi veya banka kartınla, güvenli ödeme ekranından ödersin; kart bilgilerin bize ulaşmaz. Ödeme onaylanınca paketin hesabına tanımlanır. Kargo yoktur."
+            : "Sitede kartla ödeme henüz açık değil. Şimdilik paket için bize yaz ([[iletisim]]); ödeme adımlarını sana bildiririz, paketi hesabına biz tanımlarız ve faturanı e-postayla göndeririz. Kartla ödeme açılınca kredi veya banka kartınla güvenli ödeme ekranından ödersin; kart bilgilerin bize ulaşmaz. Kargo yoktur.",
         },
         {
           q: "İade alabilir miyim?",
@@ -65,12 +87,18 @@ export default async function PricingPage({ params }: PageProps<"/[lang]/fiyatla
           a: `Unused credits expire at the end of day ${PACKAGE_VALIDITY_DAYS}.`,
         },
         {
+          q: "Do the welcome credits expire?",
+          a: `No. The ${WELCOME_CREDITS} credits you get when you sign up never expire. They cannot be converted to money and do not unlock downloads on their own; downloading needs an active package.`,
+        },
+        {
           q: "What is free?",
           a: "Layout, manual cover design, previews and saving projects are free. Only AI actions use credits.",
         },
         {
           q: "How can I pay?",
-          a: "By credit or debit card on a secure payment page; your card details never reach us. Your package is added to your account once the payment is approved. There is no shipping. Card payment opens once our payment provider approves us.",
+          a: PAYMENT_OPEN
+            ? "By credit or debit card on a secure payment page; your card details never reach us. Your package is added to your account once the payment is approved. There is no shipping."
+            : "Card payment is not open on the site yet. For now, contact us ([[iletisim]]) to get a package; we tell you how to pay, add the package to your account and e-mail your invoice. Once card payment opens you pay by credit or debit card on a secure payment page; your card details never reach us. There is no shipping.",
         },
         {
           q: "Can I get a refund?",
@@ -86,8 +114,20 @@ export default async function PricingPage({ params }: PageProps<"/[lang]/fiyatla
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-lg text-muted">
           {tr
-            ? "Üyelik ücretsiz. Kitabın hazır olup indirmek istediğinde bir kullanım paketi al. Kartla ödeme açılana kadar tüm araçlar üyelere ücretsizdir; paketler ödeme açıldığında yürürlüğe girer."
-            : "Membership is free. Buy a usage package when your book is ready to download. Until card payment opens, all tools are free for members; packages take effect when payment opens."}
+            ? `Üyelik ücretsiz; ${WELCOME_CREDITS} hoş geldin jetonuyla başlarsın. Yapay zekâ işlemleri jeton harcar. Dosyalarını indirmek için aktif bir paket gerekir.`
+            : `Membership is free and starts with ${WELCOME_CREDITS} welcome credits. AI actions use credits. Downloading your files needs an active package.`}
+          {!PAYMENT_OPEN && (
+            <>
+              {" "}
+              {tr
+                ? "Kartla ödeme henüz açık değil; paket için "
+                : "Card payment is not open yet; to get a package, "}
+              <Link href={`/${lang}/iletisim`} className="font-semibold text-accent hover:underline">
+                {tr ? "bize yaz" : "contact us"}
+              </Link>
+              {tr ? ", hesabına tanımlayalım." : " and we will add it to your account."}
+            </>
+          )}
         </p>
       </div>
 

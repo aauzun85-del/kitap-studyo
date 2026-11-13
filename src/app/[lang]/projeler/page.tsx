@@ -13,7 +13,7 @@ export default async function ProjelerPage({ params }: PageProps<"/[lang]/projel
   const user = await getCurrentUser();
   if (!user) redirect(`/${lang}/giris`);
 
-  const shellUser = toShellUser(user)!;
+  const shellUser = (await toShellUser(user))!;
   const collapsed = await getSidebarCollapsed();
 
   return (

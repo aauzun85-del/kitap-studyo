@@ -12,6 +12,7 @@ import {
   MegaphoneIcon,
 } from "@/components/PhosphorIcons";
 import PackageCards from "@/components/marketing/PackageCards";
+import { PACKAGE_VALIDITY_DAYS, WELCOME_CREDITS } from "@/lib/credits/pricing";
 
 const moduleIcons = {
   cover: PaletteIcon,
@@ -311,8 +312,8 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
             </h2>
             <p className="mt-3 text-muted">
               {isTr
-                ? "Paketi bir kez al, 30 gün kullan. Kendiliğinden yenilenmez."
-                : "Buy a package once and use it for 30 days. It never auto-renews."}
+                ? `Paketi bir kez al, ${PACKAGE_VALIDITY_DAYS} gün kullan. Kendiliğinden yenilenmez.`
+                : `Get a package once and use it for ${PACKAGE_VALIDITY_DAYS} days. It never auto-renews.`}
             </p>
           </div>
           <PackageCards lang={lang} />
@@ -342,8 +343,8 @@ export default async function HomePage({ params }: PageProps<"/[lang]">) {
           </h2>
           <p className="mt-5 text-lg text-muted">
             {isTr
-              ? "Üye olmak ücretsiz; tüm araçları hemen deneyebilirsin."
-              : "Membership is free; try every tool right away."}
+              ? `Üye olmak ücretsiz; ${WELCOME_CREDITS} hoş geldin jetonuyla hemen başlarsın. Dosya indirmek için paket gerekir.`
+              : `Membership is free; you start right away with ${WELCOME_CREDITS} welcome credits. Downloading files needs a package.`}
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Link

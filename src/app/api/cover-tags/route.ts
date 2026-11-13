@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { chargeCredits } from "@/lib/credits/server";
 
 // RAM (Recognize Anything) + Grounded SAM: görseldeki nesneleri otomatik tanır ve
 // virgülle ayrılmış etiketler (İngilizce) döndürür. Biz yalnız "tags" çıktısını
@@ -11,6 +12,11 @@ import { NextResponse } from "next/server";
 const MODEL_VERSION =
   "80a2aede4cf8e3c9f26e96c308d45b23c350dd36f1c381de790715007f1ac0ad";
 export const maxDuration = 60;
+// Senkron bekleme (sn) ve toplam bütçe, fonksiyon süresinin (maxDuration) İÇİNDE
+// kalır → Vercel isteği ortadan kesmez; zaman aşımı temiz bir hata olarak döner
+// ve jeton iadesi (finally) çalışır.
+const WAIT_SECONDS = 40;
+const TOTAL_BUDGET_MS = 50_000;
 
 type Body = { image?: string };
 
@@ -57,18 +63,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "no-image" }, { status: 400 });
   }
 
+  const gate = await chargeCredits("cover-tags");
+  if (!gate.ok) return gate.response;
+
+  // Bütün ağ çağrıları için ortak son süre; kullanıcı vazgeçerse de kesilir.
+  const deadline = AbortSignal.timeout(TOTAL_BUDGET_MS);
+
+  let ok = false;
   try {
+    const signal = AbortSignal.any([request.signal, deadline]);
     const res = await fetch("https://api.replicate.com/v1/predictions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
-        Prefer: "wait",
+        Prefer: `wait=${WAIT_SECONDS}`,
       },
       body: JSON.stringify({
         version: MODEL_VERSION,
         input: { input_image: image },
       }),
+      signal,
     });
 
     if (!res.ok) {
@@ -82,7 +97,22 @@ export async function POST(request: Request) {
     const data = (await res.json()) as {
       status?: string;
       output?: { tags?: string } | null;
+      urls?: { cancel?: string };
     };
+
+    // Senkron bekleme doldu ama iş hâlâ sürüyor → sağlayıcıda durdur (boşa
+    // çalışmasın) ve temiz bir "zaman aşımı" dön.
+    if (data.status === "starting" || data.status === "processing") {
+      if (data.urls?.cancel) {
+        await fetch(data.urls.cancel, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(5_000),
+        }).catch(() => {});
+      }
+      return NextResponse.json({ error: "timeout" }, { status: 504 });
+    }
+
     const raw = data.output?.tags ?? "";
     // "black, dog, floor" → ["black","dog","floor"] (tekrarları ve boşları ele).
     const seen = new Set<string>();
@@ -103,11 +133,21 @@ export async function POST(request: Request) {
 
     const tr = await translateTags(en);
     const tags = en.map((e, i) => ({ en: e, tr: tr[i] || e }));
+    ok = true;
     return NextResponse.json({ tags });
   } catch (e) {
+    // Kullanıcı vazgeçti ya da süre doldu → temiz hata (iade finally'de).
+    if (request.signal.aborted) {
+      return NextResponse.json({ error: "canceled" }, { status: 504 });
+    }
+    if (deadline.aborted || (e as Error)?.name === "TimeoutError") {
+      return NextResponse.json({ error: "timeout" }, { status: 504 });
+    }
     return NextResponse.json(
       { error: "exception", detail: String(e).slice(0, 300) },
       { status: 500 },
     );
+  } finally {
+    if (!ok) await gate.refund();
   }
 }

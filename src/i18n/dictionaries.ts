@@ -97,6 +97,12 @@ type CoverStudioCopy = {
   aiModelFlux: string;
   aiModelNano: string;
   aiModelIdeogram: string;
+  aiModelOpenai: string;
+  aiLastCost: string;
+  titlePosLabel: string;
+  titlePosHint: string;
+  titlePosTop: string;
+  titlePosAuto: string;
   aiEmbedLabel: string;
   aiEmbedHint: string;
   aiEmbedOn: string;
@@ -849,6 +855,9 @@ type PublishStudioCopy = {
   audioCreditNote: string;
   audioTokenError: string;
   audioGenericError: string;
+  audioTooLongError: string;
+  audioTimeoutError: string;
+  audioSlowDownError: string;
   audioOwnSoonNote: string;
   previewHeading: string;
   previewEmpty: string;
@@ -1215,10 +1224,17 @@ const tr: Dictionary = {
       "Bir stil seç, istersen kitabını birkaç kelimeyle anlat; yapay zeka sanatsal arka planı üretsin. Başlığı uygulama kendi fontuyla üstüne yazar.",
     aiModelLabel: "Yapay zeka modeli",
     aiModelHint:
-      "Üçü de kapak görseli üretir, farkları şu: FLUX hızlıdır ve görsele yazı basmaz — başlık/yazar üstüne ayrıca eklenir (önerilen). Nano Banana Pro tarifi en iyi izler; 'metni göm' açıksa başlığı resmin içine yazar. Ideogram v3 de yazıyı resme basar (tipografisi en iyisi) ama yavaş ve pahalıdır. Kararsızsan FLUX'ta kal.",
+      "ChatGPT yerleşim kurallarını en iyi izler: başlık bandı sade, logo bandı açık, arka kapak açık tonlu, sırt boş — yazıyı uygulama basar (önerilen). FLUX hızlıdır ve yazı basmaz. Nano Banana Pro tarifi iyi izler; 'metni göm' açıksa başlığı resmin içine yazar. Ideogram v3 de yazıyı resme basar (tipografisi en iyisi) ama yavaş ve pahalıdır.",
     aiModelFlux: "FLUX 1.1 Pro",
     aiModelNano: "Nano Banana Pro",
     aiModelIdeogram: "Ideogram v3",
+    aiModelOpenai: "ChatGPT (gpt-image 2.5)",
+    aiLastCost: "Son üretimin maliyeti",
+    titlePosLabel: "Başlık yeri",
+    titlePosHint:
+      "ChatGPT görseli üst bandı başlık için sade bırakır; üretimden sonra başlık kendiliğinden üste alınır. Şablonun kendi yerleşimine dönmek için 'Şablona göre'.",
+    titlePosTop: "Üst bant",
+    titlePosAuto: "Şablona göre",
     aiEmbedLabel: "Başlık ve yazarı görsele bas",
     aiEmbedHint:
       "Açık: model, başlık ve yazar adını doğrudan görselin içine yazar (kendi yazı katmanların gizlenir). Kapalı: yalnız sanat üretir, başlığı uygulama üstüne koyar.",
@@ -2003,7 +2019,7 @@ const tr: Dictionary = {
     epubErrorNote: "Dosyalar oluşturulamadı. Lütfen metni kontrol edip tekrar deneyin.",
     audioHeading: "Sesli kitap",
     audioAi: "Yapay zekâ sesi",
-    audioAiDesc: "Metni doğal bir insan sesiyle okutun. Mikrofon gerekmez. Her bölüm ayrı seslendirilir; her üretim kredi harcar.",
+    audioAiDesc: "Metni doğal bir insan sesiyle okut. Mikrofon gerekmez. Her bölüm ayrı seslendirilir; her seslendirme jeton harcar.",
     audioOwn: "Kendi sesimi yüklerim",
     audioOwnDesc: "Siz veya bir seslendirmen okur; ses dosyalarını yükler, bölümlere göre düzenleriz.",
     buildAudioCta: "Sesli kitap oluştur",
@@ -2013,12 +2029,12 @@ const tr: Dictionary = {
       {
         id: "minimax",
         name: "MiniMax (Türkçe seslere uygun)",
-        desc: "Türkçeye özel sesler içerir; dengeli kredi.",
+        desc: "Türkçeye özel sesler içerir.",
       },
       {
         id: "elevenlabs",
         name: "ElevenLabs v3 (çok doğal)",
-        desc: "Çok doğal ve anlatımlı; 70+ dil. Kredisi biraz daha yüksek olabilir.",
+        desc: "Çok doğal ve anlatımlı; 70+ dil.",
       },
     ],
     audioVoiceLabel: "Ses seçimi",
@@ -2071,18 +2087,21 @@ const tr: Dictionary = {
     ],
     audioSpeedLabel: "Okuma hızı",
     audioListenSpeedLabel: "Dinleme hızı",
-    audioListenSpeedHint: "Sesi yeniden üretmeden hızlı/yavaş dinletir — kredi harcamaz.",
-    audioPreviewCta: "Sesi dene",
+    audioListenSpeedHint: "Sesi yeniden üretmeden hızlı/yavaş dinletir — jeton harcamaz.",
+    audioPreviewCta: "Sesi dene (ücretsiz)",
     audioPreviewBusy: "Hazırlanıyor…",
     audioPreviewText: "Merhaba, bu seçtiğiniz sesin kısa bir örneğidir. Kitabınız bu tonda okunacak.",
     audioChaptersHeading: "Bölümleri seslendir",
-    audioChaptersHint: "Her bölümü tek tek seslendirin, dinleyin ve ses dosyasını indirin. Her seslendirme kredi harcar.",
+    audioChaptersHint: "Her bölümü tek tek seslendir, dinle ve ses dosyasını indir. Her bölüm seslendirmesi {cost} jeton harcar.",
     audioNarrateCta: "Seslendir",
     audioNarrateBusy: "Seslendiriliyor…",
     audioDownload: "İndir",
-    audioCreditNote: "Not: Her seslendirme yapay zekâ kredisi harcar. Önce kısa bir bölümle deneyin.",
-    audioTokenError: "Henüz API anahtarı eklenmemiş. .env.local dosyasına Replicate token'ını yapıştırıp sunucuyu yeniden başlatın.",
-    audioGenericError: "Ses üretilemedi. Birkaç saniye sonra tekrar deneyin; sorun sürerse anahtarı ve bakiyenizi kontrol edin.",
+    audioCreditNote: "Her bölüm seslendirmesi {cost} jeton harcar. Sesi denemek ücretsiz; önce kısa bir bölümle başla.",
+    audioTokenError: "Seslendirme şu anda kullanılamıyor. Biraz sonra tekrar dene; sorun sürerse bize yaz.",
+    audioGenericError: "Ses üretilemedi; jetonun harcanmadı. Birkaç saniye sonra tekrar dene; sorun sürerse bize yaz.",
+    audioTooLongError: "Bu bölüm tek seferde seslendirmek için çok uzun; bölümü ikiye böl.",
+    audioTimeoutError: "Seslendirme zamanında bitmedi; jetonun geri yüklendi, tekrar deneyebilirsin.",
+    audioSlowDownError: "Kısa sürede çok fazla ses denedin. Birkaç dakika bekleyip tekrar dene.",
     audioOwnSoonNote: "Kendi sesinizi yükleme ve kayıt özelliği bir sonraki aşamada aktif olacak.",
     previewHeading: "Kitap önizlemesi",
     previewEmpty: "Metni yapıştırın veya Word'den alın; bölümler ve içindekiler burada görünecek.",
@@ -2396,10 +2415,17 @@ const en: Dictionary = {
       "Pick a style, optionally describe your book in a few words, and let AI generate the artwork. The app overlays your title in its own font.",
     aiModelLabel: "AI model",
     aiModelHint:
-      "All three generate cover artwork; the difference: FLUX is fast and never prints text — title/author are added on top by the app (recommended). Nano Banana Pro follows instructions best; with 'embed text' on it writes the title into the image. Ideogram v3 also prints text (best typography) but is slower and pricier. Unsure? Stick with FLUX.",
+      "ChatGPT follows layout rules best: calm title band, light logo band, pale back cover, empty spine — the app prints the text (recommended). FLUX is fast and never prints text. Nano Banana Pro follows instructions well; with 'embed text' on it writes the title into the image. Ideogram v3 also prints text (best typography) but is slower and pricier.",
     aiModelFlux: "FLUX 1.1 Pro",
     aiModelNano: "Nano Banana Pro",
     aiModelIdeogram: "Ideogram v3",
+    aiModelOpenai: "ChatGPT (gpt-image 2.5)",
+    aiLastCost: "Last generation cost",
+    titlePosLabel: "Title placement",
+    titlePosHint:
+      "ChatGPT artwork keeps the top band calm for the title; after generation the title moves there automatically. Choose 'Per template' to return to the template's own layout.",
+    titlePosTop: "Top band",
+    titlePosAuto: "Per template",
     aiEmbedLabel: "Print title & author onto artwork",
     aiEmbedHint:
       "On: the model writes the title and author name directly into the artwork (your own text layers are hidden). Off: generates artwork only, the app overlays the title.",
@@ -3184,7 +3210,7 @@ const en: Dictionary = {
     epubErrorNote: "Couldn't create the files. Please check the text and try again.",
     audioHeading: "Audiobook",
     audioAi: "AI voice",
-    audioAiDesc: "Have the text read in a natural human voice. No microphone needed. Each chapter is narrated separately; every generation uses credits.",
+    audioAiDesc: "Have the text read in a natural human voice. No microphone needed. Each chapter is narrated separately; every narration uses credits.",
     audioOwn: "Upload my own voice",
     audioOwnDesc: "You or a narrator record it; upload the audio files and we arrange them by chapter.",
     buildAudioCta: "Create audiobook",
@@ -3194,12 +3220,12 @@ const en: Dictionary = {
       {
         id: "minimax",
         name: "MiniMax (good Turkish voices)",
-        desc: "Includes Turkish-specific voices; balanced credit cost.",
+        desc: "Includes Turkish-specific voices.",
       },
       {
         id: "elevenlabs",
         name: "ElevenLabs v3 (very natural)",
-        desc: "Very natural and expressive; 70+ languages. Credit cost may be a bit higher.",
+        desc: "Very natural and expressive; 70+ languages.",
       },
     ],
     audioVoiceLabel: "Voice",
@@ -3253,17 +3279,20 @@ const en: Dictionary = {
     audioSpeedLabel: "Reading speed",
     audioListenSpeedLabel: "Listening speed",
     audioListenSpeedHint: "Plays faster/slower without regenerating — uses no credits.",
-    audioPreviewCta: "Try the voice",
+    audioPreviewCta: "Try the voice (free)",
     audioPreviewBusy: "Preparing…",
     audioPreviewText: "Hello, this is a short sample of the voice you picked. Your book will be read in this tone.",
     audioChaptersHeading: "Narrate chapters",
-    audioChaptersHint: "Narrate each chapter one by one, listen, and download the audio file. Each narration uses credits.",
+    audioChaptersHint: "Narrate each chapter one by one, listen, and download the audio file. Each chapter narration uses {cost} credits.",
     audioNarrateCta: "Narrate",
     audioNarrateBusy: "Narrating…",
     audioDownload: "Download",
-    audioCreditNote: "Note: each narration uses AI credits. Try a short chapter first.",
-    audioTokenError: "No API key added yet. Paste your Replicate token into .env.local and restart the server.",
-    audioGenericError: "Couldn't generate audio. Try again in a few seconds; if it persists, check your key and balance.",
+    audioCreditNote: "Each chapter narration uses {cost} credits. Trying the voice is free; start with a short chapter.",
+    audioTokenError: "Narration isn't available right now. Try again a little later; if it persists, contact us.",
+    audioGenericError: "Couldn't generate audio; no credits were used. Try again in a few seconds; if it persists, contact us.",
+    audioTooLongError: "This chapter is too long to narrate in one go; split it in two.",
+    audioTimeoutError: "Narration did not finish in time; your credits were restored, you can try again.",
+    audioSlowDownError: "You tried the voice too many times in a short while. Wait a few minutes and try again.",
     audioOwnSoonNote: "Uploading and recording your own voice activates in the next phase.",
     previewHeading: "Book preview",
     previewEmpty: "Paste your text or import from Word; chapters and the table of contents will appear here.",

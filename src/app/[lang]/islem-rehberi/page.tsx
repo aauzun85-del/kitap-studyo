@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { isLocale } from "@/i18n/config";
 import InfoPage from "@/components/legal/InfoPage";
+import { PAYMENT_OPEN } from "@/lib/credits/pricing";
 
 export async function generateMetadata({ params }: PageProps<"/[lang]/islem-rehberi">): Promise<Metadata> {
   const { lang } = await params;
@@ -16,6 +17,25 @@ export default async function GuidePage({ params }: PageProps<"/[lang]/islem-reh
   if (!isLocale(lang)) notFound();
   const tr = lang === "tr";
   const a = "font-semibold text-accent hover:underline";
+
+  // Kartla ödeme kapalıyken (PAYMENT_OPEN = false) paketin BUGÜN nasıl alındığı.
+  const stepsNow = tr
+    ? [
+        "Ücretsiz üye ol ya da giriş yap.",
+        "Fiyatlar sayfasından sana uyan paketi seç.",
+        "İletişim sayfasındaki e-posta ya da telefondan bize yaz; üye olduğun e-posta adresini, paketin adını ve fatura bilgilerini belirt.",
+        "Ön Bilgilendirme Formu ile Mesafeli Satış Sözleşmesi'ni oku; mesajında kabul ettiğini yaz.",
+        "Sana ödeme adımlarını bildiririz.",
+        "Paketi hesabına biz tanımlarız; jetonların ve indirme hakkın hemen açılır. Faturan ve bu iki metin e-posta adresine gönderilir.",
+      ]
+    : [
+        "Sign up for free or log in.",
+        "Choose the package that suits you on the Pricing page.",
+        "Write to us by e-mail or phone (see the Contact page); tell us your member e-mail address, the package name and your invoice details.",
+        "Read the Preliminary Information Form and the Distance Sales Agreement; say in your message that you accept them.",
+        "We tell you how to pay.",
+        "We add the package to your account; your credits and download rights open immediately. Your invoice and these two texts are e-mailed to you.",
+      ];
 
   const steps = tr
     ? [
@@ -56,16 +76,40 @@ export default async function GuidePage({ params }: PageProps<"/[lang]/islem-reh
           <h2 className="mb-3 font-sans text-lg font-bold text-foreground">
             {tr ? "Sipariş adımları" : "Order steps"}
           </h2>
+          {!PAYMENT_OPEN && (
+            <>
+              <p className="mb-3">
+                {tr
+                  ? "Sitede kartla ödeme henüz açık değil. Şu an paket şöyle alınır:"
+                  : "Card payment is not open on the site yet. For now, this is how you get a package:"}
+              </p>
+              <ol className="ml-5 list-decimal space-y-1.5 marker:text-muted">
+                {stepsNow.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ol>
+              <p className="mt-3">
+                <Link href={`/${lang}/iletisim`} className={a}>
+                  {tr ? "İletişim sayfası" : "Contact page"}
+                </Link>
+              </p>
+              <h3 className="mb-3 mt-6 font-sans text-base font-bold text-foreground">
+                {tr ? "Kartla ödeme açıldığında" : "Once card payment opens"}
+              </h3>
+            </>
+          )}
           <ol className="ml-5 list-decimal space-y-1.5 marker:text-muted">
             {steps.map((s) => (
               <li key={s}>{s}</li>
             ))}
           </ol>
-          <p className="mt-3 text-sm text-muted">
-            {tr
-              ? "Kartla ödeme, ödeme kuruluşunun onayından sonra açılacaktır. O zamana kadar hiçbir ücret alınmaz."
-              : "Card payment opens after our payment provider's approval. Until then nothing is charged."}
-          </p>
+          {!PAYMENT_OPEN && (
+            <p className="mt-3 text-sm text-muted">
+              {tr
+                ? "Kartla ödeme, ödeme kuruluşunun onayından sonra açılacak. O zamana kadar sitede karttan ödeme alınmaz."
+                : "Card payment opens after our payment provider's approval. Until then no card payment is taken on the site."}
+            </p>
+          )}
         </section>
 
         <section>
@@ -96,8 +140,16 @@ export default async function GuidePage({ params }: PageProps<"/[lang]/islem-reh
               {tr ? "Ön Bilgilendirme Formu" : "Preliminary Information Form"}
             </Link>
             {tr
-              ? " bu sitede sürekli yayındadır; dilediğin zaman okuyabilir, tarayıcından yazdırabilir ya da kaydedebilirsin. Siparişinle birlikte onayladığın metin e-posta adresine de gönderilir; sipariş kaydın ve onay zamanı tarafımızca yasal süre boyunca saklanır."
-              : " are always available on this site; you can read, print or save them at any time. The text you accepted is also e-mailed with your order; your order record and acceptance time are kept by us for the legal period."}
+              ? " bu sitede sürekli yayındadır; dilediğin zaman okuyabilir, tarayıcından yazdırabilir ya da kaydedebilirsin. "
+              : " are always available on this site; you can read, print or save them at any time. "}
+            {/* Kartla ödeme kapalıyken onay sitede kaydedilmez; kayıt, üyeyle yazışmadır. */}
+            {PAYMENT_OPEN
+              ? tr
+                ? "Siparişinle birlikte onayladığın metin e-posta adresine de gönderilir; sipariş kaydın ve onay zamanı tarafımızca yasal süre boyunca saklanır."
+                : "The text you accepted is also e-mailed with your order; your order record and acceptance time are kept by us for the legal period."
+              : tr
+                ? "Paketi tanımlarken bu iki metni faturanla birlikte e-postayla göndeririz; yazışman onay kaydı olarak yasal süre boyunca saklanır."
+                : "When we add the package we e-mail you these two texts together with your invoice; your message is kept as the record of your acceptance for the legal period."}
           </p>
         </section>
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import { chargeCredits } from "@/lib/credits/server";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 
 // "Kitap asistanı": kitap bilgisinden (ad/yazar/tür/özet) bir KAPAK GÖRSEL
@@ -8,6 +9,10 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 // üretir. Bu çıktı sonra buildAiPrompt() ile Flux'a beslenir; başlık/yazar
 // yazısını uygulamanın kendisi kapağın üstüne bindirir (görsele metin gömülmez).
 export const maxDuration = 60;
+// Model çağrısının son süresi: fonksiyon süresinden (maxDuration) kısa → Vercel
+// isteği ortadan kesmez; zaman aşımı temiz bir hata olarak döner ve jeton
+// iadesi (finally) çalışır.
+const UPSTREAM_TIMEOUT_MS = 50_000;
 
 const MAX_CHARS = 8000;
 
@@ -105,8 +110,15 @@ export async function POST(request: Request) {
   // Özeti sınırla (maliyet + zaman aşımı koruması).
   const summary = (body.summary ?? "").trim().slice(0, MAX_CHARS);
 
+  const gate = await chargeCredits("cover-prompt");
+  if (!gate.ok) return gate.response;
+
   const client = new Anthropic({ apiKey });
 
+  // Toplam son süre; yeniden deneme yok (SDK beklemesi kesilemiyor). Kullanıcı vazgeçerse de kesilir.
+  const deadline = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
+
+  let ok = false;
   try {
     const response = await client.messages.parse({
       model: "claude-opus-4-7",
@@ -125,14 +137,26 @@ export async function POST(request: Request) {
           content: buildUserPrompt({ ...body, title, summary }),
         },
       ],
+    }, {
+      timeout: UPSTREAM_TIMEOUT_MS,
+      maxRetries: 0,
+      signal: AbortSignal.any([request.signal, deadline]),
     });
 
     const parsed = response.parsed_output;
     if (!parsed) {
       return NextResponse.json({ error: "parse-failed" }, { status: 502 });
     }
+    ok = true;
     return NextResponse.json(parsed);
   } catch (e) {
+    // Kullanıcı vazgeçti ya da süre doldu → temiz hata (iade finally'de).
+    if (request.signal.aborted) {
+      return NextResponse.json({ error: "canceled" }, { status: 504 });
+    }
+    if (deadline.aborted || e instanceof Anthropic.APIConnectionTimeoutError) {
+      return NextResponse.json({ error: "timeout" }, { status: 504 });
+    }
     if (e instanceof Anthropic.AuthenticationError) {
       return NextResponse.json({ error: "bad-key" }, { status: 401 });
     }
@@ -143,5 +167,7 @@ export async function POST(request: Request) {
       { error: "exception", detail: String(e).slice(0, 300) },
       { status: 500 },
     );
+  } finally {
+    if (!ok) await gate.refund();
   }
 }

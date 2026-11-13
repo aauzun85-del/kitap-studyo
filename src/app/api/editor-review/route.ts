@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import { chargeCredits } from "@/lib/credits/server";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { buildRulesBlock, buildMetaBlock } from "@/lib/editor/editorRules";
 
@@ -9,6 +10,10 @@ import { buildRulesBlock, buildMetaBlock } from "@/lib/editor/editorRules";
 // damıtılmış üslup kuralları (editor_rules_v1). Her gözlem bir "öneri"
 // (advisory) — otomatik düzeltme yok; karar kullanıcıda.
 export const maxDuration = 60;
+// Model çağrısının son süresi: fonksiyon süresinden (maxDuration) kısa → Vercel
+// isteği ortadan kesmez; zaman aşımı temiz bir hata olarak döner ve jeton
+// iadesi (finally) çalışır.
+const UPSTREAM_TIMEOUT_MS = 50_000;
 
 const MAX_CHARS = 15000;
 
@@ -118,8 +123,15 @@ export async function POST(request: Request) {
     );
   }
 
+  const gate = await chargeCredits(deep ? "editor-review-deep" : "editor-review");
+  if (!gate.ok) return gate.response;
+
   const client = new Anthropic({ apiKey });
 
+  // Toplam son süre; yeniden deneme yok (SDK beklemesi kesilemiyor). Kullanıcı vazgeçerse de kesilir.
+  const deadline = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
+
+  let ok = false;
   try {
     const response = await client.messages.parse({
       model: deep ? "claude-opus-4-7" : "claude-haiku-4-5",
@@ -141,6 +153,10 @@ export async function POST(request: Request) {
           content: `Aşağıdaki metni editöryal kalite açısından incele:\n\n${text}`,
         },
       ],
+    }, {
+      timeout: UPSTREAM_TIMEOUT_MS,
+      maxRetries: 0,
+      signal: AbortSignal.any([request.signal, deadline]),
     });
 
     const parsed = response.parsed_output;
@@ -148,8 +164,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "parse-failed" }, { status: 502 });
     }
 
+    ok = true;
     return NextResponse.json({ notes: parsed.notes });
   } catch (e) {
+    // Kullanıcı vazgeçti ya da süre doldu → temiz hata (iade finally'de).
+    if (request.signal.aborted) {
+      return NextResponse.json({ error: "canceled" }, { status: 504 });
+    }
+    if (deadline.aborted || e instanceof Anthropic.APIConnectionTimeoutError) {
+      return NextResponse.json({ error: "timeout" }, { status: 504 });
+    }
     if (e instanceof Anthropic.AuthenticationError) {
       return NextResponse.json({ error: "bad-key" }, { status: 401 });
     }
@@ -160,5 +184,7 @@ export async function POST(request: Request) {
       { error: "exception", detail: String(e).slice(0, 300) },
       { status: 500 },
     );
+  } finally {
+    if (!ok) await gate.refund();
   }
 }

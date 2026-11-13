@@ -61,6 +61,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
           "{marka}, kitap hazırlamak için kullanılan çevrim içi bir yazılım hizmetidir: kapak tasarımı, mizanpaj (iç sayfa düzeni), yapay zekâ destekli editör, e-kitap, sesli kitap ve tanıtım içerikleri.",
           "Yazılım kullanım paketi; satın alındığı andan itibaren {gecerlilik} gün geçerli belirli sayıda jeton ile bu süre boyunca hesabındaki tüm projelerin dosyalarını sınırsız sayıda indirme ve dışa aktarma hakkı sağlar. Süre dolduğunda indirme hakkı sona erer; projeler hesapta kalır. Yapay zekâ işlemlerinin her biri belirli sayıda jeton harcar; güncel jeton bedelleri [[fiyatlar]] sayfasında yayımlanır.",
           "Süresi dolan paketteki kullanılmamış jetonlar geçersiz olur; jetonlar paraya çevrilemez ve başka bir hesaba devredilemez.",
+          "Üyelik sırasında bir defaya mahsus tanımlanan {hosgeldin} hoş geldin jetonu paketin parçası değildir; süresi dolmaz, paraya çevrilemez ve tek başına indirme hakkı vermez. SATICI'nın ALICI'nın hesabına elle tanımladığı paketler ve ek jetonlar, satın alınanlarla aynı geçerlilik kurallarına tabidir; {gecerlilik} günlük süre, tanımlandıkları anda başlar.",
           "Paketler bir yazılım kullanım hizmetidir. Jeton, yalnızca {marka} içindeki yapay zekâ işlemlerini ölçen bir kullanım birimidir; para, elektronik para veya ödeme aracı değildir, üçüncü kişilere satılamaz ve {marka} dışında kullanılamaz.",
         ],
       },
@@ -69,12 +70,13 @@ export const LEGAL_DOCS: LegalDoc[] = [
         p: [
           "Paketlerin adı, jeton miktarı ve satış fiyatı sipariş sırasında ve [[fiyatlar]] sayfasında gösterilir: {paketler}. Aktif paketi olan üyeler ayrıca ek jeton satın alabilir: {ekJetonlar}. Ek jeton, satın alındığı andan itibaren {gecerlilik} gün geçerlidir ve tek başına indirme hakkı vermez. Üst pakete geçmek isteyen üye yeni paketi kendi fiyatından satın alır; kalan jetonları silinmez. Fiyatlar Türk lirasıdır ve KDV dahildir.",
           "Ödeme, banka/kredi kartıyla lisanslı ödeme kuruluşunun güvenli ödeme sayfası üzerinden yapılır. Kart bilgileri SATICI tarafından görülmez ve saklanmaz; doğrudan ödeme kuruluşu tarafından işlenir.",
+          "Sitede çevrim içi kartla ödemenin kullanılamadığı dönemlerde paketler, ALICI'nın SATICI ile iletişime geçmesi üzerine ([[iletisim]]) SATICI tarafından ALICI'nın hesabına tanımlanır. Ücretli her satış için fatura düzenlenir ve ALICI'nın e-posta adresine gönderilir.",
         ],
       },
       {
         h: "5. İfa (hizmetin sunulması)",
         p: [
-          "Hizmet fiziksel teslimat içermez. Ödemenin onaylanmasıyla paket ALICI'nın hesabına hemen tanımlanır.",
+          "Hizmet fiziksel teslimat içermez. Ödemenin onaylanmasıyla paket ALICI'nın hesabına hemen tanımlanır. SATICI'nın elle tanımladığı paketlerde ifa, paketin hesaba tanımlandığı anda başlar.",
         ],
       },
       {
@@ -109,7 +111,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
       {
         h: "10. Yürürlük",
         p: [
-          "ALICI, siparişi onaylamadan önce [[on-bilgilendirme-formu]] ile bu sözleşmeyi okuduğunu ve kabul ettiğini elektronik ortamda onaylar. Sözleşme, siparişin onaylanmasıyla yürürlüğe girer. Sözleşme metni bu sayfada her zaman erişilebilir durumdadır; siparişin onaylanmasıyla birlikte Ön Bilgilendirme Formu ve bu sözleşme ALICI'nın e-posta adresine de gönderilir.",
+          "ALICI, siparişi onaylamadan önce [[on-bilgilendirme-formu]] ile bu sözleşmeyi okuduğunu ve kabul ettiğini elektronik ortamda onaylar. SATICI'nın elle tanımladığı paketlerde bu onay, ALICI'nın SATICI'ya gönderdiği yazılı iletiyle verilir. Sözleşme, siparişin onaylanmasıyla ya da paketin ALICI'nın hesabına elle tanımlanmasıyla yürürlüğe girer. Sözleşme metni bu sayfada her zaman erişilebilir durumdadır; siparişin onaylanmasıyla ya da paketin elle tanımlanmasıyla birlikte Ön Bilgilendirme Formu ve bu sözleşme ALICI'nın e-posta adresine de gönderilir.",
         ],
       },
     ],
@@ -148,6 +150,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
         h: "Ödeme ve ifa",
         p: [
           "Ödeme banka/kredi kartıyla (lisanslı ödeme kuruluşunun güvenli ödeme sayfası üzerinden) yapılır. Paket, ödeme onaylanınca hesabına hemen tanımlanır.",
+          "Sitede çevrim içi kartla ödemenin kullanılamadığı dönemlerde paket, bizimle iletişime geçmen üzerine ([[iletisim]]) hesabına tarafımızca tanımlanır; elle tanımlanan paketler ve ek jetonlar aynı geçerlilik kurallarına tabidir. Ücretli her satış için fatura düzenlenir.",
         ],
       },
       {
@@ -178,6 +181,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
         h: "Teslimat",
         p: [
           "{marka} paketleri dijital hizmettir; kargo veya fiziksel teslimat yoktur. Ödeme onaylandığında paket üye hesabına elektronik ortamda tanımlanır ve {gecerlilik} gün boyunca kullanılabilir. Hazırladığın dosyaları hesabından indirirsin.",
+          "Sitede çevrim içi kartla ödemenin kullanılamadığı dönemlerde paketi, bizimle iletişime geçmen üzerine ([[iletisim]]) hesabına biz tanımlarız. Elle tanımladığımız paketler ve jetonlar da aynı geçerlilik kurallarına tabidir: {gecerlilik} günlük süre, tanımlandıkları anda başlar.",
         ],
       },
       {
@@ -199,7 +203,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
         list: [
           "Paketten jeton harcanmış veya dosya indirilmişse.",
           "Paket süresi ({gecerlilik} gün) dolduğu için yanan jetonlar.",
-          "Üyelikte veya kampanyalarda hediye edilen jetonlar (bunlar paraya çevrilemez).",
+          "Üyelikte verilen {hosgeldin} hoş geldin jetonu ile kampanyalarda veya tarafımızca hediye edilen jetonlar (bunlar paraya çevrilemez).",
         ],
         after: ["Hizmetin ayıplı (kusurlu) sunulması hâlinde 6502 sayılı Kanun'dan doğan yasal hakların saklıdır."],
       },
@@ -212,7 +216,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
       {
         h: "Nasıl iade istersin?",
         p: [
-          "{eposta} adresine üye olduğun e-posta adresinden yaz; ödeme tarihini ve paket adını belirt. Talebini en geç 3 iş günü içinde yanıtlarız. Onaylanan iade, 14 gün içinde ödemede kullandığın karta yapılır. Kart iadesinin hesabına yansıma süresi bankana göre değişebilir.",
+          "{eposta} adresine üye olduğun e-posta adresinden yaz; ödeme tarihini ve paket adını belirt. Talebini en geç 3 iş günü içinde yanıtlarız. Onaylanan iade, 14 gün içinde ödemeyi yaptığın yolla (kartla ödediysen aynı karta) yapılır. Kart iadesinin hesabına yansıma süresi bankana göre değişebilir.",
         ],
       },
       {
@@ -420,7 +424,9 @@ export const LEGAL_DOCS: LegalDoc[] = [
       {
         h: "3. Jetonlar ve paketler",
         p: [
-          "Üyelik ücretsizdir. Jeton ve dosya indirme hakkı için yazılım kullanım paketi satın alınır. Satın alma koşulları [[mesafeli-satis-sozlesmesi]] ve [[iptal-ve-iade]] sayfalarındadır; güncel fiyatlar [[fiyatlar]] sayfasındadır.",
+          "Üyelik ücretsizdir. Üye olduğunda hesabına bir defaya mahsus {hosgeldin} hoş geldin jetonu tanımlanır. Bu jetonların süresi dolmaz; paraya çevrilemez ve başkasına devredilemez.",
+          "Yapay zekâ işlemlerinin her biri belirli sayıda jeton harcar; jetonun yetmezse işlem yapılmaz. Mizanpaj, elle kapak tasarımı, önizleme ve proje kaydı jeton harcamaz. Dosya indirmek ve dışa aktarmak için aktif bir yazılım kullanım paketi gerekir; hoş geldin jetonu tek başına indirme hakkı vermez.",
+          "Daha fazla jeton ve dosya indirme hakkı için yazılım kullanım paketi alınır. Paketler ve ek jetonlar {gecerlilik} gün geçerlidir. Tarafımızca elle tanımlanan paketler ve verilen ek jetonlar da aynı geçerlilik kurallarına tabidir. Satın alma koşulları [[mesafeli-satis-sozlesmesi]] ve [[iptal-ve-iade]] sayfalarındadır; güncel fiyatlar [[fiyatlar]] sayfasındadır.",
         ],
       },
       {

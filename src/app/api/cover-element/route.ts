@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { chargeCredits } from "@/lib/credits/server";
+import { runReplicate, fetchImageAsDataUrl } from "@/lib/server/replicate";
 
 // AI ile TASARIM ÖĞESİ üretimi (kapağın üstüne konacak şeffaf nesne):
 // ör. "25. yıl mührü", rozet, amblem, süsleme, monogram.
@@ -8,8 +10,13 @@ import { NextResponse } from "next/server";
 // Böylece öğe kapağın üzerine doğal/yapışık olmadan oturur.
 const GEN_MODEL = "google/nano-banana-pro";
 const BG_MODEL = "851-labs/background-remover";
-// İki ardışık model çağrısı → süreyi uzat.
+// İki ardışık model çağrısı → süreyi uzat. Bütün adımlar ortak bir bütçeyi
+// paylaşır ve fonksiyon süresinin (maxDuration) İÇİNDE biter → Vercel isteği
+// ortadan kesmez; zaman aşımı temiz bir hata olarak döner, jeton iadesi çalışır.
 export const maxDuration = 120;
+const TOTAL_BUDGET_MS = 108_000; // bütün adımların toplamı
+const GEN_BUDGET_MS = 55_000; // 1. adım (üretim)
+const BG_BUDGET_MS = 30_000; // 2. adım (zemin silme) üst sınırı
 
 type Body = {
   prompt?: string; // öğenin tarifi (kullanıcının yazdığı, ör. "25. yıl mührü")
@@ -51,52 +58,41 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "no-prompt" }, { status: 400 });
   }
 
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-    Prefer: "wait", // sonucu doğrudan bu istekte bekle
-  };
+  const gate = await chargeCredits("cover-element");
+  if (!gate.ok) return gate.response;
 
+  // Ortak bütçe: her adım, kalan süreye göre kendi sınırını alır.
+  const startedAt = Date.now();
+  const left = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
+  // runReplicate sonucunu bu rotanın hata biçimine (stage ile) çevirir.
+  const fail = (
+    stage: string,
+    run: { error: string; status?: number | string; detail?: string },
+  ) =>
+    NextResponse.json(
+      { error: run.error, stage, status: run.status, detail: run.detail },
+      { status: run.error === "timeout" || run.error === "canceled" ? 504 : 502 },
+    );
+
+  let ok = false;
   try {
     // --- 1) Öğeyi düz beyaz zeminde üret (Nano Banana Pro) ---
-    const genRes = await fetch(
-      `https://api.replicate.com/v1/models/${GEN_MODEL}/predictions`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          input: {
-            prompt: buildPrompt(desc),
-            aspect_ratio: "1:1",
-            // Tek bir öğe (mühür/rozet) için 1K fazlasıyla yeterli; 2K dosyayı
-            // ~4× büyütüp autosave'i ağırlaştırır. Hafif + hızlı için 1K.
-            resolution: "1K",
-            output_format: "png",
-            allow_fallback_model: true,
-          },
-        }),
+    const gen = await runReplicate({
+      token,
+      model: GEN_MODEL,
+      input: {
+        prompt: buildPrompt(desc),
+        aspect_ratio: "1:1",
+        // Tek bir öğe (mühür/rozet) için 1K fazlasıyla yeterli; 2K dosyayı
+        // ~4× büyütüp autosave'i ağırlaştırır. Hafif + hızlı için 1K.
+        resolution: "1K",
+        output_format: "png",
+        allow_fallback_model: true,
       },
-    );
-    if (!genRes.ok) {
-      const detail = (await genRes.text()).slice(0, 300);
-      return NextResponse.json(
-        { error: "provider", stage: "generate", status: genRes.status, detail },
-        { status: 502 },
-      );
-    }
-    const genData = (await genRes.json()) as {
-      status?: string;
-      output?: unknown;
-    };
-    const genOut = Array.isArray(genData.output)
-      ? genData.output[0]
-      : genData.output;
-    if (!genOut || typeof genOut !== "string") {
-      return NextResponse.json(
-        { error: "no-output", stage: "generate", status: genData.status ?? "unknown" },
-        { status: 502 },
-      );
-    }
+      budgetMs: GEN_BUDGET_MS,
+      signal: request.signal, // kullanıcı Vazgeç dedi → sağlayıcıda da durdur
+    });
+    if (!gen.ok) return fail("generate", gen);
 
     // --- 2) Beyaz zemini sil → saydam (rgba) PNG ---
     // 851-labs/... bir TOPLULUK modeli; resmi modeller gibi model-scoped uç noktayı
@@ -105,7 +101,10 @@ export async function POST(request: Request) {
     // kod kendini onarır, sabit hash bayatlamaz).
     const verRes = await fetch(
       `https://api.replicate.com/v1/models/${BG_MODEL}`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10_000),
+      },
     );
     if (!verRes.ok) {
       const detail = (await verRes.text()).slice(0, 300);
@@ -125,52 +124,46 @@ export async function POST(request: Request) {
       );
     }
 
-    const bgRes = await fetch(`https://api.replicate.com/v1/predictions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        version,
-        input: {
-          image: genOut, // 1. adımın çıktı URL'i (taze, doğrudan kabul edilir)
-          format: "png",
-          background_type: "rgba", // saydam zemin
-        },
-      }),
+    // İkinci adıma yetecek süre kalmadıysa hiç başlatma (boşa para yakmayalım).
+    if (left() < 30_000) {
+      return NextResponse.json(
+        { error: "timeout", stage: "background" },
+        { status: 504 },
+      );
+    }
+    const bg = await runReplicate({
+      token,
+      version,
+      input: {
+        image: gen.output, // 1. adımın çıktı URL'i (taze, doğrudan kabul edilir)
+        format: "png",
+        background_type: "rgba", // saydam zemin
+      },
+      // İndirmeye de süre kalsın diye kalan sürenin tamamını vermiyoruz.
+      budgetMs: Math.min(BG_BUDGET_MS, left() - 25_000),
+      signal: request.signal,
     });
-    if (!bgRes.ok) {
-      const detail = (await bgRes.text()).slice(0, 300);
-      return NextResponse.json(
-        { error: "provider", stage: "background", status: bgRes.status, detail },
-        { status: 502 },
-      );
-    }
-    const bgData = (await bgRes.json()) as {
-      status?: string;
-      output?: unknown;
-    };
-    const bgOut = Array.isArray(bgData.output)
-      ? bgData.output[0]
-      : bgData.output;
-    if (!bgOut || typeof bgOut !== "string") {
-      return NextResponse.json(
-        { error: "no-output", stage: "background", status: bgData.status ?? "unknown" },
-        { status: 502 },
-      );
-    }
+    if (!bg.ok) return fail("background", bg);
 
     // Saydam PNG'yi sunucuda indirip data URL'e çevir: link süresi dolmaz, tuval
     // çapraz-köken (CORS) yüzünden kirlenmez → PDF dışa aktarımı sorunsuz.
-    const imgRes = await fetch(bgOut);
-    if (!imgRes.ok) {
+    // İndirme, kalan süreyle sınırlı.
+    const img = await fetchImageAsDataUrl(bg.output, Math.max(2_000, left()));
+    if (!img.ok) {
       return NextResponse.json({ error: "fetch-image" }, { status: 502 });
     }
-    const buf = Buffer.from(await imgRes.arrayBuffer());
-    const dataUrl = `data:image/png;base64,${buf.toString("base64")}`;
-    return NextResponse.json({ image: dataUrl });
+    ok = true;
+    return NextResponse.json({ image: img.dataUrl });
   } catch (e) {
+    // Sürüm sorgusu zaman aşımına uğradı → temiz "timeout".
+    if ((e as Error)?.name === "TimeoutError") {
+      return NextResponse.json({ error: "timeout" }, { status: 504 });
+    }
     return NextResponse.json(
       { error: "exception", detail: String(e).slice(0, 300) },
       { status: 500 },
     );
+  } finally {
+    if (!ok) await gate.refund();
   }
 }

@@ -21,7 +21,7 @@ export const COMPANY = {
 export type CompanyField = keyof typeof COMPANY;
 
 // Yasal metinlerin son güncellenme tarihi (metin değişince güncelle).
-export const LEGAL_UPDATED = { tr: "10 Kasım 2026", en: "10 November 2026" };
+export const LEGAL_UPDATED = { tr: "13 Kasım 2026", en: "13 November 2026" };
 
 // Gönüllü iade süresi (gün): hiç jeton harcanmamış + hiç indirme yapılmamış paket.
 export const REFUND_WINDOW_DAYS = 14;

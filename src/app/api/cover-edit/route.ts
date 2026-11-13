@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
+import { chargeCredits } from "@/lib/credits/server";
+import { runReplicate, fetchImageAsDataUrl } from "@/lib/server/replicate";
 
 // FLUX Fill Pro: "içini doldurma" (inpainting) modeli. Görsel + maske + açıklama
 // alır; maskede BEYAZ olan bölgeyi açıklamaya göre yeniden çizer, siyah olan yeri
 // olduğu gibi korur. Kapaktaki bir nesneyi silmek/değiştirmek için kullanılır.
 const MODEL = "black-forest-labs/flux-fill-pro";
-// Senkron bekleme (Prefer: wait) uzun sürebilir → fonksiyon süresini uzat.
+// Üretim bütçesi + görsel indirme, fonksiyon süresinin (maxDuration) İÇİNDE
+// biter → Vercel isteği ortadan kesmez; zaman aşımı temiz bir hata olarak döner
+// ve jeton iadesi (finally) çalışır.
 export const maxDuration = 60;
+const RUN_BUDGET_MS = 32_000;
+// Üretim + indirme toplamı bu süreyi geçmesin (maxDuration'a ~10 sn pay).
+const TOTAL_BUDGET_MS = 50_000;
 
 type Body = {
   image?: string; // data URL (orijinal kapak görseli)
@@ -47,50 +54,43 @@ export async function POST(request: Request) {
     safety_tolerance: 2,
   };
 
+  const gate = await chargeCredits("cover-edit");
+  if (!gate.ok) return gate.response;
+
+  const startedAt = Date.now();
+  let ok = false;
   try {
-    const res = await fetch(
-      `https://api.replicate.com/v1/models/${MODEL}/predictions`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          Prefer: "wait", // sonucu doğrudan bu istekte bekle
-        },
-        body: JSON.stringify({ input }),
-      },
-    );
-
-    if (!res.ok) {
-      const detail = (await res.text()).slice(0, 300);
+    const run = await runReplicate({
+      token,
+      model: MODEL,
+      input,
+      budgetMs: RUN_BUDGET_MS,
+      signal: request.signal, // kullanıcı Vazgeç dedi → sağlayıcıda da durdur
+    });
+    if (!run.ok) {
+      // 504 → ön yüz "zaman aşımı" der; diğerleri genel sağlayıcı hatası.
       return NextResponse.json(
-        { error: "provider", status: res.status, detail },
-        { status: 502 },
-      );
-    }
-
-    const data = (await res.json()) as { status?: string; output?: unknown };
-    const out = Array.isArray(data.output) ? data.output[0] : data.output;
-    if (!out || typeof out !== "string") {
-      return NextResponse.json(
-        { error: "no-output", status: data.status ?? "unknown" },
-        { status: 502 },
+        { error: run.error, status: run.status, detail: run.detail },
+        { status: run.error === "timeout" || run.error === "canceled" ? 504 : 502 },
       );
     }
 
     // Görseli sunucuda indirip data URL'e çevir: link süresi dolmaz, tuval
     // çapraz-köken (CORS) yüzünden kirlenmez → PDF dışa aktarımı sorunsuz çalışır.
-    const imgRes = await fetch(out);
-    if (!imgRes.ok) {
+    // İndirme, kalan süreyle sınırlı.
+    const left = TOTAL_BUDGET_MS - (Date.now() - startedAt);
+    const img = await fetchImageAsDataUrl(run.output, Math.max(2_000, left));
+    if (!img.ok) {
       return NextResponse.json({ error: "fetch-image" }, { status: 502 });
     }
-    const buf = Buffer.from(await imgRes.arrayBuffer());
-    const dataUrl = `data:image/png;base64,${buf.toString("base64")}`;
-    return NextResponse.json({ image: dataUrl });
+    ok = true;
+    return NextResponse.json({ image: img.dataUrl });
   } catch (e) {
     return NextResponse.json(
       { error: "exception", detail: String(e).slice(0, 300) },
       { status: 500 },
     );
+  } finally {
+    if (!ok) await gate.refund();
   }
 }
