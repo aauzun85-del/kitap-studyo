@@ -24,6 +24,7 @@ import {
   themaPath,
 } from "@/lib/cover/standards";
 import { updateProjectCoverBrief } from "@/lib/projects/data";
+import { resolveGenreId } from "@/lib/projects/genres";
 import { creditCost } from "@/lib/credits/pricing";
 
 // Kurgu kapağı iki ücretli uç çağırır: kitap asistanı + ChatGPT görseli.
@@ -61,7 +62,8 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
   const router = useRouter();
   const tr = lang === "tr";
   const [brief, setBrief] = useState<CoverBrief>(() => {
-    const seed = defaultBrief(GENRE_TO_THEMA[genre ?? ""] ?? "FB");
+    // Kitap bilgisindeki tür (id ya da etiket olabilir) → Thema ön seçimi.
+    const seed = defaultBrief(GENRE_TO_THEMA[resolveGenreId(genre) ?? ""] ?? "FB");
     const prev = initial && !initial.skipped && initial.v === 2 ? initial : null;
     return { ...seed, ...(prev ?? {}), skipped: undefined };
   });
