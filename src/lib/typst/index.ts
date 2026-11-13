@@ -1,14 +1,18 @@
 // Typst mizanpaj motoru — dışa açılan tek giriş. İmzası exportBookPdf'i yansıtır
-// → çağrı yeri neredeyse hiç değişmez. Akış: bookToTypst (saf) → compilePdf
-// (WASM, tembel+mutex) → patchPdfBoxes (Trim/Bleed kutuları).
+// → çağrı yeri neredeyse hiç değişmez. Akış: bookToTypst (saf, ana kanal) →
+// İŞÇİDE derleme (WASM ağır işi ayrı kanalda; arayüz donmaz — "önizleme = baskı"
+// ilkesinin ön şartı) → patchPdfBoxes (Trim/Bleed kutuları, ana kanal).
 
 import { bookToTypst, type TypstBookInput } from "./serialize";
-import { compilePdf, compileSvg, compileQuery, prewarmTypst, TypstCrashError } from "./engine";
+import { TypstCrashError } from "./engine";
+import { workerSvgWithBlocks, workerSvg, workerPdf, prewarmTypstWorker } from "./workerClient";
 import { patchPdfBoxes } from "./patchBoxes";
 import { optimizeImagesForPrint } from "./optimizeImage";
 
 export type { TypstBookInput };
-export { prewarmTypst, TypstCrashError };
+export { TypstCrashError };
+// Mizanpaj açılışında çağrılabilir: 28MB WASM işçide önceden ısınır.
+export const prewarmTypst = prewarmTypstWorker;
 
 // Bloklardaki görselleri (Word'den) VFS varlıklarına çevir.
 function collectAssets(input: TypstBookInput) {
@@ -19,35 +23,28 @@ function collectAssets(input: TypstBookInput) {
 
 export async function exportBookPdfTypst(input: TypstBookInput): Promise<Uint8Array> {
   // Görselleri baskıya (300 DPI/JPEG) küçült → PDF KDY sınırının altına insin.
+  // (canvas kullanır → ana kanalda kalmak ZORUNDA; derleme işçiye gider.)
   const opt = await optimizeImagesForPrint(input);
   const src = bookToTypst(opt);
-  const raw = await compilePdf(src, collectAssets(opt));
+  const raw = await workerPdf(src, collectAssets(opt));
   const to = input.cropMarks && input.bleedMm > 0 ? input.markOffsetMm : input.bleedMm;
   return patchPdfBoxes(raw, { size: input.size, to, bleedMm: input.bleedMm });
 }
 
-// İleride önizleme için: aynı serializer çıktısını SVG'ye derler (kayma biter).
+// Yazma editörünün canlı önizlemesi: aynı serializer çıktısını SVG'ye derler
+// (işçide; konum sorgusu yok → tek derleme, hızlı).
 export async function renderBookSvgTypst(input: TypstBookInput): Promise<string> {
-  return compileSvg(bookToTypst(input), collectAssets(input));
+  return workerSvg(bookToTypst(input), collectAssets(input));
 }
 
 // Tıklanabilir önizleme: SVG + her bloğun (idx, sayfa, y) konumu (introspection).
-// AYNI src üzerinde compileSvg + compileQuery → konumlar SVG ile birebir.
+// AYNI src üzerinde svg + query (işçide, aynı mutex) → konumlar SVG ile birebir.
 export type BlockPos = { idx: number; page: number; yPt: number };
 export async function renderBookSvgWithBlocks(
   input: TypstBookInput,
 ): Promise<{ svg: string; blocks: BlockPos[] }> {
   const src = bookToTypst(input);
-  const assets = collectAssets(input);
-  const svg = await compileSvg(src, assets);
-  // Konum sorgusu (introspection) BAŞARISIZ olsa bile SVG'yi döndür → önizleme
-  // çalışır, yalnız tıklanabilir bölgeler olmaz.
-  let raw: unknown[] = [];
-  try {
-    raw = await compileQuery(src, "<blk>", assets);
-  } catch {
-    /* yok say */
-  }
+  const { svg, raw } = await workerSvgWithBlocks(src, collectAssets(input));
   const blocks: BlockPos[] = [];
   for (const el of raw as Array<{ value?: { idx?: number; p?: number; y?: number } }>) {
     const v = el?.value;

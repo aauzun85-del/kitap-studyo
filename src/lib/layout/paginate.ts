@@ -881,11 +881,30 @@ export function paginate(input: PaginateInput): Page[] {
     (b): b is Extract<Block, { type: "heading" }> => b.type === "heading" && b.level === 1,
   );
 
-  // İçindekiler sayfa sayısı (bölüm sayısından).
+  // İçindekiler ölçüleri + satır sarma hazırlığı. Uzun bölüm başlıkları (örn.
+  // "BÖLÜM XXI — KITA AVRUPASI'NDAN…") tek satıra sığmaz; eskiden satır sağdan
+  // taşıp SAYFA NUMARASINI kesiyordu. Artık başlık kitaplardaki gibi alt
+  // satır(lar)a sarkar (asılı girintiyle), numara + nokta dolgusu HEP son
+  // satırın sağında kalır. Sayfa sayısı tahmini de aynı satır sayılarıyla
+  // yapılır ki bölümlerin basılan sayfa numaraları kaymasın.
   const tocEntryLeadPx = autoLeadingPx(KDY_TOC.sizePt, 0, dpi);
   const tocHeadLeadPx = autoLeadingPx(KDY_TOC_HEADING.sizePt, 0, dpi);
-  const tocEntryHeightPx = tocEntryLeadPx + mmToPx(KDY_TOC.spaceAfterMm, dpi);
+  const tocSpaceAfterPx = mmToPx(KDY_TOC.spaceAfterMm, dpi);
   const tocHeadingHeightPx = tocHeadLeadPx + mmToPx(KDY_TOC_HEADING.spaceAfterMm, dpi);
+
+  const tocSizePx = ptToPx(KDY_TOC.sizePt, dpi);
+  const tocFontStr = fontStr(KDY_TOC.weight, false, tocSizePx, KDY_TOC.font);
+  ctx.font = tocFontStr;
+  const tocDotW = ctx.measureText(".").width || 1;
+  const tocRunoverIndentPx = mmToPx(TOC_RUNOVER_INDENT_MM, dpi);
+  // Son satırda numaraya ayrılan pay: " .. 888" (3 haneli kitaplara yeter).
+  const tocReservePx = ctx.measureText(" .. 888").width;
+  const tocEntryLines = chapters.map((ch, idx) => {
+    const override = input.tocOverrides?.[idx]?.trim();
+    const title = override ? smartQuoteText(override) : ch.runs.map((r) => r.text).join("");
+    return wrapTocTitle(ctx, title, contentWidthPx, contentWidthPx - tocRunoverIndentPx, tocReservePx);
+  });
+  const tocEntryHeights = tocEntryLines.map((ls) => ls.length * tocEntryLeadPx + tocSpaceAfterPx);
 
   const wantFront = settings.showFrontMatter;
   const hasBio = wantFront && meta.bio.trim().length > 0;
@@ -893,13 +912,15 @@ export function paginate(input: PaginateInput): Page[] {
 
   let tocPageCount = 0;
   if (hasToc) {
-    const firstPage = Math.max(1, Math.floor((contentHeightPx - tocHeadingHeightPx) / tocEntryHeightPx));
-    const restPage = Math.max(1, Math.floor(contentHeightPx / tocEntryHeightPx));
-    let remaining = chapters.length - firstPage;
+    // Dizimle BİREBİR simülasyon (giriş bölünmez; sayfa dolunca yenisine geçer).
     tocPageCount = 1;
-    while (remaining > 0) {
-      tocPageCount++;
-      remaining -= restPage;
+    let used = tocHeadingHeightPx;
+    for (const entryPx of tocEntryHeights) {
+      if (used + entryPx > contentHeightPx) {
+        tocPageCount++;
+        used = 0;
+      }
+      used += entryPx;
     }
   }
 
@@ -1689,47 +1710,45 @@ export function paginate(input: PaginateInput): Page[] {
     usedPx += tocHeadingHeightPx;
 
     // Nokta dolgulu içindekiler: başlık SOLDA, sayfa no SAĞ kenarda, arası nokta
-    // (ajans/profesyonel biçim). Nokta sayısı, satırı sağ kenara dolduracak şekilde
-    // ölçülerek hesaplanır (ctx ile).
-    const tocSizePx = ptToPx(KDY_TOC.sizePt, dpi);
-    const tocFontStr = fontStr(KDY_TOC.weight, false, tocSizePx, KDY_TOC.font);
+    // (ajans/profesyonel biçim). Başlıklar YUKARIDA satırlara sarıldı
+    // (tocEntryLines; başlık + tahmin + dizim aynı satırları kullanır); burada
+    // yalnız SON satıra nokta dolgusu + sayfa numarası eklenir.
     ctx.font = tocFontStr;
-    const dotW = ctx.measureText(".").width || 1;
 
-    chapters.forEach((ch, idx) => {
-      if (usedPx + tocEntryHeightPx > contentHeightPx) {
+    tocEntryLines.forEach((entryLines, idx) => {
+      if (usedPx + tocEntryHeights[idx] > contentHeightPx) {
         page = newFront("toc");
         usedPx = 0;
       }
       const pageNo = chapterPageOf.get(idx) ?? 0;
-      // Kullanıcı bu bölüm için İçindekiler başlığını elle değiştirdiyse onu
-      // kullan (akıllı tırnaktan geçir); yoksa bölümün kendi başlığı.
-      const override = input.tocOverrides?.[idx]?.trim();
-      const title = override ? smartQuoteText(override) : ch.runs.map((r) => r.text).join("");
-      let text = title;
-      if (pageNo > 0) {
-        ctx.font = tocFontStr;
-        const pageStr = String(pageNo);
-        const titleW = ctx.measureText(title + " ").width;
-        const pageW = ctx.measureText(" " + pageStr).width;
-        const dots = Math.max(2, Math.floor((contentWidthPx - titleW - pageW) / dotW));
-        text = `${title} ${".".repeat(dots)} ${pageStr}`;
-      }
-      page.lines.push({
-        segments: plainSegments(text),
-        kind: "toc-entry",
-        sizePt: KDY_TOC.sizePt,
-        font: KDY_TOC.font,
-        weight: KDY_TOC.weight,
-        italic: false,
-        align: "left",
-        indentMm: 0,
-        blockIndentMm: 0,
-        justify: false,
-        spaceBeforeMm: usedPx === 0 ? 0 : KDY_TOC.spaceAfterMm,
-        heightMm: pxToMm(tocEntryLeadPx, dpi),
+      const pageStr = pageNo > 0 ? String(pageNo) : "";
+      const entryTopPx = usedPx;
+      entryLines.forEach((lineText, li) => {
+        const isLast = li === entryLines.length - 1;
+        let text = lineText;
+        if (isLast && pageStr) {
+          const maxPx = li === 0 ? contentWidthPx : contentWidthPx - tocRunoverIndentPx;
+          const lineW = ctx.measureText(lineText + " ").width;
+          const pageW = ctx.measureText(" " + pageStr).width;
+          const dots = Math.max(2, Math.floor((maxPx - lineW - pageW) / tocDotW));
+          text = `${lineText} ${".".repeat(dots)} ${pageStr}`;
+        }
+        page.lines.push({
+          segments: plainSegments(text),
+          kind: "toc-entry",
+          sizePt: KDY_TOC.sizePt,
+          font: KDY_TOC.font,
+          weight: KDY_TOC.weight,
+          italic: false,
+          align: "left",
+          indentMm: li === 0 ? 0 : TOC_RUNOVER_INDENT_MM,
+          blockIndentMm: 0,
+          justify: false,
+          spaceBeforeMm: li === 0 && entryTopPx !== 0 ? KDY_TOC.spaceAfterMm : 0,
+          heightMm: pxToMm(tocEntryLeadPx, dpi),
+        });
       });
-      usedPx += tocEntryHeightPx;
+      usedPx += tocEntryHeights[idx];
     });
   }
 
@@ -1738,4 +1757,47 @@ export function paginate(input: PaginateInput): Page[] {
 
 function plainSegments(text: string): Segment[] {
   return [{ text, bold: false, italic: false }];
+}
+
+// İçindekiler devam satırlarının asılı girintisi (mm) — klasik kitap dizgisi:
+// uzun başlığın ikinci satırı hafif içeriden başlar, girişler ayrışır.
+const TOC_RUNOVER_INDENT_MM = 4;
+
+// İçindekiler başlığını satırlara sarar. Her satır kendi genişlik sınırına
+// sığar (ilk satır tam genişlik, devam satırları asılı girinti kadar dar);
+// SON satır ayrıca nokta dolgusu + sayfa numarası payı (reservePx) bırakır →
+// numara hiçbir zaman kesilmez. Sınırı aşan TEK kelime olduğu gibi bırakılır
+// (bölünmez; pratikte görülmez).
+function wrapTocTitle(
+  ctx: CanvasRenderingContext2D,
+  title: string,
+  firstMaxPx: number,
+  contMaxPx: number,
+  reservePx: number,
+): string[] {
+  const words = title.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [""];
+  const maxFor = (lineIndex: number) => (lineIndex === 0 ? firstMaxPx : contMaxPx);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    const cand = cur ? `${cur} ${w}` : w;
+    if (cur && ctx.measureText(cand).width > maxFor(lines.length)) {
+      lines.push(cur);
+      cur = w;
+    } else {
+      cur = cand;
+    }
+  }
+  lines.push(cur);
+  // Son satır, numara payıyla birlikte sığana kadar son kelimeyi alta it.
+  for (;;) {
+    const i = lines.length - 1;
+    if (ctx.measureText(lines[i]).width <= maxFor(i) - reservePx) break;
+    const parts = lines[i].split(" ");
+    if (parts.length === 1) break;
+    lines[i] = parts.slice(0, -1).join(" ");
+    lines.push(parts[parts.length - 1]);
+  }
+  return lines;
 }

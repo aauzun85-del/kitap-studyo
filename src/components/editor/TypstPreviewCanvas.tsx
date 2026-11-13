@@ -11,7 +11,7 @@
 // kitapta bile DOM'da ~birkaç sayfa kalır.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { renderBookSvgWithBlocks, type TypstBookInput, type BlockPos } from "@/lib/typst";
+import { renderBookSvgWithBlocks, TypstCrashError, type TypstBookInput, type BlockPos } from "@/lib/typst";
 
 const SVGNS = "http://www.w3.org/2000/svg";
 const ROW_GAP_PX = 22; // açık-kitap ikilileri (satırlar) arası boşluk
@@ -68,10 +68,13 @@ export function TypstPreviewCanvas({
             setStatus("idle");
           }
         })
-        .catch(() => {
+        .catch((e) => {
           if (reqId.current === id) {
             setStatus("error");
-            onError?.(); // üst bileşen "Hızlı" önizlemeye düşebilir
+            // Yalnız GERÇEK çökmede (Rust panic, işçi tazelenemedi) üst bileşen
+            // "Hızlı"ya düşer; geçici hatada Typst'te kal → sonraki düzenlemede
+            // yeniden denenir ("önizleme = baskı" ilkesi sessizce bozulmasın).
+            if (e instanceof TypstCrashError) onError?.();
           }
         });
     }, 1200);

@@ -284,12 +284,12 @@ export default function LayoutStudio({
   // Önizleme motoru: "typst" = gerçek baskı sayfası (=PDF), tıklanabilir bloklar;
   // "js" = hızlı yaklaşık önizleme (yedek).
   const [previewEngine, setPreviewEngine] = useState<"typst" | "js">("typst");
-  // Kullanıcı motoru elle seçtiyse artık otomatik değiştirme.
-  const engineUserPickedRef = useRef(false);
-  // Büyük kitapta bir kez "Hızlı"ya al (tekrar tekrar uyarma).
-  const bigBookAutoRef = useRef(false);
+  // İLKE: önizleme = baskı. Typst derlemesi artık Web Worker'da (arka kanal)
+  // çalıştığı için büyük kitapta da arayüz donmaz → eski "120+ sayfada otomatik
+  // Hızlı'ya düş" kuralı KALDIRILDI (görünen ile basılan farklıydı — kullanıcı
+  // şikâyeti). "Hızlı" yalnız elle seçilirse ya da Typst çökerse kullanılır ve
+  // önizleme üstünde kalıcı "yaklaşık" şeridi gösterir.
   const pickEngine = useCallback((e: "typst" | "js") => {
-    engineUserPickedRef.current = true;
     setPreviewEngine(e);
   }, []);
 
@@ -649,28 +649,15 @@ export default function LayoutStudio({
     if (noteTimerRef.current) window.clearTimeout(noteTimerRef.current);
     noteTimerRef.current = window.setTimeout(() => setHistoryNote(null), 2800);
   }, []);
-  // Typst önizlemesi çökerse (ör. çok büyük kitap) otomatik "Hızlı" moda düş →
-  // asla "önizleme hatası"nda kilitlenme. Kullanıcı menüden Typst'e dönebilir.
+  // Typst önizlemesi ÇÖKERSE (Rust panic; işçi tazelenemedi) "Hızlı" moda düş →
+  // asla "önizleme hatası"nda kilitlenme. Yalnız gerçek çökmede çağrılır
+  // (TypstPreviewCanvas ayıklar); geçici hatada Typst'te kalınıp yeniden denenir.
   const handleTypstPreviewError = useCallback(() => {
-    engineUserPickedRef.current = true; // tekrar otomatik Typst'e zorlama
     setPreviewEngine("js");
     flashNote(
-      "Typst önizlemesi bu kitapta zorlandı — 'Hızlı' moda geçildi. PDF yine Typst ile üretilir.",
+      "Typst önizlemesi bu kitapta çöktü — 'Hızlı' (yaklaşık) moda geçildi. PDF yine Typst ile üretilir.",
     );
   }, [flashNote]);
-  // Büyük kitapta canlı Typst derlemesi arayüzü dondurur → eşiği ilk aşınca bir
-  // kez "Hızlı"ya al (kullanıcı elle seçmediyse). PDF her hâlükârda Typst ile.
-  useEffect(() => {
-    if (bigBookAutoRef.current || engineUserPickedRef.current) return;
-    if (previewEngine === "typst" && pages.length > 120) {
-      bigBookAutoRef.current = true;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPreviewEngine("js");
-      flashNote(
-        "Büyük kitap: canlı önizleme 'Hızlı' moda alındı (daha akıcı). Typst'i menüden açabilir, PDF'i yine Typst üretir.",
-      );
-    }
-  }, [pages.length, previewEngine, flashNote]);
   const { undo: historyUndo, redo: historyRedo } = history;
   const handleUndo = useCallback(() => {
     if (editingBlockRef.current != null) {
@@ -1441,7 +1428,7 @@ export default function LayoutStudio({
                       {t.engineLabel}
                       <div
                         className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5"
-                        title="Typst: gerçek baskı sayfası (=PDF), üstüne tıklayıp düzenle. Hızlı: yedek önizleme."
+                        title="Typst: gerçek baskı sayfası — ne görürsen onu basar (=PDF). Hızlı: YAKLAŞIK yedek önizleme; satır sonları baskıdan farklı olabilir."
                       >
                         <button
                           onClick={() => pickEngine("typst")}
@@ -1596,6 +1583,11 @@ export default function LayoutStudio({
             />
           ) : (
             <div className="flex flex-col items-center gap-6">
+              {/* Kalıcı uyarı: Hızlı mod YAKLAŞIKTIR — "önizleme = baskı" yalnız
+                  Typst'te geçerli. Kullanıcı bunu bilmeden baskı kararı vermesin. */}
+              <div className="sticky top-0 z-10 w-full max-w-[720px] rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-center text-xs text-amber-800">
+                Yaklaşık önizleme (Hızlı mod) — satır sonları baskıdan farklı olabilir. Baskının birebir görünümü için menüden <b>Typst</b> görünümüne dön; PDF her zaman Typst ile üretilir.
+              </div>
               {(() => {
                 // Karşılıklı sayfa (facing) düzeni: 1. sayfa tek başına SAĞDA
                 // (recto); sonra çift(verso=sol) | tek(recto=sağ) ikilileri. Böylece
