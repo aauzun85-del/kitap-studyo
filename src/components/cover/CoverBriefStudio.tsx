@@ -205,10 +205,13 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
         <div className="grid grid-cols-3 gap-3">
           {standard.concepts.map((k, i) => {
             const active = k.id === brief.conceptId;
+            const src = briefExampleSrc(standard.code, i);
+            // Anahtar tür+konsept: aynı konsept adı başka türde de olabilir
+            // ("tipografik"); yoksa "yüklenemedi" durumu türler arası taşınır.
             return (
-              <button key={k.id} type="button" onClick={() => patch({ conceptId: k.id })} className={card(active)} aria-pressed={active}>
+              <button key={`${standard.code}-${k.id}`} type="button" onClick={() => patch({ conceptId: k.id })} className={card(active)} aria-pressed={active}>
                 <div className="aspect-[2/3] w-full overflow-hidden bg-foreground/5">
-                  <ExampleArt src={briefExampleSrc(standard.code, i)} swatch={k.swatch} alt={k.name[lang]} />
+                  <ExampleArt key={src} src={src} swatch={k.swatch} alt={k.name[lang]} />
                 </div>
                 <div className="space-y-1 p-3">
                   <div className="text-sm font-semibold text-foreground">{k.name[lang]}</div>
