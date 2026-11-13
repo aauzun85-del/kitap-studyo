@@ -7,7 +7,13 @@ export type AiStyle = {
   id: string;
   name: { tr: string; en: string };
   prompt: string;
+  /** Konsept doğası gereği koyu (gerilim gibi) → "açık palet" kuralı uygulanmaz. */
+  dark?: boolean;
 };
+
+// Görsel üretim sağlayıcıları. "openai" = ChatGPT görsel modeli (gpt-image);
+// yerleşim kurallarını en iyi izleyen, bu yüzden katmanlı komutla kullanılan model.
+export type AiModel = "flux" | "nano" | "ideogram" | "openai";
 
 // Her komutun sonuna eklenen ortak kurallar. ÇOK önemli: yapay zekanın bir kitap
 // maketi/fotoğrafı değil, düz (flat) ve kenardan kenara dolu bir SANAT ESERİ üretmesi
@@ -50,6 +56,7 @@ export const AI_STYLES: AiStyle[] = [
     prompt:
       "dark moody crime thriller cover, cinematic noir lighting, high contrast, " +
       "mysterious and tense atmosphere, deep shadows",
+    dark: true,
   },
   {
     id: "fantasy",
@@ -283,4 +290,193 @@ export function nearestNanoAspect(widthMm: number, heightMm: number): string {
     }
   }
   return best.label;
+}
+
+// ── ChatGPT (gpt-image) için KATMANLI komut ──────────────────────────────────
+// Kapağın gerçek ölçülerinden (mm) hesaplanan bölge kurallarıyla, bölümlere
+// ayrılmış bir komut üretir. gpt-image yerleşim kısıtlarını harfiyen izler;
+// bu yüzden "nereye ne gelecek" yüzde olarak açıkça söylenir:
+//   • Başlık bandı (üst): sade, düşük ayrıntı, düz ton → başlık sonradan basılır.
+//   • Logo bandı (alt): açık tonlu, ayrıntısız → yayınevi logosu + yazar adı.
+//   • Sarmalda arka kapak: sahnenin çok daha açık/sakin devamı (koyu yazı basılır);
+//     sırt: düz şerit; ön kapak: ana özne.
+//   • Konsept koyu değilse açık-orta palet.
+// Metin ASLA görsele basılmaz; başlık/yazar/logo uygulamanın kendi katmanlarıdır.
+export type CoverGeometry = {
+  bookWidth: number;
+  bookHeight: number;
+  spine: number;
+  bleed: number;
+  safeZone: number;
+  totalWidth: number;
+  totalHeight: number;
+};
+
+const pct = (n: number) => `${Math.round(n * 100)}%`;
+
+export type LayeredStyleOverride = {
+  /** Konsept + özne cümlesi (kurgudan); stil presetinin yerine geçer. */
+  stylePrompt: string;
+  dark: boolean;
+  /** Palet kuralı metni (TONE_PROMPTS); yoksa dark'a göre varsayılan. */
+  tonePrompt?: string;
+};
+
+// Yazıyı ChatGPT bassın istenirse: BİREBİR yazılacak metinler. Yoksa görsel
+// yazısızdır (uygulama bindirir).
+export type LayeredText = {
+  title: string;
+  author: string;
+  subtitle?: string;
+  genreLabel?: string;
+};
+
+export function buildLayeredPrompt(opts: {
+  styleId: string;
+  description: string;
+  wrap: boolean;
+  geo: CoverGeometry;
+  override?: LayeredStyleOverride;
+  text?: LayeredText;
+}): string {
+  const preset = getAiStyle(opts.styleId);
+  const style = {
+    prompt: opts.override?.stylePrompt ?? preset.prompt,
+    dark: opts.override?.dark ?? !!preset.dark,
+  };
+  const desc = opts.description.trim();
+  const g = opts.geo;
+  const H = g.totalHeight;
+  // Başlık bandı: üst güvenli çizgiden kapak boyunun %26'sı kadar aşağı (~%30).
+  const titleBottom = (g.bleed + g.safeZone + g.bookHeight * 0.26) / H;
+  // Logo bandı: alt güvenli çizginin 10 mm üstünden alt kenara (~%9-10).
+  const logoBand = (g.bleed + g.safeZone + 10) / H;
+  const focalTop = titleBottom + 0.02;
+  const focalBottom = 1 - logoBand - 0.08;
+  const front = opts.wrap ? "the FRONT COVER section" : "the cover";
+
+  const lines: string[] = [
+    // Çerçeve: ciddi yayıncılık işi, jenerik AI görseli değil (kullanıcının
+    // kendi komutlarından; farkı yaratan cümle).
+    "Design ONE exceptionally art-directed book cover ARTWORK: a serious commercial " +
+      "publishing cover, carefully composed like a commissioned literary jacket, not " +
+      "generic AI art, not stock art, not a template. Image and (future) typography " +
+      "must read as one purposeful design.",
+    "FORMAT: flat 2D full-bleed artwork — fills 100% of the canvas edge to edge. " +
+      "Not a book mockup, not a 3D book, not a product photo, no frame, no border, " +
+      "no inset panel, no margins, no badges.",
+  ];
+  if (desc) lines.push(`SCENE: ${desc}`);
+  lines.push(
+    `STYLE: ${style.prompt}. Gallery-quality, striking and memorable; rich detail and ` +
+      "depth concentrated in the focal subject, elegant restraint everywhere else.",
+  );
+  lines.push("LAYOUT (strict, follow exactly):");
+  if (opts.wrap) {
+    const backEnd = (g.bleed + g.bookWidth) / g.totalWidth;
+    const spineEnd = backEnd + g.spine / g.totalWidth;
+    lines.push(
+      `- One continuous wraparound scene. The left ${pct(backEnd)} of the width is the ` +
+        "BACK COVER: a much lighter, paler and calmer continuation of the scene in soft " +
+        "low-contrast tones (pale enough to print dark paragraph text over it); no focal " +
+        "subject there.",
+    );
+    lines.push(
+      `- Between ${pct(backEnd)} and ${pct(spineEnd)} of the width is the SPINE: a plain, ` +
+        "uniform, low-detail vertical strip; nothing important crosses it.",
+    );
+    lines.push(
+      `- The right ${pct(1 - spineEnd)} of the width is the FRONT COVER section: the main ` +
+        "subject lives here, horizontally centered within this section.",
+    );
+  }
+  const tx = opts.text;
+  const q = (s: string) => `"${s.replace(/"/g, "'")}"`;
+  if (tx) {
+    // Yazı görsele gömülür: konum/ölçü senin örnek komutlarındaki düzen.
+    const parts = [
+      `- Typography zone: the top ${pct(titleBottom)} of ${front} is quiet negative space ` +
+        "(sky, wall, mist, paper) blending naturally into the image, never a boxed panel; " +
+        "it carries ALL the text:",
+      `  · author ${q(tx.author)} — small, widely tracked uppercase, centered at about 8% of the height;`,
+      `  · title ${q(tx.title)} — between about 15% and ${pct(titleBottom)} of the height, ` +
+        "distinctive elegant editorial typeface matching the concept, substantial weight, " +
+        "beautifully balanced across 1–3 lines, roughly 60–70% of the cover width, optical " +
+        "kerning, correct Turkish diacritics (İ ı Ş ş Ğ ğ Ü ü Ö ö Ç ç), compact professional " +
+        "leading, not stretched, not swashy;",
+    ];
+    if (tx.subtitle) {
+      parts.push(
+        `  · subtitle ${q(tx.subtitle)} — small neat text in 1–2 lines directly below the title, ` +
+          "clearly subordinate to it;",
+      );
+    }
+    if (tx.genreLabel) {
+      parts.push(`  · tiny genre label ${q(tx.genreLabel)} just below the title with generous tracking.`);
+    }
+    parts.push("  Large usable text margins; image and typography share one purposeful design.");
+    lines.push(parts.join("\n"));
+  } else {
+    lines.push(
+      `- Title zone: the top ${pct(titleBottom)} of ${front} is quiet negative space — ` +
+        "soft, even, low-detail tone that blends NATURALLY into the image (sky, wall, " +
+        "mist, paper), never a boxed panel — the author name, title and a tiny genre " +
+        "label will be printed there later.",
+    );
+  }
+  lines.push(
+    `- Logo zone: the bottom ${pct(logoBand)} of ${front} must be light-toned, plain and ` +
+      "free of detail — a publisher logo and the author name go there.",
+  );
+  lines.push(
+    `- Main subject: between ${pct(focalTop)} and ${pct(focalBottom)} of the height of ` +
+      `${front}, clearly visible, not touching the edges; placed slightly off-center ` +
+      "to avoid dull perfect symmetry; strong composition with purposeful negative space.",
+  );
+  lines.push(
+    opts.override?.tonePrompt
+      ? `- ${opts.override.tonePrompt}`
+      : style.dark
+        ? "- Palette may be dark, but keep the title zone and logo zone smoother and a little " +
+          "lighter so printed text stays readable."
+        : "- Palette: light to mid tones overall; avoid large very dark or black areas.",
+  );
+  if (tx) {
+    const allowed = [tx.author, tx.title, tx.subtitle, tx.genreLabel]
+      .filter((s): s is string => !!s && s.trim().length > 0)
+      .map(q)
+      .join(", ");
+    lines.push(
+      `EXACT TEXT: render only these words, spelled exactly: ${allowed}. No other words, ` +
+        "no publisher name, no logo, no badges, no watermark, no signature. Keep all text " +
+        "legible and exact." +
+        (opts.wrap
+          ? " All text lives on the FRONT COVER section only; the back cover and the spine carry no text."
+          : ""),
+    );
+    lines.push(
+      "CONSTRAINTS: no book object, no spine shadow, no page edges. No floating objects, " +
+        "no magical particles, no cosmic effects, no artificial glow, no stock-art clichés.",
+    );
+  } else {
+    lines.push(
+      "CONSTRAINTS: absolutely no text, no letters, no words, no title, no logo, no numbers, " +
+        "no watermark, no signature. No book object, no spine shadow, no page edges. " +
+        "No floating objects, no magical particles, no cosmic effects, no artificial glow, " +
+        "no stock-art clichés.",
+    );
+  }
+  return lines.join("\n");
+}
+
+// gpt-image-2.x özel boyut kabul eder: her kenar 16'nın katı, oran 1:3–3:1.
+// Kapağın GERÇEK oranını kullanırız (kırpma yok). Ön kapak = trim + iki yandan
+// taşma; sarmal = tüm tuval. Uzun kenar sabit; piksel sayısı maliyeti belirler.
+export function openaiSize(geo: CoverGeometry, wrap: boolean): string {
+  const LONG = wrap ? 2048 : 1536;
+  const w = wrap ? geo.totalWidth : geo.bookWidth + geo.bleed * 2;
+  const h = geo.totalHeight;
+  const ratio = Math.min(3, Math.max(1 / 3, h > 0 ? w / h : 2 / 3));
+  const r16 = (n: number) => Math.max(256, Math.round(n / 16) * 16);
+  return ratio >= 1 ? `${LONG}x${r16(LONG / ratio)}` : `${r16(LONG * ratio)}x${LONG}`;
 }

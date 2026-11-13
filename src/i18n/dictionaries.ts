@@ -61,7 +61,6 @@ type CoverStudioCopy = {
   isbnInvalid: string;
   isbnAutoComplete: string;
   isbnRandomCta: string;
-  navTemplates: string;
   navAi: string;
   navContent: string;
   navObjects: string;
@@ -254,10 +253,6 @@ type CoverStudioCopy = {
   selObjStar: string;
   selObjDiamond: string;
   selObjDivider: string;
-  templatesHeading: string;
-  blankHeading: string;
-  blankButton: string;
-  blankHint: string;
   inspectorClose: string;
   inspectorEmptyHint: string;
   selectionTitle: string;
@@ -1184,7 +1179,6 @@ const tr: Dictionary = {
     isbnInvalid: "Geçersiz ISBN. 13 haneli numarayı kontrol edin (yer tutucu gösteriliyor).",
     isbnAutoComplete: "✓ Son hane otomatik eklendi →",
     isbnRandomCta: "Rastgele test ISBN üret",
-    navTemplates: "Şablon",
     navAi: "AI",
     navContent: "Metin",
     navObjects: "Nesne",
@@ -1417,10 +1411,6 @@ const tr: Dictionary = {
     selObjStar: "Yıldız",
     selObjDiamond: "Elmas",
     selObjDivider: "Ayraç",
-    templatesHeading: "Hazır şablonlar",
-    blankHeading: "Yeni tasarım",
-    blankButton: "Boş tuval",
-    blankHint: "Sıfırdan başla — boş tuvale kendi yazı, şekil ve AI öğelerini ekle.",
     inspectorClose: "Kapat",
     inspectorEmptyHint: "Bir nesne seçince ayarları burada görünür.",
     selectionTitle: "Seçim",
@@ -2375,7 +2365,6 @@ const en: Dictionary = {
     isbnInvalid: "Invalid ISBN. Check the 13-digit number (placeholder shown).",
     isbnAutoComplete: "✓ Check digit added automatically →",
     isbnRandomCta: "Generate random test ISBN",
-    navTemplates: "Template",
     navAi: "AI",
     navContent: "Text",
     navObjects: "Object",
@@ -2608,10 +2597,6 @@ const en: Dictionary = {
     selObjStar: "Star",
     selObjDiamond: "Diamond",
     selObjDivider: "Divider",
-    templatesHeading: "Ready-made templates",
-    blankHeading: "New design",
-    blankButton: "Blank canvas",
-    blankHint: "Start from scratch — add your own text, shapes and AI elements.",
     inspectorClose: "Close",
     inspectorEmptyHint: "Select an object to see its settings here.",
     selectionTitle: "Selection",

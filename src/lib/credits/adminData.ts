@@ -122,6 +122,7 @@ export const paidAt = (o: OrderRow) => o.paid_at ?? o.decided_at ?? o.created_at
 // Defterdeki işlem adlarının okunur karşılıkları.
 const ACTION_TR: Record<string, string> = {
   "cover-art": "Kapak görseli (FLUX)",
+  "cover-openai": "Kapak görseli (ChatGPT)",
   "cover-ideogram": "Kapak görseli (Ideogram)",
   "cover-nano": "Kapak görseli (Nano Banana)",
   "cover-edit": "Kapak düzenleme",

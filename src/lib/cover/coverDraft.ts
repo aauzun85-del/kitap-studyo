@@ -10,6 +10,7 @@
 
 import type { CoverColors } from "./templates";
 import type { PaperGsm, BindingType } from "./spread";
+import type { CoverBrief } from "./brief";
 import type {
   PositionMap,
   LayerMap,
@@ -27,6 +28,11 @@ export type CoverDraft = {
   subtitle?: string;
   isbn?: string;
   templateId?: string;
+  // Başlık bloğu yeri: "auto" = şablon karar verir; "top" = üst bant (AI görseli
+  // "üst bant sade" kuralıyla üretildiğinde otomatik seçilir).
+  titlePos?: "auto" | "top" | "center";
+  // Kapak kurgusu (tuval öncesi seçimler: konsept/küme/yazı stili/ton/kapsam).
+  brief?: CoverBrief;
   colorOverrides?: Partial<CoverColors>;
   showGuides?: boolean;
   // Görseller
@@ -43,7 +49,7 @@ export type CoverDraft = {
   logoPos?: "top" | "bottom";
   // AI ayarları (üretilen görsel geçmişi ayrı kaydedilir)
   aiStyle?: string;
-  aiModel?: "flux" | "nano" | "ideogram";
+  aiModel?: "flux" | "nano" | "ideogram" | "openai";
   aiEmbedText?: boolean;
   aiDesc?: string;
   aiScope?: "front" | "wrap";

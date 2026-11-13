@@ -8,7 +8,12 @@ import {
   useState,
 } from "react";
 import { mmToPx, type SpreadDimensions } from "@/lib/cover/spread";
-import { getTemplate, type CoverContent, type CoverColors } from "@/lib/cover/templates";
+import {
+  getTemplate,
+  type CoverContent,
+  type CoverColors,
+  type TitlePos,
+} from "@/lib/cover/templates";
 import { generateBarcodeDataUrl } from "@/lib/cover/barcode";
 import {
   fontFamilyOf,
@@ -192,6 +197,8 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   hidden: Record<string, boolean>;
   locked: Record<string, boolean>;
   autoContrast: boolean; // başlık/yazar arka plana göre oto beyaz/siyah + gölge
+  titlePos?: TitlePos; // başlık bloğu konumu (şablonu ezer); yoksa şablon karar verir
+  authorPos?: "top" | "bottom"; // yazar adı yeri (kurgu kapaklarında "top")
   textStyles: TextStyleMap; // yapısal metinlerin öğe bazlı stilleri
   selectedId: string | null; // dışarıdan (katman listesi) seçim — tuvalde seç
   onPositionChange: (id: string, t: ObjTransform) => void;
@@ -218,6 +225,8 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   hidden,
   locked,
   autoContrast,
+  titlePos,
+  authorPos,
   textStyles,
   selectedId,
   onPositionChange,
@@ -703,6 +712,8 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
         lang,
         // Görsel varken şablon süsleri (çizgi/çerçeve/amblem) çizilmez.
         hasImage: !!images.cover,
+        titlePos,
+        authorPos,
       };
 
       // 1) Zemin rengi (editId "background"). Katman panelinden gizlenmişse görünmez yap.
@@ -1610,7 +1621,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       // kalmasın → bir sonraki seçim olayları yine parent'a yansıyabilsin.
       rebuildingRef.current = false;
     };
-  }, [spread, labels, lang, templateId, colors, content, showGuides, images, objects, positions, layers, hidden, locked, autoContrast, textStyles, containerW, containerH, fontsReady]);
+  }, [spread, labels, lang, templateId, titlePos, authorPos, colors, content, showGuides, images, objects, positions, layers, hidden, locked, autoContrast, textStyles, containerW, containerH, fontsReady]);
 
   useEffect(() => {
     return () => {

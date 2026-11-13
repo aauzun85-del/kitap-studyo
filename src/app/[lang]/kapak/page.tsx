@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/user";
 import { loadInitialProject } from "@/lib/projects/server";
 import { toShellUser } from "@/lib/app/identity";
+import { getBalanceById, hasActivePackageById } from "@/lib/credits/server";
+import { isAdminEmail } from "@/lib/admin";
 import { getSidebarPref } from "@/lib/app/prefs";
 import { signOutAction } from "@/app/[lang]/auth-actions";
 import AppShell, { type AppShellContext } from "@/components/app/AppShell";
@@ -26,6 +28,10 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
   const initialProject = await loadInitialProject(supabase, sp.project);
   // Tuval sayfası: kullanıcı açıkça seçmediyse menü DARALTILMIŞ başlar (geniş alan).
   const collapsed = (await getSidebarPref()) ?? true;
+  const canExport = await hasActivePackageById(user.id, user.email);
+  // Jeton bakiyesi (anlık görüntü) — sihirbazın "kapak üretelim mi?" kartı için.
+  // Yönetici jeton harcamaz → null (sınırsız).
+  const creditBalance = isAdminEmail(user.email) ? null : await getBalanceById(user.id);
 
   const meta = initialProject?.data.meta;
   const context: AppShellContext = {
@@ -41,6 +47,21 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
   // (kapak yeniden ÜRETİLMEZ, sadece mevcut tasarım PDF'e basılır).
   const exportMode = sp.export === "1";
   const wizard = initialProject?.data.wizard;
+  // KAPAK KURGUSU: sihirbazda kapak henüz yoksa ve kurgu hiç yapılmadıysa önce
+  // soru-cevap adımına git. ?kurgu=1 → kurgudan geldi (otomatik üret);
+  // ?kurgu=0 → kullanıcı kurguyu atladı (tuval boş açılır).
+  const briefParam = typeof sp.kurgu === "string" ? sp.kurgu : undefined;
+  if (
+    initialProject &&
+    wizard?.active &&
+    !exportMode &&
+    briefParam === undefined &&
+    !initialProject.data.cover.coverImage &&
+    !initialProject.data.cover.brief
+  ) {
+    redirect(`/${lang}/kapak/kurgu?project=${initialProject.id}`);
+  }
+  const briefRun = briefParam === "1";
   const wizardBar =
     initialProject && wizard?.active && !exportMode ? (
       <WizardBar
@@ -71,6 +92,9 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
         initialProject={initialProject}
         wizardAuto={!!wizard?.active && !exportMode}
         autoExport={exportMode}
+        briefRun={briefRun}
+        canExport={canExport}
+        creditBalance={creditBalance}
       />
     </AppShell>
   );

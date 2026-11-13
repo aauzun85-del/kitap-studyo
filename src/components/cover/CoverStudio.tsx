@@ -15,9 +15,7 @@ import {
   type PaperGsm,
 } from "@/lib/cover/spread";
 import {
-  TEMPLATES,
   DEFAULT_TEMPLATE_ID,
-  BLANK_TEMPLATE_ID,
   getTemplate,
   type CoverColors,
 } from "@/lib/cover/templates";
@@ -56,11 +54,23 @@ import {
   AI_STYLES,
   DEFAULT_AI_STYLE_ID,
   buildAiPrompt,
+  buildLayeredPrompt,
   buildNanoCoverPrompt,
   nearestAspectRatio,
   nearestNanoAspect,
+  openaiSize,
   spreadCustomDims,
+  type AiModel,
+  type LayeredStyleOverride,
+  type LayeredText,
 } from "@/lib/cover/aiStyles";
+import {
+  briefStyleOverride,
+  getTextStyle,
+  TONE_PROMPTS,
+  type CoverBrief,
+} from "@/lib/cover/brief";
+import { resolveStandard } from "@/lib/cover/standards";
 import {
   AI_HISTORY_LIMIT,
   loadAiHistory,
@@ -79,6 +89,12 @@ import { resolveDraftImages } from "@/lib/projects/storage";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import type { ProjectEnvelope } from "@/lib/projects/types";
 import { genreAiStyleId } from "@/lib/projects/genres";
+import { requireExport } from "@/lib/credits/exportGate";
+import { creditCost } from "@/lib/credits/pricing";
+import CreditNotice, {
+  creditProblemFrom,
+  type CreditProblem,
+} from "@/components/credits/CreditNotice";
 import {
   loadUserImages,
   saveUserImages,
@@ -113,7 +129,6 @@ import {
 const PRINT_DPI = 300;
 
 type PanelId =
-  | "templates"
   | "ai"
   | "content"
   | "objects"
@@ -128,14 +143,34 @@ type PanelId =
 type AiGenOpts = {
   styleId?: string;
   desc?: string;
-  model?: "flux" | "nano" | "ideogram";
+  model?: AiModel;
   scope?: "front" | "wrap";
   embedText?: boolean;
+  /** Kurgudan gelen konsept/özne/ton katmanı (yalnız ChatGPT yolu kullanır). */
+  override?: LayeredStyleOverride;
+  /** Verilirse ChatGPT başlık/yazar/tür etiketini GÖRSELE basar (yazı katmanları gizlenir). */
+  text?: LayeredText;
 };
 // Tarayıcı tarafı SON ÇARE zaman aşımları. Sunucu 120 sn içinde kendi temiz
 // hatasını döndürür; bunlar ancak bağlantı tamamen koparsa devreye girer.
 const CLIENT_AI_TIMEOUT_MS = 135_000;
 const WIZARD_PROMPT_TIMEOUT_MS = 45_000;
+// Sihirbazın otomatik kapak akışı iki ücretli uç çağırır: kitap asistanı
+// (cover-prompt) + FLUX görseli (cover-art). Onay kartındaki bedel buradan gelir.
+const WIZARD_COVER_COST = creditCost("cover-prompt") + creditCost("cover-art");
+
+// Seçili üretim modelinin jeton bedeli (uç nokta ↔ fiyat anahtarı).
+function aiModelCost(model: AiModel): number {
+  return creditCost(
+    model === "openai"
+      ? "cover-openai"
+      : model === "nano"
+        ? "cover-nano"
+        : model === "ideogram"
+          ? "cover-ideogram"
+          : "cover-art",
+  );
+}
 
 export default function CoverStudio({
   lang,
@@ -143,6 +178,9 @@ export default function CoverStudio({
   initialProject,
   wizardAuto,
   autoExport,
+  canExport,
+  creditBalance = null,
+  briefRun,
 }: {
   lang: Locale;
   dict: Dictionary;
@@ -152,6 +190,12 @@ export default function CoverStudio({
   /** İndirme ekranından "?export=1" ile gelindi: tuval hazır olunca Kapak PDF'ini
    *  otomatik indir + üstte durum katmanı göster. */
   autoExport?: boolean;
+  /** Aktif jeton paketi var mı? false ise indirme (PNG/PDF) kilitli. */
+  canExport: boolean;
+  /** Sayfa açılırkenki jeton bakiyesi (anlık görüntü). null = sınırsız (yönetici). */
+  creditBalance?: number | null;
+  /** Kurgu sayfasından "Tuvale gönder ve üret" ile gelindi → kayıtlı kurguyla üret. */
+  briefRun?: boolean;
 }) {
   const t = dict.coverStudio;
   // Bulut projesi modu: ?project=<id> ile açıldıysa kayıt/yükleme buluta gider.
@@ -165,6 +209,11 @@ export default function CoverStudio({
   const [subtitle, setSubtitle] = useState("");
   const [isbn, setIsbn] = useState("");
   const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE_ID);
+  // Başlık bloğu yeri: "auto" şablona bırakır; "top" üst banda alır (ChatGPT
+  // görseli üst bandı başlık için sade bıraktığından üretim sonrası otomatik).
+  const [titlePos, setTitlePos] = useState<"auto" | "top" | "center">("auto");
+  // Kapak kurgusu (tuval öncesi seçimler); kurgu sayfası yazar, burada okunur.
+  const [brief, setBrief] = useState<CoverBrief | null>(null);
   // Kullanıcının değiştirdiği renkler (yalnız değişenler). Boşsa şablon paleti kullanılır.
   const [colorOverrides, setColorOverrides] = useState<Partial<CoverColors>>({});
   // Baskı kılavuzları varsayılan AÇIK gelir (kesim/sırt/güvenli alan görünür).
@@ -194,7 +243,9 @@ export default function CoverStudio({
   );
   // Üretim modeli: "flux" (mevcut, hızlı/sanatsal) | "nano" (Nano Banana Pro,
   // komutları daha iyi izler). Varsayılan flux → mevcut davranış korunur.
-  const [aiModel, setAiModel] = useState<"flux" | "nano" | "ideogram">("flux");
+  const [aiModel, setAiModel] = useState<AiModel>("flux");
+  // Son ChatGPT üretiminin yaklaşık maliyeti (USD; sunucu token sayımından).
+  const [aiLastCost, setAiLastCost] = useState<number | null>(null);
   // Nano: başlık/yazar metnini görselin içine bastırsın mı? (Nano yazıyı iyi basar)
   const [aiEmbedText, setAiEmbedText] = useState(true);
   const [aiDesc, setAiDesc] = useState("");
@@ -217,16 +268,49 @@ export default function CoverStudio({
   // "Tekrar dene" için son üretim seçenekleri.
   const lastAiOptsRef = useRef<AiGenOpts | null>(null);
   const [aiError, setAiError] = useState<
-    "none" | "token" | "generic" | "timeout"
+    "none" | "token" | "generic" | "timeout" | "credits"
   >("none");
   // Üretim sonrası bilgilendirme (ör. başlık görsele gömülünce yazı katmanları gizlendi).
   const [aiNotice, setAiNotice] = useState<"none" | "embed">("none");
   // AI ile TASARIM ÖĞESİ üretimi (mühür/rozet/amblem… → saydam PNG nesnesi).
   const [elemDesc, setElemDesc] = useState("");
   const [elemBusy, setElemBusy] = useState(false);
-  const [elemError, setElemError] = useState<"none" | "token" | "generic">(
-    "none",
-  );
+  const [elemError, setElemError] = useState<
+    "none" | "token" | "generic" | "credits"
+  >("none");
+  // Jeton yetmedi (402) / oturum kapandı (401) → ortak uyarı bunu gösterir.
+  const [aiCredit, setAiCredit] = useState<CreditProblem | null>(null);
+  const [elemCredit, setElemCredit] = useState<CreditProblem | null>(null);
+  // Bakiyenin yerel kopyası (null = sınırsız). Sunucudaki gerçek bakiye değil;
+  // onay kartı/uyarı kabaca doğru kalsın diye başarılı üretimde düşülür.
+  const [balance, setBalance] = useState<number | null>(creditBalance);
+  const spendCredits = (n: number) =>
+    setBalance((b) => (b == null ? b : Math.max(0, b - n)));
+  // Sunucu 402'de güncel bakiyeyi de yollar → yerel kopyayı onunla eşitle.
+  const noteCreditProblem = (p: CreditProblem) => {
+    if (p.kind === "no-credits" && p.balance != null) setBalance((b) => (b == null ? b : p.balance!));
+  };
+  // Sihirbaz: otomatik kapak üretimi ÖNCE sorulur (jeton harcar).
+  const [wizardChoice, setWizardChoice] = useState<"none" | "run" | "skip">("none");
+  // "Kendim tasarlayacağım" kararı proje başına hatırlanır (adıma her dönüşte sorma).
+  const wizardSkipKey = `cover-wizard-skip:${initialProject?.id ?? "local"}`;
+  const skipWizardCover = () => {
+    setWizardChoice("skip");
+    try {
+      localStorage.setItem(wizardSkipKey, "1");
+    } catch {
+      // depolama kapalı → karar yalnız bu oturumda geçerli
+    }
+  };
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(wizardSkipKey) === "1")
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setWizardChoice((c) => (c === "none" ? "skip" : c));
+    } catch {
+      // depolama kapalı → her girişte sorulur
+    }
+  }, [wizardSkipKey]);
   // "Boya & değiştir" penceresi açık mı.
   const [editOpen, setEditOpen] = useState(false);
 
@@ -247,7 +331,9 @@ export default function CoverStudio({
   const [bleedMm, setBleedMm] = useState<number>(seedCoverProfile?.bleedMm ?? DEFAULT_BLEED_MM);
   // İndirme ekranından "?export=1" ile gelince: tuval hazır olunca Kapak PDF'i
   // otomatik indirilir; üstteki durum katmanı bunu izler.
-  const [autoExportStatus, setAutoExportStatus] = useState<"working" | "done" | "error">("working");
+  const [autoExportStatus, setAutoExportStatus] = useState<
+    "working" | "done" | "error" | "locked"
+  >(autoExport && !canExport ? "locked" : "working");
   const autoExportFiredRef = useRef(false);
   const autoExportTimerRef = useRef<number | null>(null);
   const autoExportSafetyRef = useRef<number | null>(null);
@@ -291,7 +377,8 @@ export default function CoverStudio({
 
   // Canva tarzı sol ikon şeridi: o an açık olan grup. Sihirbaz modunda doğrudan
   // AI paneliyle açılır (kapak burada otomatik üretilip düzenlenir).
-  const [activePanel, setActivePanel] = useState<PanelId>(wizardAuto ? "ai" : "templates");
+  // Şablon paneli kaldırıldı: tipografi Kapak kurgusundaki "yazı stili"nden gelir.
+  const [activePanel, setActivePanel] = useState<PanelId>("ai");
 
   // --- Otomatik kayıt (taslak) ---
   // Tasarım her değişiklikte tarayıcıya kaydedilir; yenilemede kaybolmaz.
@@ -390,10 +477,6 @@ export default function CoverStudio({
   );
   const colorsDirty = Object.keys(colorOverrides).length > 0;
   // Şablon değişince renk seçimlerini sıfırla → yeni şablonun kendi renkleri görünsün.
-  const selectTemplate = (id: string) => {
-    setTemplateId(id);
-    setColorOverrides({});
-  };
   const setColor = (key: keyof CoverColors, value: string) =>
     setColorOverrides((prev) => ({ ...prev, [key]: value }));
 
@@ -706,14 +789,23 @@ export default function CoverStudio({
   // Kullanıcı 12 rakam yazdı, sistem 13.'yü ekledi → küçük bilgi notu göster.
   const isbnAutoCompleted = isbnDigits.length === 12 && isbnState === "valid";
 
+  // Kurgu kapağı: tür etiketi ("ROMAN") standarttan gelir; yazar üstte düzeni.
+  const briefActive = !!brief && !brief.skipped;
+  // Tür etiketini uygulama yalnız yazıyı kendisi basıyorsa çizer (ChatGPT
+  // bastıysa görselde zaten var).
+  const genreLabel =
+    briefActive && (brief.textBy ?? "ai") === "app"
+      ? resolveStandard(brief.themaCode).label[lang]
+      : undefined;
   const content = useMemo(
     () => ({
       title: title || t.titlePlaceholder,
       author: author || t.authorPlaceholder,
       subtitle,
       isbn: isbnComplete,
+      genreLabel,
     }),
-    [title, author, subtitle, isbnComplete, t.titlePlaceholder, t.authorPlaceholder],
+    [title, author, subtitle, isbnComplete, genreLabel, t.titlePlaceholder, t.authorPlaceholder],
   );
 
   const images: CoverImages = useMemo(
@@ -753,6 +845,7 @@ export default function CoverStudio({
 
   // Tuvalin yüksek çözünürlüklü PNG çıktısını doğrudan indir (baskı için 300 DPI).
   const handleExportPng = () => {
+    if (!requireExport(canExport, lang)) return;
     const dataUrl = canvasRef.current?.getPrintDataUrl(PRINT_DPI);
     if (!dataUrl) return;
     const safeTitle =
@@ -766,7 +859,9 @@ export default function CoverStudio({
     a.click();
   };
 
-  const handleExportPdf = async (): Promise<boolean> => {
+  // silent: otomatik indirme (?export=1) — paket yoksa onay kutusu AÇMA.
+  const handleExportPdf = async (silent = false): Promise<boolean> => {
+    if (!requireExport(canExport, lang, silent)) return false;
     // Export başladı → bekleyen otomatik-export debounce'unu iptal et (tekrar
     // tetiklenmesin). Not: getPrintDataUrl zaten yakalamadan ÖNCE senkron
     // canvas.renderAll() yapar → kuyruktaki kare basılır.
@@ -800,6 +895,9 @@ export default function CoverStudio({
   //      onReady timer'ı sıfırlar → en son, dolu render baz alınır.
   const handleCanvasReady = () => {
     if (!autoExport || autoExportFiredRef.current || !hydratedRef.current) return;
+    // Aktif paket yok → indirme hiç başlamaz, onay kutusu da açılmaz; katman
+    // "paket gerekli" (locked) durumunda kalır.
+    if (!requireExport(canExport, lang, true)) return;
     if (autoExportTimerRef.current) window.clearTimeout(autoExportTimerRef.current);
     autoExportTimerRef.current = window.setTimeout(async () => {
       if (autoExportFiredRef.current) return;
@@ -815,7 +913,7 @@ export default function CoverStudio({
       }
       autoExportFiredRef.current = true;
       if (autoExportSafetyRef.current) window.clearTimeout(autoExportSafetyRef.current);
-      const ok = await handleExportPdf();
+      const ok = await handleExportPdf(true);
       setAutoExportStatus(ok ? "done" : "error");
     }, 700);
   };
@@ -825,7 +923,7 @@ export default function CoverStudio({
   // "Tekrar dene"ye basabilir; o ana kadar gerçek içerik yüklenmiş olur, böylece
   // manuel export DOLU PDF üretir.
   useEffect(() => {
-    if (!autoExport) return;
+    if (!autoExport || !canExport) return; // paket yoksa "locked" kalır
     autoExportSafetyRef.current = window.setTimeout(() => {
       if (autoExportFiredRef.current) return;
       autoExportFiredRef.current = true;
@@ -834,7 +932,7 @@ export default function CoverStudio({
     return () => {
       if (autoExportSafetyRef.current) window.clearTimeout(autoExportSafetyRef.current);
     };
-  }, [autoExport]);
+  }, [autoExport, canExport]);
 
   // Kapağı PNG olarak cihazın paylaşım menüsüyle paylaş (telefon/tablet ve
   // destekleyen masaüstü tarayıcılar). Desteklenmiyorsa PNG indirmeye düşer.
@@ -920,6 +1018,8 @@ export default function CoverStudio({
     if (typeof d.subtitle === "string") setSubtitle(d.subtitle);
     if (typeof d.isbn === "string") setIsbn(d.isbn);
     if (typeof d.templateId === "string") setTemplateId(d.templateId);
+    if (d.titlePos) setTitlePos(d.titlePos);
+    if (d.brief) setBrief(d.brief);
     if (d.colorOverrides) setColorOverrides(d.colorOverrides);
     if (typeof d.showGuides === "boolean") setShowGuides(d.showGuides);
     // Görseller
@@ -1089,6 +1189,8 @@ export default function CoverStudio({
       subtitle,
       isbn,
       templateId,
+      titlePos,
+      brief: brief ?? undefined,
       colorOverrides,
       showGuides,
       coverImage,
@@ -1154,6 +1256,8 @@ export default function CoverStudio({
     subtitle,
     isbn,
     templateId,
+    titlePos,
+    brief,
     colorOverrides,
     showGuides,
     coverImage,
@@ -1387,6 +1491,8 @@ export default function CoverStudio({
       subtitle,
       isbn,
       templateId,
+      titlePos,
+      brief: brief ?? undefined,
       colorOverrides,
       showGuides,
       coverImage,
@@ -1467,6 +1573,7 @@ export default function CoverStudio({
     setAiBusy(true);
     setAiElapsed(0);
     setAiError("none");
+    setAiCredit(null);
     setAiNotice("none");
     try {
       // Sihirbaz otomatik üretimi taze değerleri override ile geçer (state
@@ -1480,49 +1587,71 @@ export default function CoverStudio({
       // Nano/Ideogram + "metni göm" açıksa: başlık/yazar görselin İÇİNE basılsın
       // diye metinli komut (bu iki model yazıyı iyi basar). Aksi halde (FLUX veya
       // göm kapalı): yazısız sanat komutu.
-      const embed = (useModel === "nano" || useModel === "ideogram") && useEmbed;
-      const prompt = embed
-        ? buildNanoCoverPrompt({
-            styleId: useStyle,
-            description: useDesc,
-            title,
-            author,
-            subtitle,
-            wrap,
-          })
-        : buildAiPrompt(useStyle, useDesc, wrap);
+      // ChatGPT'de yazı yalnız kurgu "ChatGPT bassın" dediyse gömülür (opts.text).
+      const embed =
+        useModel === "openai"
+          ? !!opts?.text
+          : (useModel === "nano" || useModel === "ideogram") && useEmbed;
+      // ChatGPT: ölçülerden hesaplanan bölge kurallarıyla KATMANLI komut
+      // (başlık bandı sade, logo bandı açık, arka kapak açık, sırt boş; yazı
+      // ya görsele gömülür ya da uygulama bindirir).
+      const prompt =
+        useModel === "openai"
+          ? buildLayeredPrompt({
+              styleId: useStyle,
+              description: useDesc,
+              wrap,
+              geo: spread,
+              override: opts?.override,
+              text: opts?.text,
+            })
+          : embed
+            ? buildNanoCoverPrompt({
+                styleId: useStyle,
+                description: useDesc,
+                title,
+                author,
+                subtitle,
+                wrap,
+              })
+            : buildAiPrompt(useStyle, useDesc, wrap);
       // Nano Banana Pro: tek URL üretir, "custom" boyut desteklemez → kitabın
       // oranına en yakın izinli oranı seçeriz (yatay sarmal dahil).
       // FLUX: tam sarmalda özel boyut, sadece önde en yakın dikey oran.
+      // ChatGPT: her iki kapsamda kapağın GERÇEK oranında özel boyut.
       const endpoint =
-        useModel === "nano"
-          ? "/api/cover-nano"
-          : useModel === "ideogram"
-            ? "/api/cover-ideogram"
-            : "/api/cover-art";
+        useModel === "openai"
+          ? "/api/cover-openai"
+          : useModel === "nano"
+            ? "/api/cover-nano"
+            : useModel === "ideogram"
+              ? "/api/cover-ideogram"
+              : "/api/cover-art";
       // Nano ve Ideogram aynı oran kümesini (yatay sarmal dahil) kabul eder →
       // ikisi de nearestNanoAspect kullanır; özel boyut desteklemezler.
       const payload =
-        useModel === "nano" || useModel === "ideogram"
-          ? {
-              prompt,
-              aspectRatio: wrap
-                ? nearestNanoAspect(spread.totalWidth, spread.totalHeight)
-                : nearestNanoAspect(spread.bookWidth, spread.bookHeight),
-            }
-          : wrap
+        useModel === "openai"
+          ? { prompt, size: openaiSize(spread, wrap) }
+          : useModel === "nano" || useModel === "ideogram"
             ? {
                 prompt,
-                aspectRatio: "custom",
-                ...spreadCustomDims(spread.totalWidth, spread.totalHeight),
+                aspectRatio: wrap
+                  ? nearestNanoAspect(spread.totalWidth, spread.totalHeight)
+                  : nearestNanoAspect(spread.bookWidth, spread.bookHeight),
               }
-            : {
-                prompt,
-                aspectRatio: nearestAspectRatio(
-                  spread.bookWidth,
-                  spread.bookHeight,
-                ),
-              };
+            : wrap
+              ? {
+                  prompt,
+                  aspectRatio: "custom",
+                  ...spreadCustomDims(spread.totalWidth, spread.totalHeight),
+                }
+              : {
+                  prompt,
+                  aspectRatio: nearestAspectRatio(
+                    spread.bookWidth,
+                    spread.bookHeight,
+                  ),
+                };
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1537,15 +1666,30 @@ export default function CoverStudio({
         setAiError("token");
         return false;
       }
+      // 402 jeton yetmedi / 401 oturum kapandı → ortak uyarı (ayrı ayrı).
+      const problem = res.ok ? null : await creditProblemFrom(res);
+      if (problem) {
+        noteCreditProblem(problem);
+        setAiCredit(problem);
+        setAiError("credits");
+        return false;
+      }
       if (!res.ok) {
         setAiError("generic");
         return false;
       }
-      const data = (await res.json()) as { image?: string };
+      const data = (await res.json()) as {
+        image?: string;
+        usage?: { estUsd?: number } | null;
+      };
       if (!data.image) {
         setAiError("generic");
         return false;
       }
+      spendCredits(aiModelCost(useModel));
+      setAiLastCost(typeof data.usage?.estUsd === "number" ? data.usage.estUsd : null);
+      // ChatGPT görseli üst bandı başlık için sade bırakır → başlığı oraya al.
+      if (useModel === "openai") setTitlePos("top");
       setCoverImage(data.image);
       setCoverScope(wrap ? "wrap" : "front");
       setCoverPanX(0);
@@ -1597,14 +1741,24 @@ export default function CoverStudio({
     !title.trim() &&
     !(initialProject?.data.meta.title ?? "").trim();
 
-  // ── SİHİRBAZ: kapak adımına girince kitap bilgisinden OTOMATİK kapak üret ──
+  // ── SİHİRBAZ: kapak adımında kitap bilgisinden kapak üretimi ──
   // Kitap asistanı (tür+bilgi → art-direction promtu) → Flux arka plan → başlık/
-  // yazar kapağın kendi katmanlarıyla üstüne biner. Bir kez çalışır (kapak yoksa).
-  const wizardFiredRef = useRef(false);
-  useEffect(() => {
-    if (!wizardAuto || autoExport || wizardFiredRef.current) return; // export modunda asla üretme
-    if (!title.trim() || coverImage) return; // başlık hazır + henüz kapak yok
-    wizardFiredRef.current = true;
+  // yazar kapağın kendi katmanlarıyla üstüne biner.
+  // Üretim jeton harcadığı için KENDİLİĞİNDEN başlamaz: önce onay kartı çıkar
+  // (wizardOffer); üye "Üret" derse bir kez çalışır. Export modunda asla sorulmaz.
+  const wizardOffer =
+    !!wizardAuto &&
+    !autoExport &&
+    wizardChoice === "none" &&
+    !brief && // kurgu sayfası yönetiyor (ya da kullanıcı kurguyu atladı)
+    !!title.trim() && // başlık hazır
+    !coverImage && // + henüz kapak yok
+    objects.length === 0; // + üye elle tasarlamaya başlamamış
+  // Bakiye biliniyor ve yetmiyorsa üretim önerilmez (null = sınırsız → hep yeter).
+  const wizardAffordable = balance == null || balance >= WIZARD_COVER_COST;
+  const runWizardCover = () => {
+    if (wizardChoice !== "none") return; // çift tık → tek üretim
+    setWizardChoice("run");
     void (async () => {
       const genre = initialProject?.data.meta.genre ?? "";
       const summary = (initialProject?.data.manuscript.text ?? "").slice(0, 1500);
@@ -1624,7 +1778,23 @@ export default function CoverStudio({
           body: JSON.stringify({ title, author, genre, summary, lang }),
           signal: ctrl.signal,
         });
+        // Jeton yetmedi / oturum kapandı → görsel adımına hiç geçme, uyarıyı göster.
+        let problem = res.ok ? null : await creditProblemFrom(res);
+        // Bu uç, asistan anahtarı geçersizken de 401 döner ({error:"bad-key"}).
+        // O oturum hatası değildir → asistan hatası say, stil presetiyle devam et.
+        if (problem?.kind === "auth") {
+          const j = (await res.clone().json().catch(() => null)) as { error?: unknown } | null;
+          if (j?.error !== "auth") problem = null;
+        }
+        if (problem) {
+          noteCreditProblem(problem);
+          setAiCredit(problem);
+          setAiError("credits");
+          setCoverGenMsg(null);
+          return;
+        }
         if (res.ok) {
+          spendCredits(creditCost("cover-prompt"));
           const data = (await res.json()) as {
             artDirection?: string;
             suggestedStyle?: string;
@@ -1654,8 +1824,84 @@ export default function CoverStudio({
         setCoverGenMsg(null); // ne olursa olsun bekleme ekranı kapanır
       }
     })();
+  };
+
+  // ── KAPAK KURGUSU: kurgu sayfasından "Tuvale gönder ve üret" ile gelindi ──
+  // Kayıtlı kurgu (konsept/küme/yazı/ton/kapsam) → kitap asistanı sahneyi yazar
+  // → ChatGPT katmanlı komutla üretir → yazı stili şablon olarak uygulanır,
+  // başlık üst banda alınır. Bir kez çalışır (kapak yoksa).
+  const briefFiredRef = useRef(false);
+  useEffect(() => {
+    if (!briefRun || autoExport || briefFiredRef.current) return;
+    if (!brief || brief.skipped || coverImage || !title.trim()) return;
+    briefFiredRef.current = true;
+    const b = brief;
+    void (async () => {
+      const genre = initialProject?.data.meta.genre ?? "";
+      const summary = (initialProject?.data.manuscript.text ?? "").slice(0, 1500);
+      let desc = "";
+      let blurb = "";
+      const ctrl = new AbortController();
+      aiAbortRef.current = ctrl;
+      const timer = setTimeout(() => ctrl.abort("timeout"), WIZARD_PROMPT_TIMEOUT_MS);
+      setAiElapsed(0);
+      setCoverGenMsg(lang === "tr" ? "Kitap asistanı kapak fikrini yazıyor…" : "The book assistant is sketching your cover…");
+      try {
+        const res = await fetch("/api/cover-prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, author, genre, summary, lang }),
+          signal: ctrl.signal,
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { artDirection?: string; backCover?: string };
+          if (data.artDirection) desc = data.artDirection;
+          if (data.backCover) blurb = data.backCover;
+        }
+      } catch {
+        // asistan başarısız / zaman aşımı olsa da kurgu tek başına yeterli
+      } finally {
+        clearTimeout(timer);
+        if (aiAbortRef.current === ctrl) aiAbortRef.current = null;
+      }
+      try {
+        if (ctrl.signal.aborted && ctrl.signal.reason === "user") return; // Vazgeç
+        const note = (b.note ?? "").trim();
+        if (note) desc = desc ? `${note}. ${desc}` : note;
+        const ts = getTextStyle(b.textStyleId);
+        setTemplateId(ts.templateId);
+        setTitlePos("top");
+        setAiModel("openai");
+        setAiScope(b.scope);
+        setAiDesc(desc);
+        setCoverGenMsg(lang === "tr" ? "Kapak görseli üretiliyor…" : "Generating cover artwork…");
+        const ov = briefStyleOverride(b);
+        // Yazıyı ChatGPT bassın (varsayılan): başlık/yazar/tür etiketi birebir.
+        const text: LayeredText | undefined =
+          (b.textBy ?? "ai") === "ai"
+            ? {
+                title,
+                author,
+                subtitle: subtitle.trim() || undefined,
+                genreLabel: resolveStandard(b.themaCode).label[lang],
+              }
+            : undefined;
+        const done = await generateAiCover({
+          styleId: aiStyle,
+          desc,
+          model: "openai",
+          scope: b.scope,
+          embedText: false,
+          override: { stylePrompt: ov.stylePrompt, dark: ov.dark, tonePrompt: TONE_PROMPTS[ov.tone] },
+          text,
+        });
+        if (done && blurb) addBackCoverBlurb(blurb);
+      } finally {
+        setCoverGenMsg(null);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wizardAuto, title, coverImage]);
+  }, [briefRun, brief, coverImage, title]);
 
   // Bekleme ekranı sayacı: üretim (asistan + görsel) sürerken her saniye artar.
   const aiWaiting = aiBusy || !!coverGenMsg;
@@ -1745,6 +1991,7 @@ export default function CoverStudio({
     if (!desc) return;
     setElemBusy(true);
     setElemError("none");
+    setElemCredit(null);
     try {
       const res = await fetch("/api/cover-element", {
         method: "POST",
@@ -1753,6 +2000,13 @@ export default function CoverStudio({
       });
       if (res.status === 503) {
         setElemError("token");
+        return;
+      }
+      const problem = res.ok ? null : await creditProblemFrom(res);
+      if (problem) {
+        noteCreditProblem(problem);
+        setElemCredit(problem);
+        setElemError("credits");
         return;
       }
       if (!res.ok) {
@@ -1764,6 +2018,7 @@ export default function CoverStudio({
         setElemError("generic");
         return;
       }
+      spendCredits(creditCost("cover-element"));
       objCounter.current += 1;
       const newId = `obj-${objCounter.current}`;
       setObjects((prev) => [
@@ -1785,6 +2040,7 @@ export default function CoverStudio({
     setCoverZoom(1);
     pushAiHistory(newImage, coverScope);
     pushUserImage(newImage, "ai"); // düzenlenen görseli de kütüphaneye al
+    spendCredits(creditCost("cover-edit"));
     setEditOpen(false);
   };
 
@@ -1830,7 +2086,6 @@ export default function CoverStudio({
 
   // Sol ikon şeridi grupları.
   const panels: { id: PanelId; label: string; Icon: (p: { className?: string }) => React.ReactElement }[] = [
-    { id: "templates", label: t.navTemplates, Icon: LayoutIcon },
     { id: "ai", label: t.navAi, Icon: MagicWandIcon },
     { id: "content", label: t.navContent, Icon: TextTIcon },
     { id: "objects", label: t.navObjects, Icon: ShapesIcon },
@@ -1916,85 +2171,47 @@ export default function CoverStudio({
             yapılınca tuval yatayda kaymasın (fabric'in kaymayı sürükleme
             sanmasını önler). */}
         <aside className="w-full shrink-0 lg:h-full lg:w-[300px] lg:overflow-y-auto lg:pr-1">
-          {/* Şablonlar */}
-          {activePanel === "templates" && (
-          <section className="space-y-3">
-            {/* Yeni tasarım: boş tuvalden başla (şablon kartlarının üstünde). */}
-            <h2 className={headingClass}>{t.blankHeading}</h2>
-            <button
-              type="button"
-              onClick={() => selectTemplate(BLANK_TEMPLATE_ID)}
-              className={`flex w-full items-center gap-3 rounded-xl border border-dashed p-3 text-left transition ${
-                templateId === BLANK_TEMPLATE_ID
-                  ? "border-accent ring-1 ring-accent"
-                  : "border-border hover:border-accent/40"
-              }`}
-            >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-lg leading-none text-muted">
-                +
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-medium text-foreground">
-                  {t.blankButton}
-                </span>
-                <span className="mt-0.5 block text-xs text-muted">
-                  {t.blankHint}
-                </span>
-              </span>
-            </button>
-
-            <h2 className={`${headingClass} pt-1`}>{t.templatesHeading}</h2>
-            <div className="grid grid-cols-2 gap-3">
-              {TEMPLATES.map((tpl) => {
-                const active = tpl.id === templateId;
-                return (
-                  <button
-                    key={tpl.id}
-                    type="button"
-                    onClick={() => selectTemplate(tpl.id)}
-                    className={`rounded-xl border p-3 text-left transition ${
-                      active
-                        ? "border-accent ring-1 ring-accent"
-                        : "border-border hover:border-accent/40"
-                    }`}
-                  >
-                    <div className="flex gap-1.5">
-                      {tpl.swatch.map((c, i) => (
-                        <span
-                          key={i}
-                          className="h-6 w-full rounded"
-                          style={{ backgroundColor: c }}
-                        />
-                      ))}
-                    </div>
-                    <span className="mt-2 block text-sm font-medium text-foreground">
-                      {tpl.name[lang]}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-          )}
-
           {/* AI Kapak */}
           {activePanel === "ai" && (
           <section className="space-y-4">
             <h2 className={headingClass}>{t.aiHeading}</h2>
             <p className="text-xs text-muted">{t.aiHint}</p>
+            {projectId && (
+              <a
+                href={`/${lang}/kapak/kurgu?project=${projectId}`}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+              >
+                {lang === "tr" ? "Kapak kurgusu ile başla →" : "Start with the cover brief →"}
+              </a>
+            )}
 
             <Field label={t.aiModelLabel} hint={t.aiModelHint}>
               <select
                 value={aiModel}
-                onChange={(e) =>
-                  setAiModel(e.target.value as "flux" | "nano" | "ideogram")
-                }
+                onChange={(e) => setAiModel(e.target.value as AiModel)}
                 className={selectClass}
               >
+                <option value="openai">{t.aiModelOpenai}</option>
                 <option value="flux">{t.aiModelFlux}</option>
                 <option value="nano">{t.aiModelNano}</option>
                 <option value="ideogram">{t.aiModelIdeogram}</option>
               </select>
+            </Field>
+            {aiModel === "openai" && aiLastCost != null && (
+              <p className="text-xs text-muted">
+                {t.aiLastCost}: ≈ {aiLastCost.toFixed(3)} $
+              </p>
+            )}
+
+            <Field label={t.titlePosLabel} hint={t.titlePosHint}>
+              <div className="grid grid-cols-2 gap-2">
+                <SegButton active={titlePos === "top"} onClick={() => setTitlePos("top")}>
+                  {t.titlePosTop}
+                </SegButton>
+                <SegButton active={titlePos !== "top"} onClick={() => setTitlePos("auto")}>
+                  {t.titlePosAuto}
+                </SegButton>
+              </div>
             </Field>
 
             {(aiModel === "nano" || aiModel === "ideogram") && (
@@ -2059,6 +2276,11 @@ export default function CoverStudio({
             >
               <MagicWandIcon className="h-4 w-4" />
               {aiBusy ? t.aiBusy : t.aiGenerate}
+              {!aiBusy && balance != null && (
+                <span className="font-normal opacity-80">
+                  · {aiModelCost(aiModel)} {lang === "tr" ? "jeton" : "credits"}
+                </span>
+              )}
             </button>
 
             {aiError === "token" && (
@@ -2075,6 +2297,9 @@ export default function CoverStudio({
               <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">
                 {t.aiErrorTimeout}
               </p>
+            )}
+            {aiError === "credits" && aiCredit && (
+              <CreditNotice lang={lang} problem={aiCredit} className="text-xs" />
             )}
             {aiNotice === "embed" && (
               <p className="rounded-lg border border-emerald-500/40 bg-emerald-50 px-3 py-3 text-xs text-emerald-700">
@@ -2215,6 +2440,11 @@ export default function CoverStudio({
               >
                 <MagicWandIcon className="h-4 w-4" />
                 {elemBusy ? t.elemBusyLabel : t.elemGenerate}
+                {!elemBusy && balance != null && (
+                  <span className="font-normal opacity-80">
+                    · {creditCost("cover-element")} {lang === "tr" ? "jeton" : "credits"}
+                  </span>
+                )}
               </button>
 
               {elemError === "token" && (
@@ -2226,6 +2456,9 @@ export default function CoverStudio({
                 <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">
                   {t.aiErrorGeneric}
                 </p>
+              )}
+              {elemError === "credits" && elemCredit && (
+                <CreditNotice lang={lang} problem={elemCredit} className="text-xs" />
               )}
 
               <p className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted">
@@ -3180,7 +3413,16 @@ export default function CoverStudio({
             )}
             {/* Üretim bitti ama hata var → tuvalin üstünde görünür şerit (eskiden
                 yalnız sağ paneldeki küçük yazıydı; kullanıcı fark etmiyordu). */}
-            {!aiWaiting && aiError !== "none" && (
+            {/* Jeton / oturum sorunu: "Tekrar dene" anlamsız → ortak uyarı. */}
+            {!aiWaiting && aiError === "credits" && aiCredit && (
+              <CreditNotice
+                lang={lang}
+                problem={aiCredit}
+                onClose={() => setAiError("none")}
+                className="absolute left-1/2 top-3 z-20 w-[min(92%,480px)] -translate-x-1/2 shadow-lg"
+              />
+            )}
+            {!aiWaiting && aiError !== "none" && aiError !== "credits" && (
               <div className="absolute left-1/2 top-3 z-20 flex w-[min(92%,480px)] -translate-x-1/2 items-start gap-2 rounded-lg border border-accent/40 bg-background px-4 py-3 text-xs shadow-lg">
                 <p className="flex-1 text-foreground">{aiErrorText}</p>
                 {aiError !== "token" && (
@@ -3199,6 +3441,51 @@ export default function CoverStudio({
                 >
                   {t.aiDismiss}
                 </button>
+              </div>
+            )}
+            {/* Sihirbaz: yapay zekâ kapağı jeton harcar → üretmeden önce sor. */}
+            {!aiWaiting && aiError === "none" && wizardOffer && wizardAffordable && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="absolute left-1/2 top-3 z-20 w-[min(92%,480px)] -translate-x-1/2 rounded-lg border border-accent/40 bg-background px-4 py-3 text-sm shadow-lg"
+              >
+                <p className="text-foreground">
+                  {lang === "tr"
+                    ? `Kitabın için yapay zekâ ile kapak üretelim mi? ${WIZARD_COVER_COST} jeton harcar${balance != null ? ` (bakiyen: ${balance})` : ""}.`
+                    : `Generate an AI cover for your book? Uses ${WIZARD_COVER_COST} credits${balance != null ? ` (balance: ${balance})` : ""}.`}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={runWizardCover}
+                    className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+                  >
+                    {lang === "tr" ? "Üret" : "Generate"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={skipWizardCover}
+                    className="rounded-md border border-foreground/15 px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-accent-soft"
+                  >
+                    {lang === "tr" ? "Kendim tasarlayacağım" : "I'll design it myself"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* Bakiye yetmiyor → üretim önerme; kapak yine de elle tasarlanabilir. */}
+            {!aiWaiting && aiError === "none" && wizardOffer && !wizardAffordable && (
+              <div className="absolute left-1/2 top-3 z-20 w-[min(92%,480px)] -translate-x-1/2 shadow-lg">
+                <CreditNotice
+                  lang={lang}
+                  problem={{ kind: "no-credits", cost: WIZARD_COVER_COST, balance: balance ?? undefined }}
+                  onClose={skipWizardCover}
+                />
+                <p className="mt-1 rounded-lg bg-background px-4 py-2 text-xs text-muted">
+                  {lang === "tr"
+                    ? "Kapağını yine de elle tasarlayabilirsin: soldaki şablonlar, yazılar ve kendi görsellerin jeton harcamaz."
+                    : "You can still design the cover by hand: templates, text and your own images on the left cost no credits."}
+                </p>
               </div>
             )}
             {!aiWaiting && aiError === "none" && wizardMissingTitle && (
@@ -3222,6 +3509,8 @@ export default function CoverStudio({
               hidden={hidden}
               locked={locked}
               autoContrast={autoContrast}
+              titlePos={titlePos === "auto" ? undefined : titlePos}
+              authorPos={briefActive ? "top" : undefined}
               textStyles={textStyles}
               selectedId={selectedId}
               onTextSelect={setSelectedTextLive}
@@ -4025,6 +4314,7 @@ export default function CoverStudio({
             tagsHeading: t.aiEditTagsHeading,
             tagsEmpty: t.aiEditTagsEmpty,
           }}
+          lang={lang}
           onClose={() => setEditOpen(false)}
           onApply={handleEditApply}
         />

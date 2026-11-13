@@ -10,6 +10,8 @@ export type CoverContent = {
   author: string;
   subtitle: string;
   isbn: string;
+  /** Küçük tür etiketi ("ROMAN") — başlığın altında; kurgudan gelir, yoksa çizilmez. */
+  genreLabel?: string;
 };
 
 // Kullanıcının özelleştirebildiği 3 ana renk.
@@ -38,6 +40,12 @@ export type TemplateCtx = {
   // Kapak görseli var mı? Varsa tipografik süsler (çizgi/çerçeve/amblem)
   // çizilmez — görselin üstünde anlamsız dururlar; başlık/yazar/panel kalır.
   hasImage?: boolean;
+  // Başlık bloğu konumu, şablonun tarifini EZER. AI görseli "üst bant sade"
+  // kuralıyla üretildiğinde başlık o banda ("top") alınır; yoksa şablon karar verir.
+  titlePos?: TitlePos;
+  // Yazar adı yeri: "top" = başlığın ÜSTÜNDE küçük, harf aralıklı büyük harf
+  // (edebi kapak düzeni; kurgu kapaklarında). Yoksa alt güvenli çizgide.
+  authorPos?: "top" | "bottom";
 };
 
 export type CoverTemplate = {
@@ -276,7 +284,7 @@ function barcodePlaceholder(ctx: TemplateCtx, frameColor: string) {
 // Tek "drawTitleBlock" çizici tarifi okuyup ön kapağı kurar → estetik TEK yerde.
 
 type Decoration = "none" | "rule" | "doubleRule" | "dots";
-type TitlePos = "top" | "center" | "bottom";
+export type TitlePos = "top" | "center" | "bottom";
 
 export type TemplateRecipe = {
   id: string;
@@ -412,7 +420,7 @@ function titlePanel(ctx: TemplateCtx, yTopMm: number, hMm: number) {
 function drawTitleBlock(ctx: TemplateCtx, r: TemplateRecipe) {
   const { d, content, colors } = ctx;
   const align = r.align ?? "center";
-  const pos = r.titlePos ?? "center";
+  const pos = ctx.titlePos ?? r.titlePos ?? "center";
   const titleFont = fontFamilyOf(r.titleFontId);
   const kickerFont = fontFamilyOf(r.kickerFontId ?? "sans");
   const authorFont = fontFamilyOf(r.authorFontId ?? "sans");
@@ -451,6 +459,25 @@ function drawTitleBlock(ctx: TemplateCtx, r: TemplateRecipe) {
     titlePanel(ctx, y - 4, d.bookHeight * 0.33);
   }
 
+  // Edebi düzen: yazar en üstte, küçük ve harf aralıklı; başlık onun altında.
+  if (ctx.authorPos === "top" && content.author) {
+    const a = centeredText(ctx, content.author, {
+      cx,
+      leftMm,
+      align,
+      top: y,
+      maxWidthMm: maxW,
+      sizeMm: Math.max(d.bookWidth * 0.036, 3),
+      color: colors.ink,
+      weight: "600",
+      spacing: 320,
+      upper: true,
+      fontFamily: authorFont,
+      editId: "author",
+    });
+    y += pxToMm(ctx, a.height ?? 0) + gap * 2.2;
+  }
+
   if (content.subtitle) {
     const k = centeredText(ctx, content.subtitle, {
       cx,
@@ -486,6 +513,25 @@ function drawTitleBlock(ctx: TemplateCtx, r: TemplateRecipe) {
   });
   y += pxToMm(ctx, title.height ?? 0) + gap;
 
+  // Küçük tür etiketi ("ROMAN"): başlığın altında, geniş harf aralığı.
+  if (content.genreLabel) {
+    const g = centeredText(ctx, content.genreLabel, {
+      cx,
+      leftMm,
+      align,
+      top: y + gap * 0.6,
+      maxWidthMm: maxW,
+      sizeMm: Math.max(d.bookWidth * 0.026, 2.4),
+      color: colors.ink,
+      weight: "500",
+      spacing: 400,
+      upper: true,
+      fontFamily: authorFont,
+      editId: "genreLabel",
+    });
+    y += pxToMm(ctx, g.height ?? 0) + gap * 1.6;
+  }
+
   // Görselli kapakta süs çizgisi/noktalar çizilmez (görselin üstünde anlamsız
   // duran turuncu çizgi şikayeti); düz zeminli tipografik kapakta kalır.
   const dec = r.decoration ?? "rule";
@@ -495,7 +541,7 @@ function drawTitleBlock(ctx: TemplateCtx, r: TemplateRecipe) {
     else if (dec === "dots") dotsDivider(ctx, decCx, y + gap, colors.accent);
   }
 
-  if (content.author) {
+  if (content.author && ctx.authorPos !== "top") {
     const a = {
       cx,
       leftMm,
@@ -585,16 +631,6 @@ export const TEMPLATE_RECIPES: TemplateRecipe[] = [
     decoration: "doubleRule",
   },
   {
-    id: "modern",
-    name: { tr: "Modern", en: "Modern" },
-    palette: { bg: "#ece9e3", ink: "#15140f", accent: "#e8552d" },
-    titleFontId: "montserrat",
-    titleWeight: 800,
-    titlePos: "bottom",
-    align: "left",
-    decoration: "rule",
-  },
-  {
     id: "klasik",
     name: { tr: "Klasik", en: "Classic" },
     palette: { bg: "#1e2a3a", ink: "#f0e9d8", accent: "#c9a24a" },
@@ -604,31 +640,12 @@ export const TEMPLATE_RECIPES: TemplateRecipe[] = [
     decoration: "dots",
   },
   {
-    id: "bant",
-    name: { tr: "Üst bant", en: "Top band" },
-    palette: { bg: "#f5f1e8", ink: "#1a1a1a", accent: "#2f6f6a" },
-    titleFontId: "poppins",
-    titleWeight: 700,
-    band: "top",
-    decoration: "none",
-  },
-  {
     id: "sahne",
     name: { tr: "Sahne", en: "Stage" },
     palette: { bg: "#14213a", ink: "#f3ead2", accent: "#e0b85a" },
     titleFontId: "ebgaramond",
     titleWeight: 600,
     panel: true,
-    decoration: "rule",
-  },
-  {
-    id: "serit",
-    name: { tr: "Dikey şerit", en: "Side band" },
-    palette: { bg: "#f0ebe1", ink: "#2b2a27", accent: "#993c1d" },
-    titleFontId: "lora",
-    titleWeight: 700,
-    band: "side",
-    align: "left",
     decoration: "rule",
   },
   {
@@ -661,15 +678,6 @@ export const TEMPLATE_RECIPES: TemplateRecipe[] = [
     titleFontId: "sans",
     titleWeight: 800,
     decoration: "rule",
-  },
-  {
-    id: "romantik",
-    name: { tr: "Romantik", en: "Romantic" },
-    palette: { bg: "#f6eef0", ink: "#3a2e33", accent: "#b06a86" },
-    titleFontId: "cormorant",
-    titleWeight: 600,
-    titleScale: 1.1,
-    decoration: "dots",
   },
 ];
 

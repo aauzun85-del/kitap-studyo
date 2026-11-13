@@ -18,6 +18,7 @@ export const WELCOME_CREDITS = 100;
 export type CreditAction =
   // — AI görsel üretimi (en pahalı) —
   | "cover-art" // FLUX 1.1 Pro ile kapak görseli
+  | "cover-openai" // ChatGPT (gpt-image) ile kapak görseli — kurgu kapakları
   | "cover-ideogram" // Ideogram v3 ile kapak görseli
   | "cover-nano" // Nano Banana Pro ile kapak görseli
   | "cover-edit" // FLUX Fill Pro ile kapak düzenleme (inpaint)
@@ -41,6 +42,7 @@ export type CreditAction =
 export const PRICING: Record<CreditAction, number> = {
   // Görsel üretimi
   "cover-art": 10,
+  "cover-openai": 10,
   "cover-ideogram": 10,
   "cover-nano": 10,
   "cover-edit": 8,

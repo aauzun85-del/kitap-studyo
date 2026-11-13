@@ -10,6 +10,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import type { CoverDraft } from "@/lib/cover/coverDraft";
+import type { CoverBrief } from "@/lib/cover/brief";
 import {
   type ProjectEnvelope,
   type ProjectListItem,
@@ -196,6 +197,21 @@ export async function saveProjectCover(
       .from("projects")
       .update({ data: merged, title, author, ...(thumbPath ? { thumb_path: thumbPath } : {}) })
       .eq("id", id);
+    if (error) throw error;
+    envCache.set(id, merged);
+  });
+}
+
+/**
+ * Kapak kurgusu (tuval öncesi seçimler) kaydı: yalnız cover.brief alanını
+ * değiştirir, görsellere/meta'ya dokunmaz (hızlı, kuyruklu).
+ */
+export async function updateProjectCoverBrief(id: string, brief: CoverBrief): Promise<void> {
+  return enqueue(id, async () => {
+    const supabase = createClient();
+    const env = envCache.get(id) ?? (await fetchEnvelope(id));
+    const merged: ProjectEnvelope = { ...env, cover: { ...env.cover, brief } };
+    const { error } = await supabase.from("projects").update({ data: merged }).eq("id", id);
     if (error) throw error;
     envCache.set(id, merged);
   });

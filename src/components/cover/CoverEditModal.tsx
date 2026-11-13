@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Locale } from "@/i18n/config";
 import { MagicWandIcon, TrashIcon } from "@/components/PhosphorIcons";
+import CreditNotice, {
+  creditProblemFrom,
+  type CreditProblem,
+} from "@/components/credits/CreditNotice";
 
 // "Boya & değiştir" penceresi. Değiştirilecek bölge iki yolla seçilir:
 //  1) "Yaz & bul": nesne adı yazılır, AI (grounded SAM) onu bulup maskeler (fırçasız).
@@ -56,11 +61,13 @@ const OVERLAY_RGBA = [255, 120, 40, 140] as const;
 export default function CoverEditModal({
   image,
   t,
+  lang,
   onClose,
   onApply,
 }: {
   image: string;
   t: CoverEditStrings;
+  lang: Locale;
   onClose: () => void;
   onApply: (newImage: string) => void;
 }) {
@@ -90,6 +97,8 @@ export default function CoverEditModal({
   const [error, setError] = useState<
     "none" | "mask" | "prompt" | "notfound" | "token" | "generic"
   >("none");
+  // Jeton yetmedi (402) / oturum kapandı (401) → ortak uyarı.
+  const [credit, setCredit] = useState<CreditProblem | null>(null);
 
   const hasSelection = hasAiMask || strokeCount > 0;
 
@@ -207,6 +216,7 @@ export default function CoverEditModal({
     if (!label || finding || busy) return;
     setFinding(true);
     setError("none");
+    setCredit(null);
     setInfo("none");
     try {
       const res = await fetch("/api/cover-detect", {
@@ -219,7 +229,9 @@ export default function CoverEditModal({
         return;
       }
       if (!res.ok) {
-        setError("generic");
+        const problem = await creditProblemFrom(res);
+        if (problem) setCredit(problem);
+        else setError("generic");
         return;
       }
       const data = (await res.json()) as { mask?: string };
@@ -270,6 +282,7 @@ export default function CoverEditModal({
     if (tagging || finding || busy) return;
     setTagging(true);
     setError("none");
+    setCredit(null);
     setTagsEmpty(false);
     try {
       const res = await fetch("/api/cover-tags", {
@@ -282,7 +295,9 @@ export default function CoverEditModal({
         return;
       }
       if (!res.ok) {
-        setError("generic");
+        const problem = await creditProblemFrom(res);
+        if (problem) setCredit(problem);
+        else setError("generic");
         return;
       }
       const data = (await res.json()) as { tags?: Tag[] };
@@ -319,6 +334,7 @@ export default function CoverEditModal({
   };
 
   const apply = async () => {
+    setCredit(null); // önceki eylemin jeton uyarısı bu eyleme ait değil
     if (!hasSelection) {
       setError("mask");
       return;
@@ -334,6 +350,7 @@ export default function CoverEditModal({
     }
     setBusy(true);
     setError("none");
+    setCredit(null);
     try {
       const res = await fetch("/api/cover-edit", {
         method: "POST",
@@ -345,7 +362,9 @@ export default function CoverEditModal({
         return;
       }
       if (!res.ok) {
-        setError("generic");
+        const problem = await creditProblemFrom(res);
+        if (problem) setCredit(problem);
+        else setError("generic");
         return;
       }
       const data = (await res.json()) as { image?: string };
@@ -579,6 +598,9 @@ export default function CoverEditModal({
         {error === "prompt" && <Note>{t.needPrompt}</Note>}
         {error === "token" && <Note>{t.errorToken}</Note>}
         {error === "generic" && <Note>{t.errorGeneric}</Note>}
+        {credit && error === "none" && (
+          <CreditNotice lang={lang} problem={credit} onClose={() => setCredit(null)} />
+        )}
 
         <div className="flex gap-3 pb-2">
           <button
