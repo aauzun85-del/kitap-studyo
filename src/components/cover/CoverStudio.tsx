@@ -71,6 +71,7 @@ import {
   type CoverBrief,
 } from "@/lib/cover/brief";
 import { resolveStandard } from "@/lib/cover/standards";
+import { spineColorFromImage } from "@/lib/cover/palette";
 import {
   AI_HISTORY_LIMIT,
   loadAiHistory,
@@ -214,6 +215,9 @@ export default function CoverStudio({
   const [titlePos, setTitlePos] = useState<"auto" | "top" | "center">("auto");
   // Kapak kurgusu (tuval öncesi seçimler); kurgu sayfası yazar, burada okunur.
   const [brief, setBrief] = useState<CoverBrief | null>(null);
+  // Sırt bandı (hex | null). Sarmal AI üretiminden sonra görselin paletinden
+  // otomatik dolar; Renkler panelinden kapatılır/değiştirilir.
+  const [spineBand, setSpineBand] = useState<string | null>(null);
   // Kullanıcının değiştirdiği renkler (yalnız değişenler). Boşsa şablon paleti kullanılır.
   const [colorOverrides, setColorOverrides] = useState<Partial<CoverColors>>({});
   // Baskı kılavuzları varsayılan AÇIK gelir (kesim/sırt/güvenli alan görünür).
@@ -820,8 +824,9 @@ export default function CoverStudio({
       logo: logoImage,
       logoSize,
       logoPos,
+      spineBand,
     }),
-    [coverImage, coverDarken, coverOpacity, coverScope, coverFit, coverPanX, coverZoom, logoImage, logoSize, logoPos],
+    [coverImage, coverDarken, coverOpacity, coverScope, coverFit, coverPanX, coverZoom, logoImage, logoSize, logoPos, spineBand],
   );
 
   // labels'ı sabit referansa al → seçim değişince tuval gereksiz yere yeniden çizilmesin.
@@ -1020,6 +1025,7 @@ export default function CoverStudio({
     if (typeof d.templateId === "string") setTemplateId(d.templateId);
     if (d.titlePos) setTitlePos(d.titlePos);
     if (d.brief) setBrief(d.brief);
+    if (typeof d.spineBand === "string" || d.spineBand === null) setSpineBand(d.spineBand);
     if (d.colorOverrides) setColorOverrides(d.colorOverrides);
     if (typeof d.showGuides === "boolean") setShowGuides(d.showGuides);
     // Görseller
@@ -1191,6 +1197,7 @@ export default function CoverStudio({
       templateId,
       titlePos,
       brief: brief ?? undefined,
+      spineBand,
       colorOverrides,
       showGuides,
       coverImage,
@@ -1258,6 +1265,7 @@ export default function CoverStudio({
     templateId,
     titlePos,
     brief,
+    spineBand,
     colorOverrides,
     showGuides,
     coverImage,
@@ -1493,6 +1501,7 @@ export default function CoverStudio({
       templateId,
       titlePos,
       brief: brief ?? undefined,
+      spineBand,
       colorOverrides,
       showGuides,
       coverImage,
@@ -1690,6 +1699,12 @@ export default function CoverStudio({
       setAiLastCost(typeof data.usage?.estUsd === "number" ? data.usage.estUsd : null);
       // ChatGPT görseli üst bandı başlık için sade bırakır → başlığı oraya al.
       if (useModel === "openai") setTitlePos("top");
+      // Sarmal üretimde sırt bandı: görselin koyu tonundan otomatik renk.
+      if (wrap) {
+        void spineColorFromImage(data.image).then((c) => {
+          if (c) setSpineBand(c);
+        });
+      }
       setCoverImage(data.image);
       setCoverScope(wrap ? "wrap" : "front");
       setCoverPanX(0);
@@ -2483,6 +2498,60 @@ export default function CoverStudio({
               </button>
             </div>
             <p className="text-xs text-muted">{t.colorsHint}</p>
+
+            {/* Sırt bandı: sarmal görselde sırtı mm'de kapatan düz şerit. */}
+            {coverImage && coverScope === "wrap" && (
+              <div className="space-y-2 rounded-lg border border-foreground/10 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-foreground">
+                    {lang === "tr" ? "Sırt bandı" : "Spine band"}
+                  </span>
+                  <div className="grid grid-cols-2 gap-1">
+                    <SegButton
+                      active={!!spineBand}
+                      onClick={() => {
+                        if (spineBand) return;
+                        void spineColorFromImage(coverImage).then((c) => setSpineBand(c ?? colors.ink));
+                      }}
+                    >
+                      {lang === "tr" ? "Açık" : "On"}
+                    </SegButton>
+                    <SegButton active={!spineBand} onClick={() => setSpineBand(null)}>
+                      {lang === "tr" ? "Kapalı" : "Off"}
+                    </SegButton>
+                  </div>
+                </div>
+                {spineBand && (
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void spineColorFromImage(coverImage).then((c) => c && setSpineBand(c))}
+                      className="text-xs font-medium text-accent hover:underline"
+                    >
+                      {lang === "tr" ? "Rengi görselden al" : "Pick color from image"}
+                    </button>
+                    <span className="flex items-center gap-2">
+                      <span className="w-24">
+                        <HexInput value={spineBand} onCommit={(hex) => setSpineBand(hex)} />
+                      </span>
+                      <input
+                        type="color"
+                        value={spineBand}
+                        onChange={(e) => setSpineBand(e.target.value)}
+                        aria-label={lang === "tr" ? "Sırt bandı rengi" : "Spine band color"}
+                        className="h-8 w-10 cursor-pointer rounded border border-border bg-transparent p-0.5"
+                      />
+                    </span>
+                  </div>
+                )}
+                <p className="text-xs text-muted">
+                  {lang === "tr"
+                    ? "Yapay zekâ sırtı yaklaşık bırakır; bu şerit sırtı tam ölçüsünde kapatır, sırt yazısı üstüne gelir."
+                    : "AI leaves the spine approximate; this band covers it at exact size, spine text sits on top."}
+                </p>
+              </div>
+            )}
+
             <div className="space-y-2.5">
               {([
                 { key: "bg" as const, label: t.colorBg },
@@ -3113,7 +3182,7 @@ export default function CoverStudio({
                           <EyeIcon className="h-4 w-4" />
                         )}
                       </button>
-                      {id !== "darken" && id !== "background" && (
+                      {id !== "darken" && id !== "background" && id !== "spineBand" && (
                         <button
                           type="button"
                           onClick={() => toggleLocked(id)}
@@ -4522,6 +4591,7 @@ function selectedName(
     selBarcode: string;
     selCover: string;
     selDarken: string;
+    selSpineBand: string;
     selBackground: string;
     selObjText: string;
     selObjRect: string;
@@ -4581,6 +4651,7 @@ function selectedName(
     cover: t.selCover,
     darken: t.selDarken,
     background: t.selBackground,
+    spineBand: t.selSpineBand,
   };
   return map[id] ?? id;
 }

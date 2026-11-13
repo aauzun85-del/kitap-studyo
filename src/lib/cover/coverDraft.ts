@@ -33,6 +33,8 @@ export type CoverDraft = {
   titlePos?: "auto" | "top" | "center";
   // Kapak kurgusu (tuval öncesi seçimler: konsept/küme/yazı stili/ton/kapsam).
   brief?: CoverBrief;
+  // Sırt bandı rengi (hex) ya da null/yok = bant yok.
+  spineBand?: string | null;
   colorOverrides?: Partial<CoverColors>;
   showGuides?: boolean;
   // Görseller

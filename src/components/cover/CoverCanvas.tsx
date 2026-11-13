@@ -39,6 +39,9 @@ export type CoverImages = {
   logo: string | null; // dataURL
   logoSize: number; // ön kapak genişliğinin yüzdesi
   logoPos: "top" | "bottom";
+  // Sırt bandı rengi (hex) ya da null = yok. Sarmal görselde sırt mm'de tam
+  // otursun diye uygulamanın çizdiği düz şerit; sırt yazısı üstüne gelir.
+  spineBand?: string | null;
 };
 
 // Kullanıcının elle değiştirdiği nesnenin kayıtlı dönüşümü:
@@ -791,6 +794,26 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
               fill: `rgba(0,0,0,${images.coverDarken})`,
               editId: "darken",
               visible: !darkenHidden,
+              selectable: false,
+              evented: false,
+            }),
+          );
+        }
+
+        // Sırt bandı: AI sarmal görselde sırtı yüzdeyle "yaklaşık" bırakır; bu
+        // şerit sırtı milimetresinde kapatır. Rengi görselin paletinden ya da
+        // kullanıcıdan. Katman listesinde "spineBand" ile gizlenebilir.
+        if (images.coverScope === "wrap" && images.spineBand) {
+          const bandHidden = !!(hiddenRef.current ?? {})["spineBand"];
+          canvas.add(
+            new fabric.Rect({
+              left: px(spread.spineStart),
+              top: 0,
+              width: px(spread.spine),
+              height: px(spread.totalHeight),
+              fill: images.spineBand,
+              editId: "spineBand",
+              visible: !bandHidden,
               selectable: false,
               evented: false,
             }),

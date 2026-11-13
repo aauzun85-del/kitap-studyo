@@ -371,6 +371,7 @@ type CoverStudioCopy = {
   selBarcode: string;
   selCover: string;
   selDarken: string;
+  selSpineBand: string;
   selBackground: string;
   darkenRemove: string;
   comingNextHeading: string;
@@ -1532,6 +1533,7 @@ const tr: Dictionary = {
     selBarcode: "Barkod",
     selCover: "Kapak görseli",
     selDarken: "Karartma örtüsü",
+    selSpineBand: "Sırt bandı",
     selBackground: "Arka plan (zemin)",
     comingNextHeading: "Sırada ne var?",
     comingNext: [
@@ -2718,6 +2720,7 @@ const en: Dictionary = {
     selBarcode: "Barcode",
     selCover: "Cover image",
     selDarken: "Darkening overlay",
+    selSpineBand: "Spine band",
     selBackground: "Background",
     comingNextHeading: "Coming next",
     comingNext: [

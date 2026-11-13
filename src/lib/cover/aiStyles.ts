@@ -382,8 +382,9 @@ export function buildLayeredPrompt(opts: {
         "subject there.",
     );
     lines.push(
-      `- Between ${pct(backEnd)} and ${pct(spineEnd)} of the width is the SPINE: a plain, ` +
-        "uniform, low-detail vertical strip; nothing important crosses it.",
+      `- Between ${pct(backEnd)} and ${pct(spineEnd)} of the width is the SPINE zone: the ` +
+        "scene flows continuously through it (no hard band, no seam), but keep it calm, " +
+        "low-detail and uniform in tone — nothing important sits or crosses there.",
     );
     lines.push(
       `- The right ${pct(1 - spineEnd)} of the width is the FRONT COVER section: the main ` +
