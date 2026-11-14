@@ -515,10 +515,37 @@ export const COVER_STANDARDS: CoverStandard[] = [
           "size and weight on every line, never italic, never stretched), longest line about 40–45% of the width, optically balanced line spacing, generous empty " +
           "wall to the right; the tiny tracked genre label at the bottom left in warm ivory over a quiet darker area.",
       },
-      c("cicek", "Çiçek + tipografi", "Flowers + typography", "Botanik, el yazısı.", "Botanical, hand lettering.",
-        "lush botanical arrangement — roses, peonies, leaves — framing an empty center, soft painterly style", ["#fbeef0", "#3a2e33", "#c45c7a"]),
-      c("pastel", "Pastel sahne", "Pastel scene", "İllüstrasyon, hafif.", "Illustration, light.",
-        "light pastel illustrated scene, gentle shapes and warm light, tender and airy", ["#fff2ea", "#3a2f2a", "#ff9a8b"]),
+      {
+        ...c("cicek", "Çiçek + el yazısı", "Flowers + hand lettering", "Birbirine uzanan iki çiçekli dal; zarif el yazısı başlık.", "Two flowering stems reaching toward each other; graceful hand-lettered title.",
+          "original hand-painted botanical illustration on warm pale blush-ivory paper with subtle uncoated grain: two gracefully curving flowering stems loosely " +
+            "interwoven near the lower third (e.g. a slender garden rose branch with two open pale apricot roses rising along the left edge, and an airy sweet-pea " +
+            "stem with dusty-rose blossoms and fine curling tendrils rising along the lower right) — an open asymmetrical embrace around the center, never a closed " +
+            "wreath or border; detailed but restrained watercolor and colored-pencil technique, translucent petals, fine veins, botanically believable, no stock " +
+            "clip art; substantial warm paper visible, flowers secondary to the lettering; muted olive and eucalyptus greens, dusty rose, faded apricot; no people, " +
+            "hearts, ribbons, frames, dense bouquets, floating petals, glitter, gold, neon pink or greeting-card look", ["#f4e4dc", "#5a1f33", "#e8a98a"]),
+        textLayout:
+          "Dark mulberry ink. The title in the central open paper area on 1–3 lines in ONE consistent custom hand-lettered style: restrained mature gently slanted " +
+          "literary pen lettering with moderate stroke variation, open counters and short natural connections (an accomplished writer's handwriting, not wedding " +
+          "calligraphy) — same scale, weight and slant on every line, no swashes or flourishes, every letter clearly readable, Turkish letters exact; about 60% of " +
+          "the width, optically centered, clear of all stems. The author at the top center in small widely tracked uppercase humanist sans; the tiny tracked genre " +
+          "label at the bottom center in the same color.",
+      },
+      {
+        ...c("pastel", "Pastel sahne", "Pastel scene", "Guaj illüstrasyon; bir sokakta karşılaşan iki küçük figür.", "Gouache illustration; two small figures meeting in a lane.",
+          "an original gouache and colored-pencil illustration on subtly textured paper — simplified architectural planes, gently irregular painted edges, restrained " +
+            "pencil details, matte opaque colors; clearly illustrated, mature and graceful (not photoreal, not childish): a quiet place from the book's world (e.g. a " +
+            "coastal town lane curving between a warm cream house and a dusty peach house toward a low seawall and a pale blue sea), sage shutters, a curved doorway, " +
+            "one small terracotta pot; two small adult figures (about 13% of the height each, full bodies, minimal facial marks) meeting in the lower middle, facing " +
+            "each other at a short distance with understated body language; soft late-afternoon light with lavender shadows; the scene in the lower two thirds framed " +
+            "by architecture, the upper third a calm pale warm-cream sky with no buildings behind it; warm cream, faded peach, powder blue, muted sage, dusty lavender, " +
+            "tiny coral accents; no embrace, kiss, sunset disc, boats, crowds, birds, hearts, petals, neon, gradients, wreaths, borders or postcard look",
+          ["#f3e6d2", "#5a2340", "#e88b6f"]),
+        textLayout:
+          "CENTERED, deep muted plum, all lettering in the calm sky of the upper third. The author at the top center in small widely tracked uppercase humanist sans; " +
+          "below it the title on 1–3 centered lines in ONE consistent upright literary serif (same size and weight on every line, no italics, no handwriting, never " +
+          "stretched), within about 60% of the width; a clear visual path from the title down to the figures; the small tracked genre label at the bottom center " +
+          "over a clear pale area.",
+      },
     ],
   },
   {
