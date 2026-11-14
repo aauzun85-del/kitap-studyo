@@ -124,6 +124,7 @@ export type CustomObject = {
   opacity?: number; // 0..1 saydamlık — vars. 1
   cornerRadiusMm?: number; // sadece rect — köşe yuvarlaklığı (mm), vars. 0
   variant?: DividerVariant; // type === "divider" — ayraç deseni
+  role?: "blurb"; // kitap asistanının arka kapak yazısı — yeni kurguda yenisiyle değişir
 };
 
 // Sürüklenebilir şablon nesne kimlikleri.

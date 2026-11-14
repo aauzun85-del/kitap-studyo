@@ -229,6 +229,8 @@ export default function CoverStudio({
   const [photoImage, setPhotoImage] = useState<string | null>(null);
   // Fotoğrafın ölçülmüş yeri (mm) — yapay zekânın yeşil yer tutucusundan.
   const [photoRect, setPhotoRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // En son uygulanan kurgunun damgası — yeni kurgu (farklı damga) yeniden üretir.
+  const [briefAppliedAt, setBriefAppliedAt] = useState<string | null>(null);
   // Kullanıcının değiştirdiği renkler (yalnız değişenler). Boşsa şablon paleti kullanılır.
   const [colorOverrides, setColorOverrides] = useState<Partial<CoverColors>>({});
   // Baskı kılavuzları varsayılan AÇIK gelir (kesim/sırt/güvenli alan görünür).
@@ -516,9 +518,11 @@ export default function CoverStudio({
     if (!text) return;
     objCounter.current += 1;
     const id = `obj-${objCounter.current}`;
+    // Önceki asistan yazısı (yeni kurgu/yeniden üretim) yenisiyle değişir.
     setObjects((prev) => [
-      ...prev,
+      ...prev.filter((o) => o.role !== "blurb"),
       {
+        role: "blurb",
         id,
         type: "text",
         text,
@@ -1043,6 +1047,7 @@ export default function CoverStudio({
     if (d.photoLayout === "framed" || d.photoLayout === "band") setPhotoLayout(d.photoLayout);
     if (typeof d.photoImage === "string") setPhotoImage(d.photoImage);
     if (d.photoRect) setPhotoRect(d.photoRect);
+    if (typeof d.briefAppliedAt === "string") setBriefAppliedAt(d.briefAppliedAt);
     if (d.colorOverrides) setColorOverrides(d.colorOverrides);
     if (typeof d.showGuides === "boolean") setShowGuides(d.showGuides);
     // Görseller
@@ -1218,6 +1223,7 @@ export default function CoverStudio({
       photoLayout,
       photoImage,
       photoRect,
+      briefAppliedAt,
       colorOverrides,
       showGuides,
       coverImage,
@@ -1289,6 +1295,7 @@ export default function CoverStudio({
     photoLayout,
     photoImage,
     photoRect,
+    briefAppliedAt,
     colorOverrides,
     showGuides,
     coverImage,
@@ -1528,6 +1535,7 @@ export default function CoverStudio({
       photoLayout,
       photoImage,
       photoRect,
+      briefAppliedAt,
       colorOverrides,
       showGuides,
       coverImage,
@@ -1916,9 +1924,23 @@ export default function CoverStudio({
   const briefFiredRef = useRef(false);
   useEffect(() => {
     if (!briefRun || autoExport || briefFiredRef.current) return;
-    if (!brief || brief.skipped || coverImage || !title.trim()) return;
+    if (!brief || brief.skipped || !title.trim()) return;
+    // Bu kurgu zaten uygulandıysa (sayfa yenilendi) tekrar üretme; yeni kurgu
+    // (kurgu sayfasından yeniden gönderildi) mevcut kapağın üstüne yeniden üretir.
+    if (brief.createdAt && brief.createdAt === briefAppliedAt) return;
     briefFiredRef.current = true;
     const b = brief;
+    // Tek seferlik (briefFiredRef korur): damgayı işaretle → taslakla kaydedilir.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBriefAppliedAt(b.createdAt ?? null);
+    // Yenilemede tekrar tetiklenmesin: adres çubuğundan ?kurgu=1'i kaldır.
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.delete("kurgu");
+      window.history.replaceState(null, "", u.pathname + u.search + u.hash);
+    } catch {
+      // önemli değil
+    }
     void (async () => {
       // Yazarın KENDİ fotoğrafı (anı/biyografi): kapağı yine yapay zekâ tasarlar
       // ama fotoğraf yuvasını BOŞ bırakır; fotoğraf o yuvaya birebir oturur
@@ -1941,6 +1963,16 @@ export default function CoverStudio({
           pushUserImage(img, "upload");
           void deleteBriefPhoto(projectId);
         }
+      }
+      // Yazıyı uygulama basacaksa (önceki kurguda ChatGPT basmış olabilir) katmanları aç.
+      if ((b.textBy ?? "ai") === "app") {
+        setHidden((p) => ({ ...p, title: false, author: false, subtitle: false }));
+      }
+      if (!photoSlot) {
+        // Bu kurguda fotoğraf yok → önceki kurgunun fotoğrafı kalmasın.
+        setPhotoImage(null);
+        setPhotoLayout(null);
+        setPhotoRect(null);
       }
       const genre = initialProject?.data.meta.genre ?? "";
       const summary = (initialProject?.data.manuscript.text ?? "").slice(0, 1500);
@@ -2018,7 +2050,7 @@ export default function CoverStudio({
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [briefRun, brief, coverImage, title]);
+  }, [briefRun, brief, briefAppliedAt, title]);
 
   // Bekleme ekranı sayacı: üretim (asistan + görsel) sürerken her saniye artar.
   const aiWaiting = aiBusy || !!coverGenMsg;

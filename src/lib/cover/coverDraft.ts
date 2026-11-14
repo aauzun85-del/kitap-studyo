@@ -43,6 +43,9 @@ export type CoverDraft = {
   // Fotoğrafın GERÇEK yeri (mm): yapay zekânın bıraktığı yeşil yer tutucudan
   // ölçülür; yoksa düzenin varsayılan yuvası kullanılır.
   photoRect?: { x: number; y: number; w: number; h: number } | null;
+  // Tuvale en son UYGULANAN kurgunun zaman damgası (brief.createdAt). Kurgu
+  // sayfasından yeni bir kurgu gelince (damga farklı) kapak yeniden üretilir.
+  briefAppliedAt?: string | null;
   colorOverrides?: Partial<CoverColors>;
   showGuides?: boolean;
   // Görseller
