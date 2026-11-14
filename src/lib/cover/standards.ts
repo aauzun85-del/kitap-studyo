@@ -606,12 +606,52 @@ export const COVER_STANDARDS: CoverStandard[] = [
     name: { tr: "Tarih", en: "History" },
     label: { tr: "TARİH", en: "HISTORY" },
     concepts: [
-      c("arsiv", "Arşiv görsel + bant", "Archive image + band", "Belge/foto, renkli şerit.", "Document/photo, colored band.",
-        "archival historical photograph or painting, faded tones and grain, composed to leave the lower third for a solid band", ["#d9d2c5", "#222", "#8a2f1f"]),
-      c("harita", "Harita / belge dokusu", "Map / document texture", "Eski harita, mühür.", "Old map, seal.",
-        "antique map and manuscript texture, sepia ink, wax seal detail, scholarly and evocative", ["#efe4cc", "#2a241c", "#8a4a1f"]),
-      c("akademik", "Sade akademik", "Plain academic", "Düz zemin, ciddi serif.", "Flat ground, serious serif.",
-        "plain deep-colored ground with a very subtle linen texture, nothing else — for a serious typographic cover", ["#1e2a3a", "#f0e9d8", "#c9a24a"], true),
+      {
+        ...c("arsiv", "Arşiv görsel + bant", "Archive image + band", "Üstte belgesel havasında siyah-beyaz sahne, altta düz renkli yazı bandı.", "Documentary-style monochrome scene above, solid colored title band below.",
+          "a distinguished social-history layout in two parts: the upper ~66% is an original fictional historical reconstruction in the visual language of an early " +
+            "twentieth-century monochrome documentary photograph (NOT an actual document) showing the book's subject as working everyday life — e.g. an expansive " +
+            "elevated diagonal view along a stone harbor quay with wooden cargo boats, modest warehouses, coiled ropes and a few small distant workers; a strong " +
+            "diagonal leading the eye down toward the band; plausible restrained period details, natural anatomy, no prominent faces, famous people, modern objects " +
+            "or readable signs; atmospheric silver-gray tones, soft daylight, delicate film grain, gentle fading; bleeding to the top and sides with no text over it; " +
+            "the lower ~34% is a full-width flat deep midnight-navy (or another single deep) band with a clean straight edge, no border, shadow or gradient; a sense " +
+            "of labor, trade and collective memory rather than picturesque nostalgia; no heavy sepia, scratches, torn edges, archive stamps, frames, maps, seals, " +
+            "flags, collage scraps, handwriting or gold foil", ["#c9c9c4", "#f3ead2", "#12203f"]),
+        textLayout:
+          "All text inside the lower solid band with generous internal margins. The tiny tracked genre label at the top left of the band; beneath it the title on " +
+          "1–2 LEFT-aligned lines in a refined substantial old-style serif with bracketed serifs, warm ivory, about 72% of the width, scholarly but welcoming; the " +
+          "subtitle beneath in small warm-ivory humanist sans, left-aligned; the author at the bottom RIGHT of the band in modest tracked uppercase sans in muted " +
+          "warm ochre, balancing the left-aligned title. Nothing over the image; the author is not at the top.",
+      },
+      {
+        ...c("harita", "Harita / belge dokusu", "Map / document texture", "Özgün gravür harita; açık suda sakin bir başlık alanı.", "An original engraved plan; a calm title field in the open water.",
+          "an original fictional plan inspired by nineteenth-century engraved surveys (not a reproduction of any real document) of the place the book is about, on warm " +
+            "off-white rag paper with restrained fibers and one very faint natural fold: e.g. a finely engraved coastline curving around a sheltered harbor, small urban " +
+            "blocks, warehouse footprints, narrow streets and slender piers clustered along the left half and bottom, cropped boldly at the edges like part of a larger " +
+            "sheet, with open water in the upper right and center as a quiet pale field; precise charcoal-gray and subdued slate-blue line work, delicate shoreline " +
+            "hatching, lightly washed water boundaries, varied line weights; ONE muted brick-red route line well below the title area and one small exquisitely drawn " +
+            "compass rose without letters; scholarly and contemporary, not a pirate map; no labels, handwriting, numbers, stamps, seals, fake archival credentials, " +
+            "stains, burned or torn edges, photographs, portraits, ships in perspective, treasure symbols, borders, scrolls, gold foil or sepia overload",
+          ["#ece5d6", "#6b1420", "#5a7183"]),
+        textLayout:
+          "RIGHT-aligned to a margin at about 9% from the right edge, all in the quiet open area (no text box or band, map lines kept out of the title's background). " +
+          "The tiny widely tracked genre label near the upper right; beneath it the title on 2–3 right-aligned lines in a refined medium-weight old-style serif, deep " +
+          "oxblood burgundy, same size on every line, about 70% of the width; the subtitle below in two small charcoal humanist-sans lines, right-aligned; the author " +
+          "near the bottom LEFT in medium-small burgundy tracked uppercase sans on a calm strip of paper, balancing the upper-right title block.",
+      },
+      {
+        ...c("akademik", "Sade akademik", "Plain academic", "Düz koyu zemin, ölçülü serif başlık, tek ince çizgi.", "Solid deep ground, measured serif title, one fine rule.",
+          "restrained academic typography on a solid color: a full-bleed muted deep single color (aubergine-brown, bottle green, ink blue) like matte dyed book paper " +
+            "with extremely subtle grain and NOTHING else except one thin subdued copper horizontal rule — no photographs, maps, engravings, symbols, anchors, seals, " +
+            "borders, panels, extra lines, illustrations, flourishes, leather texture, foil, bevels, shadows or gradients; proportion, alignment, paper color and " +
+            "typographic craft provide all the visual interest; complete and intellectually serious, never empty or unfinished", ["#3a1a22", "#f3ead2", "#b87333"], true),
+        textLayout:
+          "Warm ivory lettering, deliberately paced with substantial empty space in the upper quarter. The tiny widely tracked genre label near the upper left (about " +
+          "9% from the left, 8% from the top). The title in the MIDDLE of the cover, beginning around 35% of the height, on 1–2 LEFT-aligned lines (left margin 10%) " +
+          "in an exceptionally elegant medium-weight old-style serif, first line about 78% of the width, same size on every line, never stretched; below it, after a " +
+          "deliberate interval, the thin copper rule (about 40% of the width, same left margin) and under it the subtitle in two small humanist-sans lines; the " +
+          "author near the bottom RIGHT (about 11% above the bottom, right-aligned) in medium-small ivory uppercase serif with restrained tracking, counterbalancing " +
+          "the title. No italics, no oversized initials.",
+      },
     ],
   },
   {
