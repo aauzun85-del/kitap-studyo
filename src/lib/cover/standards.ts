@@ -425,21 +425,74 @@ export const COVER_STANDARDS: CoverStandard[] = [
           "clean precise letterforms; the figure fully visible below and never overlapping letters; the small tracked genre label at the bottom center in pale gray " +
           "over a quiet dark area.",
       },
-      c("tipografik", "Sert tipografi", "Hard typography", "Büyük, kesik, gerilimli yazı.", "Big, cut, tense type.",
-        "dark gritty textured ground — concrete, scratches, grain — nothing else; built for huge aggressive typography", ["#14161a", "#f2f2f2", "#e63946"], true),
+      {
+        ...c("tipografik", "Sert tipografi", "Hard typography", "Başlığın kendisi görsel; tek bir kasıtlı kesik.", "The title is the image; one deliberate cut.",
+          "hard-edged expressive typographic crime cover: a flat deep vermilion-red (or another single strong) ground with a barely perceptible matte printed-paper " +
+            "grain and NOTHING else — no photographs, silhouettes, streets, fog, objects, icons, weapons, blood, fingerprints, police tape, borders, warning stripes, " +
+            "gradients, lighting effects, distressed textures, 3D lettering, bevels, shadows, embossing or metallic shine; the emotional effect comes solely from " +
+            "scale, weight, contrast and one displaced typographic cut — the impact of a carefully printed two-ink design", ["#c8102e", "#111111", "#f2e8d8"]),
+        textLayout:
+          "Strong LEFT alignment with generous safe margins. Author at the upper left in modest warm off-white uppercase grotesque sans, precisely tracked. The title " +
+          "is a monumental near-black block occupying the central ~65% of the cover: very heavy strongly condensed uppercase grotesque, rigid stems, tight spacing, " +
+          "compact leading, lines balanced to about the same width by size (never distorted, never cropped), every letter and Turkish dot readable. ONE precise " +
+          "disruption: a narrow horizontal incision in the ground color crosses the LAST title line at mid-letter height and the parts below it shift slightly to " +
+          "the right (about 1% of the width) — a single coherent misalignment; the first line stays intact; no other cuts, glitch noise or broken letters. The tiny " +
+          "widely tracked genre label at the bottom left in warm off-white, aligned with the author.",
+      },
     ],
   },
   {
     code: "FM",
     name: { tr: "Fantastik / bilimkurgu", en: "Fantasy / sci-fi" },
-    label: { tr: "FANTASTİK", en: "FANTASY" },
+    label: { tr: "FANTASTİK ROMAN", en: "FANTASY NOVEL" },
     concepts: [
-      c("manzara", "Epik manzara", "Epic landscape", "Geniş dünya, ışık.", "Vast world, light.",
-        "epic fantasy landscape, towering scale, dramatic glowing light, rich detailed illustration, sense of wonder", ["#1f2b48", "#f3ead2", "#e0b85a"], true),
-      c("amblem", "Sembol-amblem", "Symbol emblem", "Kılıç, mühür, geometri.", "Sword, seal, geometry.",
-        "a single ornate emblem — a sigil, a sword, a crest — in metallic gold on a dark ground, intricate linework", ["#1a1a2e", "#efe6cf", "#c9a24a"], true),
-      c("karakter", "Karakter", "Character", "Kahraman figürü.", "Hero figure.",
-        "a heroic character figure in dynamic pose within a dramatic environment, painted illustration style", ["#2a2233", "#efe6ce", "#caa44a"], true),
+      {
+        ...c("manzara", "Epik manzara", "Epic landscape", "Ölçek, mimari, mesafe ve ışık; küçük bir yolcu.", "Scale, architecture, distance and light; one tiny traveler.",
+          "an original atmospheric epic landscape painting (fine tempera detail with softly layered oil glazes, subtle hand-painted materiality, not glossy concept " +
+            "art): a vast architecturally coherent place from the book's world (e.g. an ancient city carved into a towering limestone cliff — tiered terraces, narrow " +
+            "arched openings, worn stairways, a few slender towers) above a mist-filled valley; a long slender stone bridge crossing the gulf from a dark foreground " +
+            "ledge toward one luminous entrance as a quiet diagonal; ONE tiny traveler under 3% of the height as a scale cue; massive form on one side, shadowed " +
+            "foreground rock opposite, luminous layered mist between, far mountains dissolving into pale atmosphere, late-afternoon light, rich blue-green shadows; " +
+            "deep blue-green, weathered limestone, muted slate, pale warm ivory light; the upper third a softly luminous calm overcast sky with nothing intruding; " +
+            "no floating islands, dragons, spaceships, giant moons, magic beams, glowing runes, oversaturation, lens flares, excessive stars or stock fantasy spectacle",
+          ["#d8d3c6", "#163a3e", "#a35a2e"]),
+        textLayout:
+          "CENTERED, all lettering inside the calm sky of the upper third. The author at the top center in small widely tracked uppercase, deep blue-green, generous " +
+          "top margin; below it the title on 2–3 balanced centered lines in a refined literary display serif with elegant wedge serifs and gently flared terminals, " +
+          "about 65% of the width, deep blue-green ink (not gold), feeling authored with the painting; the tiny widely tracked genre label at the bottom center in " +
+          "warm ivory on a quiet dark foreground area.",
+      },
+      {
+        ...c("amblem", "Sembol-amblem", "Symbol emblem", "Kitabın dünyasına özgü tek gravür mühür; koyu zemin.", "One engraved seal unique to the book's world; dark ground.",
+          "ONE original coherent heraldic seal representing the book's imaginary world (e.g. a forgotten cliff city: a narrow stone bridge rising to a tall arched " +
+            "doorway framed by stepped terraces, an incomplete celestial arc above with a small gap at its apex) — a slender vertical oval about 45% of the width and " +
+            "35% of the height, centered in the lower middle, drawn with exceptionally precise fine engraved strokes in muted antique-brass ink (flat printed color, " +
+            "line-density variation), stronger silhouette lines and delicate interior hatching, clear open spaces readable at thumbnail; full-bleed deep midnight " +
+            "petrol-green (or another single deep) paper ground with subtle matte grain; one unified insignia, not a collection of icons; no letters, runes, swords, " +
+            "wings, crowns, animals, stars, landscape painting, characters, photographs, outer borders, corner ornaments, sacred geometry, astrological charts, " +
+            "filigree, mandalas, shiny gold, foil, embossing, glow or leather texture", ["#0f2a26", "#efe6cf", "#b39a62"], true),
+        textLayout:
+          "Disciplined CENTRAL axis with generous breathing room, warm ivory lettering. The author at the top center (about 8% down) in small widely tracked uppercase " +
+          "serif; below it the title on 2–3 balanced centered lines in a beautifully drawn literary display serif with gently flared terminals and restrained wedge " +
+          "serifs (not pseudo-medieval), about 72% of the width, in the upper third; a clear empty interval, then the seal; the tiny tracked genre label at the " +
+          "bottom center in muted ivory.",
+      },
+      {
+        ...c("karakter", "Karakter", "Character", "Kahramanın yaşayan portresi; arkada dünyanın sessiz izleri.", "A living portrait of the protagonist; quiet traces of the world behind.",
+          "a character-focused literary fantasy painting: an original fine-art work combining precise tempera drawing and softly layered oil glazes — ONE adult " +
+            "protagonist from the book shown from the waist up in three-quarter view in the lower right two thirds, a distinctive specific face (not a generic " +
+            "glamorous model), expression of resolve mixed with uncertainty, gaze toward the left into the distance (not at the viewer), simple worn clothing with " +
+            "carefully painted folds and one small meaningful object held naturally, believable anatomy and hands; behind, faint quiet traces of the world (ancient " +
+            "terraces, a narrow bridge receding into mountain mist) — not an epic panorama; a gentle pale sidelight on the face, which stays the main focal point; " +
+            "deep blue-green, muted limestone, smoky gray, restrained burnt sienna, soft ivory light; the upper third a calm pale atmospheric field; no armor, crowns, " +
+            "weapons, elaborate costume, magical glow, giant moons, flying creatures, glossy digital rendering, beauty retouching, sparks, lens flares or game-poster look",
+          ["#cfcac0", "#163a3e", "#9a4a2a"]),
+        textLayout:
+          "CENTERED, all lettering in the calm upper third and entirely above the character's head (never over hair or face). The author at the top center in small " +
+          "widely tracked deep-ink uppercase serif; below it the title on 2–3 balanced centered lines in a refined literary display serif with gently flared terminals, " +
+          "deep blue-green ink, elegant and substantial; leave luminous mist to the left of the face for the gaze; the tiny tracked genre label at the bottom center " +
+          "in warm ivory over a dark quiet area.",
+      },
     ],
   },
   {
