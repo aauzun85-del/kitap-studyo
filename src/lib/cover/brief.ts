@@ -23,6 +23,9 @@ export type CoverBrief = {
   textBy?: "ai" | "app";
   tone: Tone;
   scope: BriefScope;
+  /** Yazar kendi fotoğrafını yükledi (fotoğraf IndexedDB'de bekler, bkz.
+   *  briefPhoto.ts). Varsa kapağı yapay zekâ değil uygulama kurar. */
+  photo?: { mono: boolean };
   /** Kullanıcının serbest notu ("kapakta bir fener olsun" gibi) — sahneye eklenir. */
   note?: string;
   /** Kullanıcı "kendim tasarlayacağım" dedi → otomatik üretim/yönlendirme yok. */

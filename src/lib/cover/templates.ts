@@ -46,7 +46,16 @@ export type TemplateCtx = {
   // Yazar adı yeri: "top" = başlığın ÜSTÜNDE küçük, harf aralıklı büyük harf
   // (edebi kapak düzeni; kurgu kapaklarında). Yoksa alt güvenli çizgide.
   authorPos?: "top" | "bottom";
+  // Yazarın kendi fotoğrafıyla kurulan kapak düzeni (anı/biyografi): yazılar
+  // fotoğrafın yerine göre sabit düzende çizilir (bkz. drawPhotoLayoutText).
+  photoLayout?: PhotoLayout | null;
 };
+
+// Fotoğraflı kapak düzenleri ve geometrisi (kitap boyunun/eninin oranları).
+// CoverCanvas fotoğrafı, buradaki yazı düzeni de metinleri AYNI ölçülerle yerleştirir.
+export type PhotoLayout = "framed" | "band";
+export const PHOTO_FRAMED = { w: 0.65, h: 0.43, top: 0.31, keylineGapMm: 1.6 };
+export const PHOTO_BAND = { top: 0.64 };
 
 export type CoverTemplate = {
   id: string;
@@ -416,8 +425,147 @@ function titlePanel(ctx: TemplateCtx, yTopMm: number, hMm: number) {
   );
 }
 
+// Fotoğraflı kapak (yazarın kendi fotoğrafı) yazı düzeni.
+// framed: başlık üstte ortalı → alt başlık → [fotoğraf] → yazar → tür etiketi.
+// band:   fotoğraf üst %64; alt bantta sola dayalı yazar → başlık → alt başlık,
+//         tür etiketi sağ altta.
+function drawPhotoLayoutText(ctx: TemplateCtx, r: TemplateRecipe) {
+  const { d, content, colors } = ctx;
+  const titleFont = fontFamilyOf(r.titleFontId);
+  const sansFont = fontFamilyOf(r.authorFontId ?? "sans");
+  const gap = d.bookHeight * 0.018;
+  const maxW = d.frontSafeRight - d.frontSafeLeft;
+  const bottom = d.bottomSafe - (ctx.bottomReserveMm ?? 0);
+  const titleBase = {
+    color: colors.ink,
+    weight: r.titleWeight ?? "600",
+    lineHeight: 1.04,
+    upper: r.titleUpper,
+    spacing: r.letterSpacingTitle ?? 0,
+    fontFamily: titleFont,
+    editId: "title",
+  };
+
+  if (ctx.photoLayout === "framed") {
+    const cx = d.frontCenter;
+    let y = d.topTrim + d.bookHeight * 0.06;
+    const title = centeredText(ctx, content.title || " ", {
+      ...titleBase,
+      cx,
+      top: y,
+      maxWidthMm: maxW,
+      sizeMm: d.bookWidth * 0.105 * (r.titleScale ?? 1),
+    });
+    y += pxToMm(ctx, title.height ?? 0) + gap * 0.7;
+    if (content.subtitle) {
+      centeredText(ctx, content.subtitle, {
+        cx,
+        top: y,
+        maxWidthMm: maxW,
+        sizeMm: Math.max(d.bookWidth * 0.034, 3),
+        color: colors.ink,
+        weight: "400",
+        fontFamily: titleFont,
+        editId: "subtitle",
+      });
+    }
+    const photoBottom = d.topTrim + d.bookHeight * (PHOTO_FRAMED.top + PHOTO_FRAMED.h);
+    if (content.author) {
+      centeredText(ctx, content.author, {
+        cx,
+        top: photoBottom + PHOTO_FRAMED.keylineGapMm + gap * 2.2,
+        maxWidthMm: maxW,
+        sizeMm: Math.max(d.bookWidth * 0.048, 3.6),
+        color: colors.ink,
+        weight: "600",
+        spacing: 300,
+        upper: true,
+        fontFamily: sansFont,
+        editId: "author",
+      });
+    }
+    if (content.genreLabel) {
+      centeredTextBottom(ctx, content.genreLabel, {
+        cx,
+        bottom,
+        maxWidthMm: maxW,
+        sizeMm: Math.max(d.bookWidth * 0.024, 2.3),
+        color: colors.ink,
+        weight: "500",
+        spacing: 400,
+        upper: true,
+        fontFamily: sansFont,
+        editId: "genreLabel",
+      });
+    }
+    return;
+  }
+
+  // band
+  const leftMm = d.spineEnd + d.bookWidth * 0.08;
+  const bandW = d.frontEnd - d.bookWidth * 0.08 - leftMm;
+  let y = d.topTrim + d.bookHeight * PHOTO_BAND.top + gap * 1.6;
+  const left = { cx: leftMm, leftMm, align: "left" as const, maxWidthMm: bandW };
+  if (content.author) {
+    const a = centeredText(ctx, content.author, {
+      ...left,
+      top: y,
+      sizeMm: Math.max(d.bookWidth * 0.034, 3),
+      color: colors.ink,
+      weight: "600",
+      spacing: 280,
+      upper: true,
+      fontFamily: sansFont,
+      editId: "author",
+    });
+    y += pxToMm(ctx, a.height ?? 0) + gap * 0.9;
+  }
+  const title = centeredText(ctx, content.title || " ", {
+    ...titleBase,
+    ...left,
+    top: y,
+    sizeMm: d.bookWidth * 0.095 * (r.titleScale ?? 1),
+  });
+  y += pxToMm(ctx, title.height ?? 0) + gap * 0.6;
+  if (content.subtitle) {
+    centeredText(ctx, content.subtitle, {
+      ...left,
+      top: y,
+      sizeMm: Math.max(d.bookWidth * 0.032, 2.8),
+      color: colors.ink,
+      weight: "400",
+      fontFamily: sansFont,
+      editId: "subtitle",
+    });
+  }
+  if (content.genreLabel) {
+    // Sağ alt: kutu sağ kenara dayalı, metin sağa hizalı.
+    const boxW = d.bookWidth * 0.5;
+    const t = centeredText(ctx, content.genreLabel, {
+      cx: 0,
+      leftMm: d.frontEnd - d.bookWidth * 0.08 - boxW,
+      align: "left",
+      top: bottom,
+      maxWidthMm: boxW,
+      sizeMm: Math.max(d.bookWidth * 0.024, 2.3),
+      color: colors.ink,
+      weight: "500",
+      spacing: 400,
+      upper: true,
+      fontFamily: sansFont,
+      editId: "genreLabel",
+    });
+    t.set({ textAlign: "right", top: ctx.px(bottom - pxToMm(ctx, t.height ?? 0)) });
+    t.setCoords?.();
+  }
+}
+
 // Tarifi okuyup ön kapağı kurar (kicker → başlık → süs → yazar).
 function drawTitleBlock(ctx: TemplateCtx, r: TemplateRecipe) {
+  if (ctx.photoLayout) {
+    drawPhotoLayoutText(ctx, r);
+    return;
+  }
   const { d, content, colors } = ctx;
   const align = r.align ?? "center";
   const pos = ctx.titlePos ?? r.titlePos ?? "center";

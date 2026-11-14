@@ -23,6 +23,9 @@ export type CoverConcept = {
   /** Kullanıcının kurgu notu kapağa BİREBİR basılır (ör. şiir dizeleri) —
    *  sahne tarifi olarak değil, EXACT TEXT listesinde. */
   noteAsText?: boolean;
+  /** Yazar KENDİ fotoğrafını yükleyebilir: kapağı yapay zekâ değil uygulama
+   *  kurar ("framed" = çerçeveli portre, "band" = üstte fotoğraf + altta bant). */
+  photo?: { layout: "framed" | "band"; bg: string; ink: string };
 };
 
 export type CoverStandard = {
@@ -207,6 +210,7 @@ export const COVER_STANDARDS: CoverStandard[] = [
             "approachable expression, authentic anatomy, understated clothing, no glamour; delicate silver-gelatin tonal quality with fine grain, no sepia, no damage effects; " +
             "no text over the photograph, no full-bleed face, no ornamental corners, no flowers, no collage, no gold foil, no drop shadows", ["#8b1a1a", "#f3ead2", "#f3ead2"]),
         dark: true,
+        photo: { layout: "framed", bg: "#7d1d1d", ink: "#f3ead2" },
         textLayout:
           "Warm ivory lettering on the solid ground. Title centered in the upper quarter on 1–2 lines in a moderately condensed literary serif, substantial yet restrained; " +
           "small subtitle centered directly below the title; the framed photograph below the subtitle; the author name centered BELOW the photograph in medium uppercase " +
@@ -234,6 +238,7 @@ export const COVER_STANDARDS: CoverStandard[] = [
             "the lower ~36% is a completely opaque flat muted burnt-terracotta (or another single warm) band spanning the full width with a crisp horizontal edge, " +
             "no gradient, no border, no shadow; no text over the photograph; no close-up portraits, frames, scrapbook collage, handwriting, stamps, tape, sepia, sunsets, " +
             "dramatic lighting, famous landmarks or badges", ["#d9d2c5", "#f3ead2", "#a84a2a"]),
+        photo: { layout: "band", bg: "#a3472b", ink: "#f3ead2" },
         textLayout:
           "All text sits inside the lower solid band, aligned to one generous LEFT margin (about 8% of the width), in warm ivory. At the top of the band the author in " +
           "small tracked uppercase humanist sans; below it the title on 1–2 lines in a substantial literary serif as the dominant text, comfortably contained in the band; " +
@@ -293,12 +298,38 @@ export const COVER_STANDARDS: CoverStandard[] = [
   {
     code: "DB",
     name: { tr: "Klasikler / çeviri dizisi", en: "Classics / translated series" },
-    label: { tr: "KLASİK", en: "CLASSIC" },
+    label: { tr: "KLASİKLER", en: "CLASSICS" },
     concepts: [
-      c("vintage", "Vintage seri", "Vintage series", "Çerçeve, dokulu kağıt, seri rengi.", "Frame, textured paper, series color.",
-        "vintage book-series look: aged paper texture, a classical ornamental frame border, one period illustration vignette in the center", ["#efe6d2", "#2a241c", "#8a2f1f"]),
-      c("gravur", "Gravür", "Engraving", "Dönem gravürü, tek renk.", "Period engraving, single ink.",
-        "period copperplate engraving of a scene or figure, fine cross-hatching, sepia ink on cream paper", ["#efe4cc", "#2a241c", "#5a4632"]),
+      {
+        ...c("vintage", "Vintage seri", "Vintage series", "Renkli dış çerçeve, fildişi pano, çift çizgi, küçük oval gravür.", "Colored outer field, ivory panel, double rule, small oval engraving.",
+          "vintage translated-classics series design: a broad deep single-color outer field (bottle green, oxblood, navy — the series color) surrounding a tall warm-ivory " +
+            "inset paper panel (about 82% of the width, 88% of the height) with a fine double-rule rectangular frame just inside it, restrained clipped corners, tiny " +
+            "symmetric corner joints, no baroque flourishes; authentic subtle uncoated paper grain, clean, not stained; in the lower middle a small oval vignette " +
+            "(about 42% of the width) with a very fine double outline containing an exquisite original antique copperplate scene related to the book (an interior " +
+            "with a half-open window, a writing table with a letter, a chair; or a comparable quiet scene), no people, fine engraved hatching in dark ink and warm gray " +
+            "on ivory, intimate and precise, never a full-page illustration; a repeatable family identity usable with varying series colors; no gold foil, gloss, " +
+            "leather simulation, heavy ornament, distressed or torn edges, large portraits, modern icons or gradients", ["#1f4a2e", "#efe6d2", "#1f4a2e"]),
+        textLayout:
+          "All typography inside the ivory panel in the dark series-color ink, on a precise CENTRAL axis. At the top a very small tracked uppercase series word " +
+          "(e.g. the genre label or a series name) with a small number between two short fine rules if a series number is given; below it the author in medium-small " +
+          "tracked uppercase old-style serif; beneath the author the title as the main typographic focus in a refined substantial old-style literary serif with " +
+          "bracketed serifs on 2–3 balanced centered lines; the oval vignette below the title after generous space; the tiny tracked genre label centered near the " +
+          "bottom of the panel with a large lower margin.",
+      },
+      {
+        ...c("gravur", "Gravür", "Engraving", "Büyük dönem gravürü, tek mürekkep rengi; anlatı sahnesi.", "Large period engraving in a single ink; a narrative scene.",
+          "a large original nineteenth-century copperplate-style narrative illustration printed in a SINGLE deep ink (Prussian blue, sepia or bottle green) on warm pale " +
+            "ivory paper with subtle fine grain — all tonal variation only from engraved line density and stippling; it fills the lower ~65%, extending to the left, right " +
+            "and bottom edges with no frame or oval, its uppermost lines tapering naturally into the paper; a scene from the book's world (a weathered period townhouse " +
+            "entrance, a half-open door, worn steps, a solitary figure in period dress seen from behind holding a meaningful object, modest relative to the architecture), " +
+            "masterful cross-hatching, curved engraved strokes, delicate stippling, one deep dark area anchoring the composition, strong perspective, natural anatomy; " +
+            "no photographic shading, digital painting, CGI, cartoon outlines, vector graphics, second accent color, sepia stains, frames, ornaments or fake aging", ["#efe6d2", "#1c2f55", "#1c2f55"]),
+        textLayout:
+          "All lettering in the same single ink, LEFT-aligned with margins of about 8% of the width, in the clean upper ~30% paper field. At the top left a very small " +
+          "generously tracked series/genre word; beneath it the author in modest uppercase old-style serif; below, the title on two left-aligned lines in a substantial " +
+          "elegant literary serif, unmistakable at thumbnail size, never oversized; clear separation from the engraving; the tiny tracked genre label at the lower left " +
+          "inside a quiet pale area of the picture, without a banner.",
+      },
       c("minimal", "Minimal dizi", "Minimal series", "Tek renk zemin + küçük motif.", "Single-color ground + small motif.",
         "single flat series color ground with one small centered symbolic motif in a contrasting ink, very restrained", ["#2f6f6a", "#f6f2ea", "#f6f2ea"], true),
     ],

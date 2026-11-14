@@ -6,7 +6,7 @@
 // açılır ve orada otomatik üretim (bekleme ekranı + Vazgeç) kurguyla çalışır.
 // "Kendim tasarlayacağım": kurgu "atlandı" olarak kaydedilir, tuval boş açılır.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Locale } from "@/i18n/config";
 import {
@@ -26,6 +26,13 @@ import {
 import { updateProjectCoverBrief } from "@/lib/projects/data";
 import { resolveGenreId } from "@/lib/projects/genres";
 import { creditCost } from "@/lib/credits/pricing";
+import {
+  deleteBriefPhoto,
+  loadBriefPhoto,
+  MIN_PHOTO_WIDTH,
+  prepareBriefPhoto,
+  saveBriefPhoto,
+} from "@/lib/cover/briefPhoto";
 
 // Kurgu kapağı iki ücretli uç çağırır: kitap asistanı + ChatGPT görseli.
 const BRIEF_COVER_COST = creditCost("cover-prompt") + creditCost("cover-openai");
@@ -71,6 +78,20 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState<"none" | "run" | "skip">("none");
   const [error, setError] = useState<string | null>(null);
+  // Yazarın kendi fotoğrafı (anı/biyografi konseptleri): önizleme + çözünürlük.
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoWidth, setPhotoWidth] = useState<number | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  // Daha önce yüklenmiş (henüz tuvale gitmemiş) fotoğraf varsa göster.
+  useEffect(() => {
+    let alive = true;
+    void loadBriefPhoto(projectId).then((d) => {
+      if (alive && d) setPhotoPreview(d);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [projectId]);
 
   const standard = resolveStandard(brief.themaCode);
   const results = useMemo(() => searchThema(query), [query]);
@@ -89,6 +110,9 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
     try {
       const payload: CoverBrief = {
         ...brief,
+        // Fotoğraflı kapakta yazıyı uygulama basar (düzenlenebilir).
+        textBy: usingPhoto ? "app" : brief.textBy,
+        photo: usingPhoto ? { mono: brief.photo?.mono ?? true } : undefined,
         skipped: mode === "skip" ? true : undefined,
         createdAt: new Date().toISOString(),
       };
@@ -113,10 +137,38 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
 
   const path = themaPath(brief.themaCode);
   const standardIsExact = standard.code === brief.themaCode;
+  const currentConcept = standard.concepts.find((k) => k.id === brief.conceptId) ?? standard.concepts[0];
+  // Konsept yazarın kendi fotoğrafını kabul ediyorsa ve fotoğraf yüklendiyse
+  // kapağı yapay zekâ değil uygulama kurar (jeton yok, yazı uygulamadan).
+  const photoMode = currentConcept.photo?.layout ?? null;
+  const usingPhoto = !!photoMode && !!photoPreview;
+  const textBy: "ai" | "app" = usingPhoto ? "app" : (brief.textBy ?? "ai");
+  const mono = brief.photo?.mono ?? true;
   // Seçili konsept notu kapağa birebir basıyorsa (şiir dizeleri) alanın adı değişir.
-  const noteIsText =
-    !!(standard.concepts.find((k) => k.id === brief.conceptId) ?? standard.concepts[0]).noteAsText &&
-    (brief.textBy ?? "ai") === "ai";
+  const noteIsText = !!currentConcept.noteAsText && textBy === "ai";
+
+  const onPhotoFile = async (file: File | undefined) => {
+    if (!file) return;
+    setPhotoBusy(true);
+    setError(null);
+    try {
+      const p = await prepareBriefPhoto(file);
+      await saveBriefPhoto(projectId, p.dataUrl);
+      setPhotoPreview(p.dataUrl);
+      setPhotoWidth(p.width);
+      patch({ photo: { mono } });
+    } catch {
+      setError(tr ? "Fotoğraf okunamadı — JPG ya da PNG dene." : "Couldn't read the photo — try a JPG or PNG.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+  const removePhoto = () => {
+    void deleteBriefPhoto(projectId);
+    setPhotoPreview(null);
+    setPhotoWidth(null);
+    patch({ photo: undefined });
+  };
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-10 px-4 py-6">
@@ -227,6 +279,81 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
         </div>
       </section>
 
+      {/* Kendi fotoğrafın — yalnız fotoğraf kabul eden konseptlerde (anı/biyografi) */}
+      {photoMode && (
+        <section className="space-y-3 rounded-xl border border-foreground/10 p-4">
+          <div>
+            <h2 className={stepTitle}>{tr ? "Kendi fotoğrafın (isteğe bağlı)" : "Your own photo (optional)"}</h2>
+            <p className={stepHint}>
+              {photoMode === "framed"
+                ? tr
+                  ? "Yazarın portresini yükle: kapağı yapay zekâ çizmez, fotoğrafın çerçeveli olarak yerleşir — yüz birebir kalır, jeton harcanmaz."
+                  : "Upload the author's portrait: AI doesn't draw the cover; your photo is placed in a frame — the face stays exact, no credits used."
+                : tr
+                  ? "Aile albümünden bir fotoğraf yükle (bir sokak, bir ev, bir an): kapağın üst kısmına yerleşir, altına renkli yazı bandı gelir — jeton harcanmaz."
+                  : "Upload a family-album photo (a street, a house, a moment): it fills the top, with a colored title band below — no credits used."}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-start gap-4">
+            {photoPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={photoPreview}
+                alt={tr ? "Yüklenen fotoğraf" : "Uploaded photo"}
+                className="h-40 w-auto rounded-md border border-foreground/10 object-cover"
+                style={{ filter: mono ? "grayscale(1) contrast(1.06)" : undefined }}
+              />
+            ) : (
+              <div className="flex h-40 w-28 items-center justify-center rounded-md border border-dashed border-foreground/20 text-center text-[11px] text-muted">
+                {tr ? "Fotoğraf yok" : "No photo"}
+              </div>
+            )}
+            <div className="space-y-2">
+              <label className="inline-flex cursor-pointer items-center rounded-lg border border-foreground/15 px-3 py-2 text-sm font-semibold text-foreground transition hover:bg-accent-soft">
+                {photoBusy ? (tr ? "Hazırlanıyor…" : "Preparing…") : photoPreview ? (tr ? "Fotoğrafı değiştir" : "Replace photo") : (tr ? "Fotoğraf yükle" : "Upload photo")}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  disabled={photoBusy}
+                  onChange={(e) => {
+                    void onPhotoFile(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {photoPreview && (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => patch({ photo: { mono: true } })} aria-pressed={mono} className={pill(mono)}>
+                      {tr ? "Siyah-beyaz" : "Black & white"}
+                    </button>
+                    <button type="button" onClick={() => patch({ photo: { mono: false } })} aria-pressed={!mono} className={pill(!mono)}>
+                      {tr ? "Renkli" : "Color"}
+                    </button>
+                  </div>
+                  <button type="button" onClick={removePhoto} className="text-xs font-medium text-accent hover:underline">
+                    {tr ? "Fotoğrafı kaldır (yapay zekâ üretsin)" : "Remove photo (let AI generate)"}
+                  </button>
+                </>
+              )}
+              {photoWidth != null && photoWidth < MIN_PHOTO_WIDTH && (
+                <p className="max-w-xs rounded-md border border-amber-500/40 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+                  {tr
+                    ? `Fotoğraf küçük (${photoWidth} piksel genişlik). Baskıda bulanık çıkabilir; en az ${MIN_PHOTO_WIDTH} piksel önerilir.`
+                    : `The photo is small (${photoWidth}px wide) and may print blurry; at least ${MIN_PHOTO_WIDTH}px is recommended.`}
+                </p>
+              )}
+              <p className="max-w-xs text-[11px] text-muted">
+                {tr
+                  ? "Fotoğraf sana ait olmalı ya da kullanım iznin bulunmalı."
+                  : "The photo must be yours or you must have permission to use it."}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* 3 — Yazı */}
       <section className="space-y-3">
         <div>
@@ -237,26 +364,33 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
               : "Who prints the title, author and genre label? ChatGPT: example-quality typography baked into the art (changing it = regenerate). App: our fonts, editable on the canvas."}
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:max-w-md">
+        {usingPhoto && (
+          <p className={stepHint}>
+            {tr
+              ? "Fotoğraflı kapakta yazıyı uygulama basar (tuvalde düzenlenebilir). Yazı stilini seç:"
+              : "With your photo, the app prints the text (editable on the canvas). Pick a type style:"}
+          </p>
+        )}
+        <div className={`grid grid-cols-2 gap-2 sm:max-w-md ${usingPhoto ? "hidden" : ""}`}>
           {(
             [
               ["ai", tr ? "ChatGPT bassın (önerilen)" : "ChatGPT prints it (recommended)"],
               ["app", tr ? "Uygulama bassın" : "App prints it"],
             ] as ["ai" | "app", string][]
           ).map(([v, label]) => (
-            <button key={v} type="button" onClick={() => patch({ textBy: v })} aria-pressed={(brief.textBy ?? "ai") === v} className={pill((brief.textBy ?? "ai") === v)}>
+            <button key={v} type="button" onClick={() => patch({ textBy: v })} aria-pressed={textBy === v} className={pill(textBy === v)}>
               {label}
             </button>
           ))}
         </div>
-        {(brief.textBy ?? "ai") === "ai" && (
+        {textBy === "ai" && (
           <p className={stepHint}>
             {tr
               ? "Tipografiyi ChatGPT konsepte göre tasarlar: yazar üstte küçük, başlık altında, tür etiketi başlığın altında."
               : "ChatGPT designs the typography to match the concept: author small on top, title below, genre label under the title."}
           </p>
         )}
-        <div className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${(brief.textBy ?? "ai") === "ai" ? "hidden" : ""}`}>
+        <div className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${textBy === "ai" ? "hidden" : ""}`}>
           {BRIEF_TEXT_STYLES.map((s) => {
             const active = s.id === brief.textStyleId;
             const sample = title.trim() || (tr ? "Kitabın Adı" : "Book Title");
@@ -360,8 +494,12 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
           disabled={saving !== "none"}
           className="rounded-lg bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {saving === "run" ? (tr ? "Kaydediliyor…" : "Saving…") : tr ? "Tuvale gönder ve üret" : "Send to canvas & generate"}
-          {saving !== "run" && BRIEF_COVER_COST > 0 && (
+          {saving === "run"
+            ? tr ? "Kaydediliyor…" : "Saving…"
+            : usingPhoto
+              ? tr ? "Tuvale gönder" : "Send to canvas"
+              : tr ? "Tuvale gönder ve üret" : "Send to canvas & generate"}
+          {saving !== "run" && !usingPhoto && BRIEF_COVER_COST > 0 && (
             <span className="ml-2 font-normal opacity-80">
               · {BRIEF_COVER_COST} {tr ? "jeton" : "credits"}
             </span>

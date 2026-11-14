@@ -70,7 +70,8 @@ import {
   TONE_PROMPTS,
   type CoverBrief,
 } from "@/lib/cover/brief";
-import { resolveStandard } from "@/lib/cover/standards";
+import { getConceptOf, resolveStandard } from "@/lib/cover/standards";
+import { deleteBriefPhoto, loadBriefPhoto, toMonoPhoto } from "@/lib/cover/briefPhoto";
 import { spineColorFromImage } from "@/lib/cover/palette";
 import {
   AI_HISTORY_LIMIT,
@@ -218,6 +219,8 @@ export default function CoverStudio({
   // Sırt bandı (hex | null). Sarmal AI üretiminden sonra görselin paletinden
   // otomatik dolar; Renkler panelinden kapatılır/değiştirilir.
   const [spineBand, setSpineBand] = useState<string | null>(null);
+  // Yazarın kendi fotoğrafı için yerleşim (anı/biyografi kurgusu): null = tam kapak.
+  const [photoLayout, setPhotoLayout] = useState<"framed" | "band" | null>(null);
   // Kullanıcının değiştirdiği renkler (yalnız değişenler). Boşsa şablon paleti kullanılır.
   const [colorOverrides, setColorOverrides] = useState<Partial<CoverColors>>({});
   // Baskı kılavuzları varsayılan AÇIK gelir (kesim/sırt/güvenli alan görünür).
@@ -825,8 +828,9 @@ export default function CoverStudio({
       logoSize,
       logoPos,
       spineBand,
+      photoLayout,
     }),
-    [coverImage, coverDarken, coverOpacity, coverScope, coverFit, coverPanX, coverZoom, logoImage, logoSize, logoPos, spineBand],
+    [coverImage, coverDarken, coverOpacity, coverScope, coverFit, coverPanX, coverZoom, logoImage, logoSize, logoPos, spineBand, photoLayout],
   );
 
   // labels'ı sabit referansa al → seçim değişince tuval gereksiz yere yeniden çizilmesin.
@@ -1026,6 +1030,7 @@ export default function CoverStudio({
     if (d.titlePos) setTitlePos(d.titlePos);
     if (d.brief) setBrief(d.brief);
     if (typeof d.spineBand === "string" || d.spineBand === null) setSpineBand(d.spineBand);
+    if (d.photoLayout === "framed" || d.photoLayout === "band") setPhotoLayout(d.photoLayout);
     if (d.colorOverrides) setColorOverrides(d.colorOverrides);
     if (typeof d.showGuides === "boolean") setShowGuides(d.showGuides);
     // Görseller
@@ -1198,6 +1203,7 @@ export default function CoverStudio({
       titlePos,
       brief: brief ?? undefined,
       spineBand,
+      photoLayout,
       colorOverrides,
       showGuides,
       coverImage,
@@ -1266,6 +1272,7 @@ export default function CoverStudio({
     titlePos,
     brief,
     spineBand,
+    photoLayout,
     colorOverrides,
     showGuides,
     coverImage,
@@ -1502,6 +1509,7 @@ export default function CoverStudio({
       titlePos,
       brief: brief ?? undefined,
       spineBand,
+      photoLayout,
       colorOverrides,
       showGuides,
       coverImage,
@@ -1699,6 +1707,7 @@ export default function CoverStudio({
       setAiLastCost(typeof data.usage?.estUsd === "number" ? data.usage.estUsd : null);
       // ChatGPT görseli üst bandı başlık için sade bırakır → başlığı oraya al.
       if (useModel === "openai") setTitlePos("top");
+      setPhotoLayout(null); // yapay zekâ görseli tam kapak olur
       // Sarmal üretimde sırt bandı: görselin koyu tonundan otomatik renk.
       if (wrap) {
         void spineColorFromImage(data.image).then((c) => {
@@ -1852,6 +1861,32 @@ export default function CoverStudio({
     briefFiredRef.current = true;
     const b = brief;
     void (async () => {
+      // Yazarın KENDİ fotoğrafı (anı/biyografi): yapay zekâ YOK — yüz birebir
+      // kalır, jeton harcanmaz; kapağı uygulama konseptin düzeniyle kurar.
+      const concept = getConceptOf(resolveStandard(b.themaCode), b.conceptId);
+      if (concept.photo && b.photo && projectId) {
+        const raw = await loadBriefPhoto(projectId);
+        if (raw) {
+          const img = b.photo.mono ? await toMonoPhoto(raw) : raw;
+          setTemplateId(getTextStyle(b.textStyleId).templateId);
+          setTitlePos("top");
+          setColorOverrides({ bg: concept.photo.bg, ink: concept.photo.ink, accent: concept.photo.ink });
+          setPhotoLayout(concept.photo.layout);
+          setCoverScope("front");
+          setCoverFit("fill");
+          setCoverPanX(0);
+          setCoverZoom(1);
+          setCoverDarken(0);
+          setCoverOpacity(1);
+          setSpineBand(null);
+          setHidden((p) => ({ ...p, title: false, author: false, subtitle: false }));
+          setCoverImage(img);
+          showCoverLayer();
+          pushUserImage(img, "upload");
+          void deleteBriefPhoto(projectId);
+          return;
+        }
+      }
       const genre = initialProject?.data.meta.genre ?? "";
       const summary = (initialProject?.data.manuscript.text ?? "").slice(0, 1500);
       let desc = "";
@@ -2341,6 +2376,29 @@ export default function CoverStudio({
                 <MagicWandIcon className="h-4 w-4" />
                 {t.aiEditCta}
               </button>
+            )}
+
+            {coverImage && (
+              <Field
+                label={lang === "tr" ? "Görsel yerleşimi" : "Image layout"}
+                hint={
+                  lang === "tr"
+                    ? "Kendi fotoğrafın için: çerçeveli portre ya da üstte fotoğraf + altta renkli bant. Zemin rengini Renkler panelinden değiştir."
+                    : "For your own photo: a framed portrait, or photo on top with a colored band below. Change the ground color in Colors."
+                }
+              >
+                <div className="grid grid-cols-3 gap-2">
+                  <SegButton active={!photoLayout} onClick={() => setPhotoLayout(null)}>
+                    {lang === "tr" ? "Tam kapak" : "Full cover"}
+                  </SegButton>
+                  <SegButton active={photoLayout === "framed"} onClick={() => { setPhotoLayout("framed"); setCoverScope("front"); }}>
+                    {lang === "tr" ? "Çerçeveli" : "Framed"}
+                  </SegButton>
+                  <SegButton active={photoLayout === "band"} onClick={() => { setPhotoLayout("band"); setCoverScope("front"); }}>
+                    {lang === "tr" ? "Üstte + bant" : "Top + band"}
+                  </SegButton>
+                </div>
+              </Field>
             )}
 
             {coverImage && (

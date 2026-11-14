@@ -35,6 +35,8 @@ export type CoverDraft = {
   brief?: CoverBrief;
   // Sırt bandı rengi (hex) ya da null/yok = bant yok.
   spineBand?: string | null;
+  // Yazarın kendi fotoğrafı için yerleşim (çerçeveli portre / üstte + bant).
+  photoLayout?: "framed" | "band" | null;
   colorOverrides?: Partial<CoverColors>;
   showGuides?: boolean;
   // Görseller

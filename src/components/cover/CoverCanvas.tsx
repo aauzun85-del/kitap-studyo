@@ -10,8 +10,11 @@ import {
 import { mmToPx, type SpreadDimensions } from "@/lib/cover/spread";
 import {
   getTemplate,
+  PHOTO_BAND,
+  PHOTO_FRAMED,
   type CoverContent,
   type CoverColors,
+  type PhotoLayout,
   type TitlePos,
 } from "@/lib/cover/templates";
 import { generateBarcodeDataUrl } from "@/lib/cover/barcode";
@@ -42,6 +45,9 @@ export type CoverImages = {
   // Sırt bandı rengi (hex) ya da null = yok. Sarmal görselde sırt mm'de tam
   // otursun diye uygulamanın çizdiği düz şerit; sırt yazısı üstüne gelir.
   spineBand?: string | null;
+  // Yazarın kendi fotoğrafı için yerleşim: "framed" = ön kapakta çerçeveli
+  // portre, "band" = ön kapağın üst %64'ü fotoğraf. null = tam kapak (varsayılan).
+  photoLayout?: PhotoLayout | null;
 };
 
 // Kullanıcının elle değiştirdiği nesnenin kayıtlı dönüşümü:
@@ -717,6 +723,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
         hasImage: !!images.cover,
         titlePos,
         authorPos,
+        photoLayout: images.cover ? (images.photoLayout ?? null) : null,
       };
 
       // 1) Zemin rengi (editId "background"). Katman panelinden gizlenmişse görünmez yap.
@@ -732,15 +739,32 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
 
       // 2) Kapak görseli (object-fit cover + kırpma) ve karartma örtüsü.
       if (images.cover) {
+        // Fotoğraflı düzenler (yazarın kendi fotoğrafı) ön kapakta sabit bir
+        // dikdörtgene oturur; yazı düzeni aynı ölçüleri kullanır (templates.ts).
+        const framedW = spread.bookWidth * PHOTO_FRAMED.w;
         const rectMm =
-          images.coverScope === "wrap"
-            ? { x: 0, y: 0, w: spread.totalWidth, h: spread.totalHeight }
-            : {
-                x: spread.spineEnd,
-                y: 0,
-                w: spread.totalWidth - spread.spineEnd,
-                h: spread.totalHeight,
-              };
+          images.photoLayout === "framed"
+            ? {
+                x: spread.frontCenter - framedW / 2,
+                y: spread.topTrim + spread.bookHeight * PHOTO_FRAMED.top,
+                w: framedW,
+                h: spread.bookHeight * PHOTO_FRAMED.h,
+              }
+            : images.photoLayout === "band"
+              ? {
+                  x: spread.spineEnd,
+                  y: 0,
+                  w: spread.totalWidth - spread.spineEnd,
+                  h: spread.topTrim + spread.bookHeight * PHOTO_BAND.top,
+                }
+              : images.coverScope === "wrap"
+                ? { x: 0, y: 0, w: spread.totalWidth, h: spread.totalHeight }
+                : {
+                    x: spread.spineEnd,
+                    y: 0,
+                    w: spread.totalWidth - spread.spineEnd,
+                    h: spread.totalHeight,
+                  };
         const rx = px(rectMm.x), ry = px(rectMm.y), rw = px(rectMm.w), rh = px(rectMm.h);
 
         const img = await fabric.FabricImage.fromURL(images.cover);
@@ -780,6 +804,26 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
           absolutePositioned: true,
         });
         canvas.add(img);
+
+        // Çerçeveli portre: fotoğrafın dışında, arada ince boşlukla tek çizgi
+        // (müzede paspartulu arşiv baskısı gibi). Renk = yazı mürekkebi.
+        if (images.photoLayout === "framed") {
+          const g = PHOTO_FRAMED.keylineGapMm;
+          canvas.add(
+            new fabric.Rect({
+              left: px(rectMm.x - g),
+              top: px(rectMm.y - g),
+              width: px(rectMm.w + g * 2),
+              height: px(rectMm.h + g * 2),
+              fill: "transparent",
+              stroke: (colors ?? template.palette).ink,
+              strokeWidth: px(0.35),
+              editId: "photoFrame",
+              selectable: false,
+              evented: false,
+            }),
+          );
+        }
 
         // Karartma örtüsü: editId "darken" ile katman listesine girer; göz ikonuyla
         // gizlenince (visible:false) hem ekranda hem baskıda yok olur. Taşınamaz/boyutlanamaz.
