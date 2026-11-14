@@ -500,8 +500,21 @@ export const COVER_STANDARDS: CoverStandard[] = [
     name: { tr: "Romantik", en: "Romance" },
     label: { tr: "ROMAN", en: "A NOVEL" },
     concepts: [
-      c("figur", "Yumuşak ışık + figür", "Soft light + figure", "Çift ya da tek figür, sıcak ton.", "Couple or single figure, warm tones.",
-        "romantic scene with a figure or couple in soft golden light, dreamy bokeh, warm delicate palette", ["#f6eef0", "#3a2e33", "#b06a86"]),
+      {
+        ...c("figur", "Yumuşak ışık + figür", "Soft light + figures", "Pencere ışığında iki insan; aradaki küçük boşluk duygunun merkezi.", "Two people in window light; the small gap between them is the heart.",
+          "an original oil-and-tempera illustration with delicate visible brushwork: a quiet old interior beside a tall open window in late afternoon; two adults " +
+            "around thirty facing each other from roughly the waist up, close but NOT touching — the small luminous interval between them is the emotional center; " +
+            "tender searching expressions, natural unperformed posture, looking at each other not at the viewer, hands mostly below the crop; warm diffused window " +
+            "light on faces and clothing edges, interior in muted olive-gray shadow, a soft sheer curtain lifted by air along one edge, only atmospheric shapes " +
+            "outside; distinctive real faces, convincing anatomy; warm ivory, dusty rose, restrained terracotta, muted olive, soft honey light; the figures and window " +
+            "in the lower ~60%, the upper ~40% a quiet warm ivory plaster wall; no kiss, embrace, melodrama, fashion glamour, pink gradients, hearts, bouquets, " +
+            "sparkles, sunsets, beaches, floating petals or stock-photo romance", ["#efe3d0", "#5a1a24", "#c98a7a"]),
+        textLayout:
+          "Dark burgundy flat lettering, LEFT-aligned, in the quiet wall area above the figures (faces fully below the lettering). Author near the top left in small " +
+          "generously tracked uppercase humanist sans; below it the title on 1–3 left-aligned lines in ONE consistent refined UPRIGHT literary serif (same style, " +
+          "size and weight on every line, never italic, never stretched), longest line about 40–45% of the width, optically balanced line spacing, generous empty " +
+          "wall to the right; the tiny tracked genre label at the bottom left in warm ivory over a quiet darker area.",
+      },
       c("cicek", "Çiçek + tipografi", "Flowers + typography", "Botanik, el yazısı.", "Botanical, hand lettering.",
         "lush botanical arrangement — roses, peonies, leaves — framing an empty center, soft painterly style", ["#fbeef0", "#3a2e33", "#c45c7a"]),
       c("pastel", "Pastel sahne", "Pastel scene", "İllüstrasyon, hafif.", "Illustration, light.",

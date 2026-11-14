@@ -17,6 +17,7 @@ import {
   type Tone,
 } from "@/lib/cover/brief";
 import {
+  COVER_STANDARDS,
   GENRE_TO_THEMA,
   resolveStandard,
   searchThema,
@@ -185,62 +186,82 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
         )}
       </header>
 
-      {/* 1 — Tür (Thema) */}
+      {/* 1 — Tür: kapak standardı olan türler listeden; ayrıntılı Thema araması isteğe bağlı */}
       <section className="space-y-3">
         <div>
           <h2 className={stepTitle}>{tr ? "1 · Tür" : "1 · Genre"}</h2>
           <p className={stepHint}>
             {tr
-              ? "Thema konu kodu (Kitapyurdu/KDY kataloğundaki tür). Yazarak ara; alt tür seçersen en yakın üst türün standardı uygulanır."
-              : "Thema subject code. Type to search; a sub-genre inherits the nearest parent's standard."}
+              ? "Kitabının türünü seç; her türün kendi kapak standardı ve üç konsepti var."
+              : "Pick your book's genre; each genre has its own cover standard and three concepts."}
           </p>
         </div>
-        <div className="rounded-xl border border-foreground/10 bg-background p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-md bg-accent-soft px-2 py-1 font-mono text-xs font-semibold text-accent">{brief.themaCode}</span>
-            <span className="text-sm font-semibold text-foreground">{themaName(brief.themaCode)}</span>
-            {path.length > 1 && <span className="text-xs text-muted">· {path.slice(0, -1).join(" › ")}</span>}
-            <button
-              type="button"
-              onClick={() => setPickerOpen((o) => !o)}
-              className="ml-auto rounded-md border border-foreground/15 px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-accent-soft"
-            >
-              {pickerOpen ? (tr ? "Kapat" : "Close") : tr ? "Türü değiştir" : "Change genre"}
-            </button>
-          </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {COVER_STANDARDS.map((st) => {
+            const active = st.code === standard.code;
+            return (
+              <button
+                key={st.code}
+                type="button"
+                onClick={() => pickThema(st.code)}
+                aria-pressed={active}
+                className={`rounded-lg border px-3 py-2.5 text-left text-sm font-semibold transition ${
+                  active
+                    ? "border-accent bg-accent text-white"
+                    : "border-foreground/15 bg-background text-foreground hover:bg-accent-soft"
+                }`}
+              >
+                {st.name[lang]}
+              </button>
+            );
+          })}
+        </div>
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => setPickerOpen((o) => !o)}
+            className="text-xs font-medium text-accent hover:underline"
+          >
+            {pickerOpen
+              ? tr ? "Ayrıntılı tür aramasını kapat" : "Close detailed genre search"
+              : tr ? "Listede yok mu? Ayrıntılı tür (Thema) ara" : "Not listed? Search a detailed genre (Thema)"}
+          </button>
           {!standardIsExact && (
-            <p className="mt-2 text-xs text-muted">
+            <p className="text-xs text-muted">
               {tr
-                ? `Bu türün kendi standardı yok → "${standard.name.tr}" (${standard.code}) standardı uygulanır.`
-                : `No standard for this code → using "${standard.name.en}" (${standard.code}).`}
+                ? `Seçilen ayrıntılı tür: ${themaName(brief.themaCode)} (${brief.themaCode})${path.length > 1 ? ` · ${path.slice(0, -1).join(" › ")}` : ""} → "${standard.name.tr}" standardı uygulanır.`
+                : `Detailed genre: ${themaName(brief.themaCode)} (${brief.themaCode}) → using "${standard.name.en}".`}
             </p>
           )}
           {pickerOpen && (
-            <div className="mt-3 space-y-2">
+            <div className="space-y-2 rounded-xl border border-foreground/10 bg-background p-3">
               <input
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={tr ? "Tür adı ya da kod yaz: roman, şiir, VS, FF…" : "Type a genre name or code…"}
+                placeholder={tr ? "Tür adı yaz: polisiye, tarih, çocuk, deneme…" : "Type a genre: crime, history, children…"}
                 className="w-full rounded-lg border border-foreground/15 bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none"
               />
-              <ul className="max-h-64 divide-y divide-foreground/5 overflow-y-auto rounded-lg border border-foreground/10">
-                {results.map((n) => (
-                  <li key={n.code}>
-                    <button
-                      type="button"
-                      onClick={() => pickThema(n.code)}
-                      className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-accent-soft"
-                    >
-                      <span className="w-14 shrink-0 font-mono text-xs text-muted">{n.code}</span>
-                      <span className="text-foreground">{n.name}</span>
-                    </button>
-                  </li>
-                ))}
-                {results.length === 0 && (
-                  <li className="px-3 py-2 text-xs text-muted">{tr ? "Eşleşme yok." : "No match."}</li>
-                )}
-              </ul>
+              {query.trim() && (
+                <ul className="max-h-64 divide-y divide-foreground/5 overflow-y-auto rounded-lg border border-foreground/10">
+                  {results.map((n) => (
+                    <li key={n.code}>
+                      <button
+                        type="button"
+                        onClick={() => pickThema(n.code)}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-accent-soft"
+                      >
+                        <span className="w-14 shrink-0 font-mono text-xs text-muted">{n.code}</span>
+                        <span className="text-foreground">{n.name}</span>
+                        <span className="ml-auto shrink-0 text-[11px] text-muted">→ {resolveStandard(n.code).name[lang]}</span>
+                      </button>
+                    </li>
+                  ))}
+                  {results.length === 0 && (
+                    <li className="px-3 py-2 text-xs text-muted">{tr ? "Eşleşme yok." : "No match."}</li>
+                  )}
+                </ul>
+              )}
             </div>
           )}
         </div>
