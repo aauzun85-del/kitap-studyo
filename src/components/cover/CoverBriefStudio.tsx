@@ -113,6 +113,10 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
 
   const path = themaPath(brief.themaCode);
   const standardIsExact = standard.code === brief.themaCode;
+  // Seçili konsept notu kapağa birebir basıyorsa (şiir dizeleri) alanın adı değişir.
+  const noteIsText =
+    !!(standard.concepts.find((k) => k.id === brief.conceptId) ?? standard.concepts[0]).noteAsText &&
+    (brief.textBy ?? "ai") === "ai";
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-10 px-4 py-6">
@@ -322,12 +326,27 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
 
       {/* Not */}
       <section className="space-y-2">
-        <h2 className={stepTitle}>{tr ? "İsteğe bağlı not" : "Optional note"}</h2>
+        <h2 className={stepTitle}>
+          {noteIsText
+            ? tr ? "Kapağa basılacak dizeler / kısa alıntı" : "Lines / short excerpt to print on the cover"
+            : tr ? "İsteğe bağlı not" : "Optional note"}
+        </h2>
+        {noteIsText && (
+          <p className={stepHint}>
+            {tr
+              ? "Bu konseptte metin kapağın kendisidir: 2–4 kısa dize yaz (satır satır). Boş bırakırsan yalnız başlık kullanılır."
+              : "In this concept the text is the cover: write 2–4 short lines. Leave empty to use only the title."}
+          </p>
+        )}
         <textarea
           value={brief.note ?? ""}
           onChange={(e) => patch({ note: e.target.value.slice(0, 300) })}
-          rows={2}
-          placeholder={tr ? "Örn. ‘kapakta eski bir fener olsun, deniz kenarı, akşam ışığı’" : "e.g. ‘an old lantern by the sea at dusk’"}
+          rows={noteIsText ? 4 : 2}
+          placeholder={
+            noteIsText
+              ? tr ? "Bir ses bıraktım rüzgâra,\nbana sessizlik döndü." : "I left a voice to the wind,\nsilence came back to me."
+              : tr ? "Örn. ‘kapakta eski bir fener olsun, deniz kenarı, akşam ışığı’" : "e.g. ‘an old lantern by the sea at dusk’"
+          }
           className="w-full rounded-lg border border-foreground/15 bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none"
         />
       </section>

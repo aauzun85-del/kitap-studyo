@@ -67,6 +67,7 @@ export function briefStyleOverride(brief: CoverBrief): {
   dark: boolean;
   tone: Tone;
   textLayout?: string;
+  noteAsText: boolean;
 } {
   const standard = resolveStandard(brief.themaCode);
   const concept = getConceptOf(standard, brief.conceptId);
@@ -75,6 +76,7 @@ export function briefStyleOverride(brief: CoverBrief): {
     dark: !!concept.dark || brief.tone === "dark",
     tone: brief.tone,
     textLayout: concept.textLayout,
+    noteAsText: !!concept.noteAsText,
   };
 }
 

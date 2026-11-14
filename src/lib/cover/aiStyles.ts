@@ -332,6 +332,8 @@ export type LayeredText = {
   author: string;
   subtitle?: string;
   genreLabel?: string;
+  /** Kapağa birebir basılacak ek metin (ör. şiir dizeleri). */
+  extra?: string;
 };
 
 export function buildLayeredPrompt(opts: {
@@ -403,6 +405,7 @@ export function buildLayeredPrompt(opts: {
       `title ${q(tx.title)}`,
       tx.subtitle ? `subtitle ${q(tx.subtitle)}` : "",
       tx.genreLabel ? `genre label ${q(tx.genreLabel)}` : "",
+      tx.extra ? `excerpt (set exactly, line breaks as given) ${q(tx.extra)}` : "",
     ].filter(Boolean);
     lines.push(
       `- Typography (strict): ${opts.override.textLayout} Text elements: ${items.join("; ")}. ` +
@@ -459,7 +462,7 @@ export function buildLayeredPrompt(opts: {
         : "- Palette: light to mid tones overall; avoid large very dark or black areas.",
   );
   if (tx) {
-    const allowed = [tx.author, tx.title, tx.subtitle, tx.genreLabel]
+    const allowed = [tx.author, tx.title, tx.subtitle, tx.genreLabel, tx.extra]
       .filter((s): s is string => !!s && s.trim().length > 0)
       .map(q)
       .join(", ");

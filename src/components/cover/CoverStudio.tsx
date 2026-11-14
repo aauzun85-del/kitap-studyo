@@ -1881,8 +1881,12 @@ export default function CoverStudio({
       }
       try {
         if (ctrl.signal.aborted && ctrl.signal.reason === "user") return; // Vazgeç
+        const ov0 = briefStyleOverride(b);
         const note = (b.note ?? "").trim();
-        if (note) desc = desc ? `${note}. ${desc}` : note;
+        // Not: ya sahne tarifine eklenir ya da (konsept "notu bas" diyorsa, ör.
+        // şiir dizeleri) kapağa birebir basılacak metin olur.
+        const noteAsText = ov0.noteAsText && (b.textBy ?? "ai") === "ai" && !!note;
+        if (note && !noteAsText) desc = desc ? `${note}. ${desc}` : note;
         const ts = getTextStyle(b.textStyleId);
         setTemplateId(ts.templateId);
         setTitlePos("top");
@@ -1899,6 +1903,7 @@ export default function CoverStudio({
                 author,
                 subtitle: subtitle.trim() || undefined,
                 genreLabel: resolveStandard(b.themaCode).label[lang],
+                extra: noteAsText ? note : undefined,
               }
             : undefined;
         const done = await generateAiCover({

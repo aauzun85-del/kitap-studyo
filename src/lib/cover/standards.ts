@@ -20,6 +20,9 @@ export type CoverConcept = {
   /** Konsepte özel yazı yerleşimi (İngilizce) — ChatGPT yazıyı basarken
    *  genel düzenin (yazar üstte, başlık altında, ortalı) yerine geçer. */
   textLayout?: string;
+  /** Kullanıcının kurgu notu kapağa BİREBİR basılır (ör. şiir dizeleri) —
+   *  sahne tarifi olarak değil, EXACT TEXT listesinde. */
+  noteAsText?: boolean;
 };
 
 export type CoverStandard = {
@@ -241,14 +244,50 @@ export const COVER_STANDARDS: CoverStandard[] = [
   {
     code: "DC",
     name: { tr: "Şiir", en: "Poetry" },
-    label: { tr: "ŞİİR", en: "POETRY" },
+    label: { tr: "ŞİİRLER", en: "POEMS" },
     concepts: [
-      c("motif", "Açık zemin + ince motif", "Light ground + fine motif", "Bol boşluk, tek çizgi.", "Lots of air, single line.",
-        "pale airy ground with one delicate single-line drawing or small botanical motif, vast negative space", ["#f8f5ef", "#1f1d1a", "#c9672d"]),
-      c("doku", "Soyut doku", "Abstract texture", "Suluboya, kâğıt, leke.", "Watercolor, paper, stain.",
-        "abstract watercolor wash and paper texture, soft stains and bleeding edges, quiet muted colors, no objects", ["#ece4d8", "#2a2a2a", "#7a8c8f"]),
-      c("tipografik", "Tipografik şiir", "Typographic poetry", "Yazı kapağın kendisi, zarif font.", "Type-led, elegant.",
-        "soft uniform ground with a faint handmade-paper grain, nothing else — space for elegant typography", ["#f4efe8", "#2b2a27", "#9c6b3c"]),
+      {
+        ...c("motif", "Açık zemin + ince motif", "Light ground + fine motif", "Fildişi kâğıt, tek narin bitkisel çizim, bol boşluk.", "Ivory paper, one delicate botanical drawing, lots of air.",
+          "warm pale ivory paper, almost white, with a very fine subtle uncoated-paper texture and no background blocks or gradients; in the lower half ONE exceptionally " +
+            "delicate botanical motif — a slightly curved wild branch rising diagonally from the lower right toward the middle left with only a few small narrow leaves " +
+            "and one fine bare offshoot, rendered as an original refined drypoint drawing: thin irregular graphite lines, subtle muted-olive pigment, tiny natural " +
+            "imperfections, plus one small detached ochre leaf floating apart from it across a meaningful expanse of empty paper (a quiet trace of wind and absence); " +
+            "the motif airy and narrow, no more than a quarter of the cover area, never touching the text; no stock-vector branch, no dense foliage, blossoms, bouquet, " +
+            "photographs, people, birds, butterflies, frames, flourishes, watercolor washes, gold foil, shadows or stains", ["#f6f1e8", "#3a4a2a", "#c9962d"]),
+        textLayout:
+          "Deep muted olive-green lettering, all aligned to one LEFT margin at about 12% of the width. The small widely tracked author name near the top (about 12% of the " +
+          "height) in an elegant uppercase humanist sans; the title below (from about 24%) on 1–2 lines in a graceful medium-weight literary serif with gently calligraphic " +
+          "details, clear and substantial but only about two thirds of the width; directly beneath the title, after a generous gap, the tiny tracked genre label. " +
+          "Large untouched ivory between the typography and the motif.",
+      },
+      {
+        ...c("doku", "Soyut doku", "Abstract texture", "Fildişi kâğıt üstünde soyut suluboya; üst üçte bir boş.", "Abstract watercolor on ivory paper; upper third left empty.",
+          "an original nonrepresentational watercolor on warm ivory cotton paper: broad translucent washes (smoky blue-gray, faded indigo, muted dusty rose, one small " +
+            "earthy rust area) drifting diagonally across the lower two thirds and dissolving into untouched paper — traces carried away without depicting anything " +
+            "literally; authentic watercolor behavior (irregular feathered edges, pigment sediment, subtle blooms, overlapping transparent washes, dry-brush " +
+            "interruptions, exposed fibers), asymmetrical specific painterly shapes with genuine tonal depth; the upper third predominantly ivory with only extremely " +
+            "pale washes near its lower boundary; no landscape, horizon, sea, mountains, flowers, leaves, birds, faces, objects, digital gradients, marbled texture, " +
+            "borders, gold foil, splatters, heavy grunge or neon", ["#ece4d8", "#1f3350", "#b7707a"]),
+        textLayout:
+          "Deep ink-blue lettering entirely over the quiet ivory upper third, all aligned to one LEFT margin at about 10% of the width. Author near the top in small widely " +
+          "tracked uppercase humanist sans; the title below on 1–2 lines in an elegant medium-weight literary serif with subtle calligraphic character, substantial and " +
+          "legible but never overwhelming the painting; the small tracked genre label below the title after a generous gap; the wash begins farther below, clearly " +
+          "separated from all text.",
+      },
+      {
+        ...c("tipografik", "Tipografik şiir", "Typographic poetry", "Kısa bir şiir ve boşluğu kapağın kendisi olur.", "A short poem and its spacing become the cover.",
+          "typographic poetry: a flat muted single-color ground (dusty plum, deep moss, ink blue) with very subtle matte paper grain and NOTHING else — no imagery, " +
+            "illustration, photograph, branch, watercolor, symbol, border, ornament, oversized quotation marks, handwriting, shadows, embossing, gold foil or gradients; " +
+            "the composition is built entirely from the rhythm of language, typography and empty space", ["#4a2a3e", "#f3ead2", "#e8a9b4"], true),
+        noteAsText: true,
+        textLayout:
+          "Warm ivory lettering with one pale blush accent word. Upper quarter, LEFT-aligned about 9% from the edges: the small tracked uppercase author, beneath it the " +
+          "title on two lines in a refined medium-weight upright literary serif (modest, easily readable), then the tiny tracked genre label. The main expressive " +
+          "element is the excerpt in the central and lower-middle area, set larger in a beautifully drawn literary italic serif: break it across staggered lines — " +
+          "a phrase aligned left, the next indented noticeably to the right, a generous vertical pause of empty ground between the sentences, then the same again; " +
+          "one key word in pale blush, the rest ivory; normal readable letter spacing, grammatical reading order, no repeated words, every line within the margins, " +
+          "a generous empty lower margin. If no excerpt is supplied, set the title itself as the large staggered italic element instead.",
+      },
     ],
   },
   {
