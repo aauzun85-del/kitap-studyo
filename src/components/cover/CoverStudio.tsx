@@ -19,6 +19,7 @@ import {
   getTemplate,
   photoSlotMm,
   type CoverColors,
+  type PhotoLayout,
 } from "@/lib/cover/templates";
 import { STANDARD_PROFILES } from "@/lib/layout/standards";
 import {
@@ -224,7 +225,7 @@ export default function CoverStudio({
   // otomatik dolar; Renkler panelinden kapatılır/değiştirilir.
   const [spineBand, setSpineBand] = useState<string | null>(null);
   // Yazarın kendi fotoğrafı için yerleşim (anı/biyografi kurgusu): null = tam kapak.
-  const [photoLayout, setPhotoLayout] = useState<"framed" | "band" | null>(null);
+  const [photoLayout, setPhotoLayout] = useState<PhotoLayout | null>(null);
   // Yazarın kendi fotoğrafı (kapak görselinden AYRI katman; yuvaya oturur).
   const [photoImage, setPhotoImage] = useState<string | null>(null);
   // Fotoğrafın ölçülmüş yeri (mm) — yapay zekânın yeşil yer tutucusundan.
@@ -1044,7 +1045,7 @@ export default function CoverStudio({
     if (d.titlePos) setTitlePos(d.titlePos);
     if (d.brief) setBrief(d.brief);
     if (typeof d.spineBand === "string" || d.spineBand === null) setSpineBand(d.spineBand);
-    if (d.photoLayout === "framed" || d.photoLayout === "band") setPhotoLayout(d.photoLayout);
+    if (d.photoLayout === "framed" || d.photoLayout === "band" || d.photoLayout === "side") setPhotoLayout(d.photoLayout);
     if (typeof d.photoImage === "string") setPhotoImage(d.photoImage);
     if (d.photoRect) setPhotoRect(d.photoRect);
     if (typeof d.briefAppliedAt === "string") setBriefAppliedAt(d.briefAppliedAt);
@@ -1765,6 +1766,11 @@ export default function CoverStudio({
             // Bant: fotoğraf ön kapağın tepesinden (taşma dahil) yeşilin altına.
             const bottom = top + (cr.fy + cr.fh) * dh + pad;
             setPhotoRect({ x: spread.spineEnd, y: 0, w: spread.totalWidth - spread.spineEnd, h: bottom });
+          } else if (slotUsed.layout === "side") {
+            // Sağ alt: yeşilin sol-üst köşesinden sağ ve alt kenara (taşma dahil).
+            const x = Math.max(spread.spineEnd, left + cr.fx * dw - pad);
+            const y = top + cr.fy * dh - pad;
+            setPhotoRect({ x, y, w: spread.totalWidth - x, h: spread.totalHeight - y });
           } else {
             setPhotoRect({
               x: left + cr.fx * dw - pad,
@@ -2037,10 +2043,12 @@ export default function CoverStudio({
           // Fotoğraflı kapakta konsept cümlesi yerine "yuvayı boş bırak" tarifi.
           photoSlot,
           override: {
+            // Fotoğraflı konseptte zemin rengi konsepte aittir → ton seçimi komuta girmez.
             stylePrompt: photoSlot && concept.photo ? concept.photo.prompt : ov.stylePrompt,
-            dark: ov.dark,
-            tonePrompt: TONE_PROMPTS[ov.tone],
-            textLayout: ov.textLayout,
+            dark: photoSlot && concept.photo ? !!concept.dark : ov.dark,
+            tonePrompt: photoSlot && concept.photo ? undefined : TONE_PROMPTS[ov.tone],
+            // Fotoğraf yuvası varken konsept kendi "yuvalı" yazı düzenini verebilir.
+            textLayout: photoSlot && concept.photo?.textLayout ? concept.photo.textLayout : ov.textLayout,
           },
           text,
         });
@@ -2472,11 +2480,11 @@ export default function CoverStudio({
                 label={lang === "tr" ? "Görsel yerleşimi" : "Image layout"}
                 hint={
                   lang === "tr"
-                    ? "Kendi fotoğrafın için: çerçeveli portre ya da üstte fotoğraf + altta renkli bant. Zemin rengini Renkler panelinden değiştir."
-                    : "For your own photo: a framed portrait, or photo on top with a colored band below. Change the ground color in Colors."
+                    ? "Kendi fotoğrafın için: çerçeveli portre, üstte fotoğraf + altta renkli bant ya da sağ altta portre. Zemin rengini Renkler panelinden değiştir."
+                    : "For your own photo: a framed portrait, photo on top with a colored band below, or a portrait at the lower right. Change the ground color in Colors."
                 }
               >
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <SegButton active={!photoLayout} onClick={() => { setPhotoLayout(null); setPhotoRect(null); }}>
                     {lang === "tr" ? "Tam kapak" : "Full cover"}
                   </SegButton>
@@ -2485,6 +2493,9 @@ export default function CoverStudio({
                   </SegButton>
                   <SegButton active={photoLayout === "band"} onClick={() => { setPhotoLayout("band"); setPhotoRect(null); if (!photoImage) setCoverScope("front"); }}>
                     {lang === "tr" ? "Üstte + bant" : "Top + band"}
+                  </SegButton>
+                  <SegButton active={photoLayout === "side"} onClick={() => { setPhotoLayout("side"); setPhotoRect(null); if (!photoImage) setCoverScope("front"); }}>
+                    {lang === "tr" ? "Sağ altta" : "Lower right"}
                   </SegButton>
                 </div>
               </Field>

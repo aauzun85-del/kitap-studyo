@@ -26,9 +26,13 @@ export type CoverConcept = {
   /** Yazar KENDİ fotoğrafını yükleyebilir: kapağı yapay zekâ değil uygulama
    *  kurar ("framed" = çerçeveli portre, "band" = üstte fotoğraf + altta bant). */
   photo?: {
-    layout: "framed" | "band";
+    layout: "framed" | "band" | "side";
     bg: string;
     ink: string;
+    /** Fotoğraf varsayılan olarak siyah-beyaz mı (vars. true)? */
+    defaultMono?: boolean;
+    /** Fotoğraf yuvası varken konseptin yazı düzeninin yerine geçer. */
+    textLayout?: string;
     /** Yazar kendi fotoğrafını verdiyse konsept cümlesinin YERİNE geçer: kapak
      *  tasarlanır ama fotoğraf yuvası boş bırakılır (fotoğrafı uygulama oturtur). */
     prompt: string;
@@ -657,27 +661,124 @@ export const COVER_STANDARDS: CoverStandard[] = [
   {
     code: "K",
     name: { tr: "İş / ekonomi", en: "Business / economics" },
-    label: { tr: "İŞ", en: "BUSINESS" },
+    label: { tr: "İŞ / EKONOMİ", en: "BUSINESS / ECONOMICS" },
     concepts: [
-      c("ikon", "Düz renk + tek ikon", "Flat color + single icon", "Kalın sans, tek işaret.", "Bold sans, one mark.",
-        "flat bold color ground with one simple geometric icon, crisp and modern, lots of empty space", ["#1b2a41", "#f2e8d5", "#e76f51"], true),
-      c("grafik", "Grafik / veri motifi", "Graphic / data motif", "Çizgi, ok, ızgara.", "Lines, arrows, grid.",
-        "abstract data motif — rising lines, arrows, a clean grid — minimal, confident, two-color", ["#f2f2f2", "#15140f", "#2a9d8f"]),
-      c("portre", "Portre / otorite", "Portrait / authority", "Yazar fotoğrafı.", "Author photo.",
-        "professional portrait photograph with a clean neutral background and soft studio light", ["#e6e6e6", "#1b1b1b", "#3a6ea5"]),
+      {
+        ...c("ikon", "Düz renk + tek ikon", "Flat color + single icon", "Düz güçlü renk, kalın sans başlık, tek kavramsal ikon.", "Solid strong color, bold sans title, one conceptual icon.",
+          "a full-bleed deep single color (cobalt blue, forest green, charcoal) in flat matte ink with nearly imperceptible paper grain, and ONE elegant original flat " +
+            "graphic icon in the upper middle (around 28% of the height, about 48% of the width and only ~12% of the height) expressing the book's core idea as a " +
+            "single economical visual metaphor — e.g. a finely balanced lever: a long slender ivory beam on a small triangular fulcrum slightly off-center, with one " +
+            "small tangerine square on the short end (how one small decision shifts the balance); precise clean geometry in warm ivory with ONE restrained accent " +
+            "color, generous empty color around it; not a financial chart or technical diagram; no numbers, arrows, labels, currency signs, photographs, portraits, " +
+            "coins, banknotes, stock charts, skyscrapers, light bulbs, multiple icons, 3D objects, shadows, embossing or gradients", ["#0d1f8f", "#f6efdc", "#f26a1b"], true),
+        textLayout:
+          "Warm ivory lettering, LEFT-aligned with a 9% left margin; the top quarter stays airy. The tiny tracked genre label at the upper left. The title in the " +
+          "lower half, beginning around 51% of the height, on 1–2 left-aligned lines in an exceptionally well-drawn bold humanist sans (title case as supplied, not " +
+          "all caps; open counters, softened terminals; no condensed poster type, no cartoon rounding), about 76% of the width, same size on every line. Near the " +
+          "bottom a quiet two-column footer: the author in modest tracked uppercase sans on the left, the subtitle in small sans on the right broken into 2–3 short " +
+          "lines, both top-aligned with generous separation; no separating lines or panels.",
+      },
+      {
+        ...c("grafik", "Grafik / veri motifi", "Graphic / data motif", "Soyut bilgi tasarımı: olası yollar ve seçilen tek yol.", "Abstract information design: possible paths and the one chosen.",
+          "an abstract information-design motif (NOT an actual data visualization) on warm off-white paper with subtle fine grain: a delicate very pale square grid over " +
+            "the lower and right portions, thinning out toward the title area by fewer printed lines; several fine gray-green possible trajectories starting in a compact " +
+            "cluster near the lower left and diverging organically toward the right — smooth thin lines with gentle turns like alternative scenarios, some ending lower " +
+            "or bending sideways (uncertainty, not guaranteed growth); ONE slightly heavier burnt-orange trajectory in a graceful sweep ending in a single small filled " +
+            "circle near the upper right — the chosen course; flat matte inks, generous white space, about half the visual area; no arrowheads, extra dots, bars, " +
+            "numbers, axes, legends, percentages, currency symbols, candlesticks, giant arrows, photographs, coins, light bulbs, panels, gloss, shadows or the look of " +
+            "a presentation slide or dashboard", ["#f3eee3", "#12381f", "#e4701e"]),
+        textLayout:
+          "Asymmetric editorial layout, deep forest-green lettering on clear blank paper (the motif never runs behind text). The title near the upper LEFT (9% left " +
+          "margin, 12% top margin) on 1–2 left-aligned lines in an elegant bold Swiss-influenced humanist sans, about 68% of the width, same size on every line; " +
+          "below it, after generous space, the subtitle in small sans on two balanced lines. The author at the bottom left in medium-small uppercase sans with " +
+          "restrained tracking; the tiny genre label at the bottom right on the same baseline.",
+      },
+      {
+        ...c("portre", "Portre / otorite", "Portrait / authority", "Yazarın editoryal portresi; sakin, güven veren düzen.", "The author's editorial portrait; calm, trustworthy layout.",
+          "an authentic editorial author-portrait cover: an original photographic waist-up portrait of the (fictional) author on the RIGHT half, extending to the right " +
+            "and bottom edges, head beginning around 27% down — a distinctive real-looking face with natural skin texture, calm slight smile, looking at the viewer, " +
+            "shoulders slightly turned, dark tailored jacket over a simple light blouse or shirt, no conspicuous jewelry; soft window light from the left, muted " +
+            "realistic color, superb fabric and skin detail; the portrait blends seamlessly into a warm light-gray studio backdrop, and the left half is a clean warm " +
+            "off-white field with no dividing line or panel; approachable expertise, composure and clarity; no crossed-arm power pose, glamour retouching, celebrity " +
+            "resemblance, office furniture, laptops, bookshelves, props, charts, icons, handshakes, spotlights, vignettes, banners or gold foil", ["#e9e4dc", "#0f1b3d", "#b87333"]),
+        textLayout:
+          "Deep midnight-navy lettering, LEFT-aligned with a generous left margin, never overlapping the face. The tiny tracked genre label at the upper left; " +
+          "beginning around 23% down, the title on 1–2 left-aligned lines in a beautifully drawn bold humanist sans (title case, open counters), about 56% of the " +
+          "width; beneath it, after a clear interval, the subtitle in small sans on 2–3 balanced lines; near the lower left the author in substantial but secondary " +
+          "tracked uppercase sans with ONE short thin muted-copper rule above it; generous blank space between subtitle and author.",
+        photo: {
+          layout: "side",
+          bg: "#efeae2",
+          ink: "#0f1b3d",
+          defaultMono: false,
+          prompt:
+            "an authentic professional author-cover layout: a clean warm off-white matte field covering the whole cover with a subtle fine paper texture and nothing " +
+            "else except one short thin muted-copper rule; calm, composed and trustworthy; the lower right is reserved for the author's own portrait photograph (see " +
+            "LAYOUT), and the cover must look complete and balanced with a photograph there; no charts, icons, borders, banners, illustrations, gradients or gold foil",
+          textLayout:
+            "Deep midnight-navy lettering, LEFT-aligned with a generous left margin, never touching the photo placeholder. The tiny tracked genre label at the upper " +
+            "left; ABOVE the placeholder, in the top third, the title on 1–2 left-aligned lines in a beautifully drawn bold humanist sans (title case), up to about " +
+            "80% of the width; in the left column beside the placeholder, the subtitle in small sans on 2–4 short lines; near the lower left the author in " +
+            "substantial but secondary tracked uppercase sans with ONE short thin muted-copper rule above it.",
+        },
+      },
     ],
   },
   {
     code: "YF",
     name: { tr: "Çocuk", en: "Children's" },
-    label: { tr: "ÇOCUK", en: "CHILDREN" },
+    label: { tr: "", en: "" }, // çocuk kitabında kapakta tür etiketi yok
     concepts: [
-      c("karakter", "Karakter", "Character", "Tek sevimli kahraman.", "One lovable hero.",
-        "one lovable children's book character with an expressive face in a simple warm setting, soft hand-drawn style", ["#fff3d6", "#2b2b2b", "#ff8c42"]),
-      c("dunya", "Oyun dünyası", "Playful world", "Kalabalık, parlak sahne.", "Busy bright scene.",
-        "a playful imaginative world full of small delightful details — hills, clouds, little houses — bright cheerful colors", ["#dff3ff", "#2b2b2b", "#ffb703"]),
-      c("etkinlik", "Büyük yazılı etkinlik", "Big-type activity", "Etkinlik kitabı düzeni, bol boşluk.", "Activity-book layout, airy.",
-        "bright flat color ground with a few simple playful shapes at the edges, large empty center for big friendly typography", ["#ffe066", "#1a1a1a", "#06d6a0"]),
+      {
+        ...c("karakter", "Karakter", "Character", "Akılda kalan tek bir karakter; bol boşluk, el çizimi başlık.", "One memorable character; lots of air, hand-drawn title.",
+          "a publication-quality children's picture-book illustration in gouache and colored pencil on subtly textured warm ivory paper — confident shapes, selective " +
+            "dry-brush marks, sensitive color relationships; ONE small memorable character from the book (e.g. a curious little fox with a tiny satchel) with a " +
+            "distinctive tender personality (modest-sized lively eyes, no exaggerated grin), entire body in a slight three-quarter pose, absorbed in one small " +
+            "wonder (e.g. inspecting a single raindrop hanging from an enormous leaf that arches over him like a canopy); correct coherent anatomy; the character " +
+            "about 45% of the height in the lower-middle and right, a strong clear silhouette, one large simple element guiding the eye between title and " +
+            "character, a very spare ground patch; generous warm ivory negative space, no forest or scattered decorations; rich but restrained printed pigments; " +
+            "no other characters, stock clip art, emoji-flat vectors, oversized shiny eyes, plastic 3D mascots, neon colors, rainbows, frames, heavy outlines, " +
+            "crowded scenery or generic watercolor haze", ["#f6ecd9", "#1f4a56", "#e07a2f"]),
+        textLayout:
+          "The title integrated into the clear upper-left and upper-middle negative space in distinctive dark hand-drawn ROUNDED lettering (one lettering family, " +
+          "one color): the first word or name as the largest line, the rest below on 1–2 compact balanced lines slightly smaller; substantial, readable at " +
+          "thumbnail size, gentle controlled baseline movement, Turkish letters exact, no mixed scripts, no stretched or multicolored letters, generous separation " +
+          "from the illustration. The author discreetly along the bottom left in small dark uppercase sans. No genre label, age badge or other words.",
+      },
+      {
+        ...c("dunya", "Oyun dünyası", "Playful world", "Ayrıntılı ama düzenli bir oyun dünyası; başlık ortadaki aydınlık açıklıkta.", "A detailed but organized play world; the title in a sunlit central clearing.",
+          "a lively imaginative play world in richly layered gouache and colored pencil with tactile paper grain and beautifully designed silhouettes — bright, joyful, " +
+            "artistically sophisticated children's publishing: the book's main character in the lower-middle foreground as the most noticeable figure (warm color, " +
+            "scale, placement), caught in a moment of delight; around it an inviting, intricate but clearly ORGANIZED miniature world built from natural materials " +
+            "(e.g. a hollow-tree house with a round window, a rope bridge between platforms, a narrow turquoise stream with stepping stones) and at most three " +
+            "supporting animal characters each doing ONE readable activity; the world forms an irregular organic frame around a large quiet sunlit buttery-cream " +
+            "clearing in the central upper-middle (about 30–55% down), integrated into the scene, never a pasted label or rectangle; nothing crosses the clearing; " +
+            "fresh turquoise, sage and emerald greens, buttery cream light, warm coral accents, muted ochre wood; depth by painted overlap, not lens blur; no dozens " +
+            "of incidental animals, clip art, plastic 3D rendering, glassy oversized eyes, neon rainbow colors, repetitive foliage, chaotic clutter, borders or banners",
+          ["#f4e9b8", "#17485a", "#e07a2f"]),
+        textLayout:
+          "The title sits INSIDE the sunlit central clearing (about 30–55% down), embedded in the world rather than in an empty top header: 2–3 optically balanced " +
+          "centered lines in ONE family of beautifully hand-drawn substantial rounded lettering, deep petrol blue, lively but controlled contours, Turkish letters " +
+          "exact, no outlines or shadows, nothing crossing the letters. The author discreetly at the bottom right on a calm light patch of ground in small clean " +
+          "deep-petrol uppercase sans. No genre label, badges or other words.",
+      },
+      {
+        ...c("etkinlik", "Büyük yazılı etkinlik", "Big-type activity", "Etkinlik kitabı: renkli başlık panosu, küçük etkinlik örnekleri, maskot.", "Activity book: colored title panel, small activity samples, a mascot.",
+          "a premium children's activity-workbook cover — a strong graphic composition, not a story scene: warm pale butter-yellow paper ground with generous margins; " +
+            "a broad deep petrol-blue irregular rectangular title field with very gently rounded corners and subtle printed texture occupying the upper-middle ~48%; " +
+            "below it an open, carefully art-directed arrangement of three small activity motifs separated by comfortable space (not boxed screenshots): e.g. two " +
+            "painted leaves of the same shape in different colors joined by a delicate dotted curve (matching), a simple sequence of five large colored shapes ending " +
+            "in one empty outlined shape (pattern completion), and the book's small mascot character at the lower right (about 24% of the height, never larger than " +
+            "the title) looking toward the shapes and holding a short pencil; hand-painted gouache and colored-pencil character and objects with restrained " +
+            "dry-brush texture, flat ink colors, subtle paper grain; harmonious petrol blue, warm yellow, coral, apricot and sage; cheerful and refined, not " +
+            "infantile, not a school textbook; no numbers or lettering inside the motifs, complex mazes, scribbles, clutter, photographs, glossy 3D characters, neon " +
+            "rainbow palette, stickers, extra badges, borders or drop shadows", ["#f7e08a", "#17485a", "#f26b5b"]),
+        textLayout:
+          "The title dominates, set INSIDE the petrol title field on 2–3 LEFT-aligned lines in ONE family of beautiful large substantial rounded sans lettering: warm " +
+          "ivory, with the LAST line in warm apricot; the middle/key line largest; never distorted or rotated, readable as a tiny thumbnail. If a subtitle is given, " +
+          "set it small in ivory sans beneath the title inside the field. The author at the bottom left in small dark-petrol uppercase sans. Do NOT invent a series " +
+          "label, age badge or any other words — only the supplied text appears.",
+      },
     ],
   },
   {

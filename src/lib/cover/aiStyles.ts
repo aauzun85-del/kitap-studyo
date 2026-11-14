@@ -339,7 +339,7 @@ export type LayeredText = {
 // Yazarın kendi fotoğrafının oturacağı yuva (tam tuval mm'si). Model burayı
 // BOŞ bırakır; fotoğrafı uygulama tam bu dikdörtgene yerleştirir.
 export type PhotoSlot = {
-  layout: "framed" | "band";
+  layout: "framed" | "band" | "side";
   xMm: number;
   yMm: number;
   wMm: number;
@@ -385,8 +385,10 @@ export function buildLayeredPrompt(opts: {
   // Fotoğraf yuvası varsa sahne = yazarın fotoğrafı; ayrıca sahne çizdirme.
   if (desc && !opts.photoSlot) lines.push(`SCENE: ${desc}`);
   lines.push(
-    `STYLE: ${style.prompt}. Gallery-quality, striking and memorable; rich detail and ` +
-      "depth concentrated in the focal subject, elegant restraint everywhere else.",
+    `STYLE: ${style.prompt}. Gallery-quality, striking and memorable; ` +
+      (opts.photoSlot
+        ? "elegant restraint throughout."
+        : "rich detail and depth concentrated in the focal subject, elegant restraint everywhere else."),
   );
   lines.push("LAYOUT (strict, follow exactly):");
   const ps = opts.photoSlot;
@@ -407,7 +409,14 @@ export function buildLayeredPrompt(opts: {
             "inside it. It will be replaced by the author's real photograph (with a fine keyline), so keep all text and " +
             "elements outside it with a small margin, and compose the cover around it as if a photograph sits there. Use " +
             "this green ONLY in the placeholder, nowhere else. Do NOT paint any portrait, face or figure."
-        : `- PHOTO PLACEHOLDER (most important rule): on the front cover, everything from the top edge down to ` +
+        : ps.layout === "side"
+          ? `- PHOTO PLACEHOLDER (most important rule): fill the rectangle from ${pct(x1)} of the width to the ` +
+            `right edge and from ${pct(y1)} of the height down to the bottom edge with a perfectly uniform flat pure ` +
+            "chroma-key green (#00FF00) — sharp straight left and top edges, no gradient, no texture, no frame, no " +
+            "shadow, nothing inside it. It will be replaced by the author's real portrait photograph bleeding off the " +
+            "right and bottom edges, so keep all text and elements outside it with a small margin and compose the cover " +
+            "as if a portrait sits there. Use this green ONLY in the placeholder. Do NOT paint any portrait, face or figure."
+          : `- PHOTO PLACEHOLDER (most important rule): on the front cover, everything from the top edge down to ` +
             `${pct(y2)} of the height (from ${pct(x1)} to ${pct(x2)} of the width) is one perfectly uniform flat pure ` +
             "chroma-key green (#00FF00) field — sharp straight lower edge, no gradient, no texture, nothing drawn. It will " +
             "be replaced entirely by the author's real photograph. The solid band starts exactly at its lower edge and all " +
@@ -430,8 +439,11 @@ export function buildLayeredPrompt(opts: {
         "low-detail and uniform in tone — nothing important sits or crosses there.",
     );
     lines.push(
-      `- The right ${pct(1 - spineEnd)} of the width is the FRONT COVER section: the main ` +
-        "subject lives here, horizontally centered within this section.",
+      `- The right ${pct(1 - spineEnd)} of the width is the FRONT COVER section: ` +
+        (ps
+          ? "it carries only the ground, the typography and the photo placeholder exactly where " +
+            "specified above — no other subject; do not move, resize or center the placeholder."
+          : "the main subject lives here, horizontally centered within this section."),
     );
   }
   const tx = opts.text;
@@ -446,7 +458,8 @@ export function buildLayeredPrompt(opts: {
       tx.extra ? `excerpt (set exactly, line breaks as given) ${q(tx.extra)}` : "",
     ].filter(Boolean);
     lines.push(
-      `- Typography (strict): ${opts.override.textLayout} Text elements: ${items.join("; ")}. ` +
+      `- Typography (strict${opts.wrap ? "; every position below is relative to the FRONT COVER section, never the back cover or spine" : ""}): ` +
+        `${opts.override.textLayout} Text elements: ${items.join("; ")}. ` +
         "Correct Turkish diacritics (İ ı Ş ş Ğ ğ Ü ü Ö ö Ç ç), optical kerning, generous margins; " +
         "image and typography share one purposeful design.",
     );
@@ -483,8 +496,12 @@ export function buildLayeredPrompt(opts: {
     );
   }
   lines.push(
-    `- Logo zone: the bottom ${pct(logoBand)} of ${front} must be light-toned, plain and ` +
-      "free of detail — a publisher logo and the author name go there.",
+    ps?.layout === "side"
+      ? `- Logo zone: the bottom ${pct(logoBand)} of ${front}, only the part to the LEFT of the green ` +
+          "placeholder, must be plain and free of detail — a publisher logo goes at the lower left; keep " +
+          "the author name above this strip. The placeholder itself still runs down to the bottom edge."
+      : `- Logo zone: the bottom ${pct(logoBand)} of ${front} must be light-toned, plain and ` +
+          "free of detail — a publisher logo and the author name go there.",
   );
   if (!ps) lines.push(
     `- Main subject: between ${pct(focalTop)} and ${pct(focalBottom)} of the height of ` +

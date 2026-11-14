@@ -27,6 +27,8 @@ export async function spineColorFromImage(dataUrl: string): Promise<string | nul
     const px: { r: number; g: number; b: number; l: number }[] = [];
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i], gg = data[i + 1], b = data[i + 2];
+      // Fotoğraf yuvasının krom yeşili (findChromaRect ile aynı ölçüt) palete girmesin.
+      if (gg > 150 && gg - r > 90 && gg - b > 90) continue;
       px.push({ r, g: gg, b, l: 0.2126 * r + 0.7152 * gg + 0.0722 * b });
     }
     if (px.length === 0) return null;

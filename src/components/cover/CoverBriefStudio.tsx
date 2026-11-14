@@ -111,7 +111,8 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
     try {
       const payload: CoverBrief = {
         ...brief,
-        photo: usingPhoto ? { mono: brief.photo?.mono ?? true } : undefined,
+        // Ton: kullanıcı seçtiyse o, yoksa seçili konseptin varsayılanı (gösterilenle aynı).
+        photo: usingPhoto ? { mono } : undefined,
         skipped: mode === "skip" ? true : undefined,
         createdAt: new Date().toISOString(),
       };
@@ -142,7 +143,8 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
   const photoMode = currentConcept.photo?.layout ?? null;
   const usingPhoto = !!photoMode && !!photoPreview;
   const textBy: "ai" | "app" = brief.textBy ?? "ai";
-  const mono = brief.photo?.mono ?? true;
+  // Varsayılan: anı/biyografide siyah-beyaz; iş kitabı portresinde renkli.
+  const mono = brief.photo?.mono ?? currentConcept.photo?.defaultMono ?? true;
   // Seçili konsept notu kapağa birebir basıyorsa (şiir dizeleri) alanın adı değişir.
   const noteIsText = !!currentConcept.noteAsText && textBy === "ai";
 
@@ -155,7 +157,6 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
       await saveBriefPhoto(projectId, p.dataUrl);
       setPhotoPreview(p.dataUrl);
       setPhotoWidth(p.width);
-      patch({ photo: { mono } });
     } catch {
       setError(tr ? "Fotoğraf okunamadı — JPG ya da PNG dene." : "Couldn't read the photo — try a JPG or PNG.");
     } finally {
@@ -308,6 +309,10 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
                 ? tr
                   ? "Yazarın portresini yükle: kapağı yapay zekâ tasarlar (zemin, yazılar, arka kapak) ve ortada bir çerçeve yeri boş bırakır; senin fotoğrafın o yere birebir oturur — yüz değişmez."
                   : "Upload the author's portrait: AI designs the cover (ground, type, back cover) leaving a framed window empty; your photo is placed there exactly — the face never changes."
+                : photoMode === "side"
+                  ? tr
+                    ? "Yazarın portresini yükle: yapay zekâ başlığı, yazıları ve arka kapağı tasarlar, ön kapağın sağ altını boş bırakır; senin fotoğrafın o yere birebir oturur — yüz değişmez."
+                    : "Upload the author's portrait: AI designs the title, text and back cover leaving the lower right of the front cover empty; your photo is placed there exactly — the face never changes."
                 : tr
                   ? "Aile albümünden bir fotoğraf yükle (bir sokak, bir ev, bir an): yapay zekâ alttaki renkli bandı, yazıları ve arka kapağı tasarlar; fotoğrafın ön kapağın üst kısmına birebir oturur."
                   : "Upload a family-album photo (a street, a house, a moment): AI designs the colored band, the type and the back cover; your photo fills the top of the front cover exactly."}

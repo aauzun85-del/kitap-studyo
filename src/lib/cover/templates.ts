@@ -49,13 +49,18 @@ export type TemplateCtx = {
   // Yazarın kendi fotoğrafıyla kurulan kapak düzeni (anı/biyografi): yazılar
   // fotoğrafın yerine göre sabit düzende çizilir (bkz. drawPhotoLayoutText).
   photoLayout?: PhotoLayout | null;
+  // Fotoğrafın ölçülmüş gerçek yeri (mm); yoksa düzenin varsayılan yuvası.
+  photoRect?: { x: number; y: number; w: number; h: number } | null;
 };
 
 // Fotoğraflı kapak düzenleri ve geometrisi (kitap boyunun/eninin oranları).
 // CoverCanvas fotoğrafı, buradaki yazı düzeni de metinleri AYNI ölçülerle yerleştirir.
-export type PhotoLayout = "framed" | "band";
+export type PhotoLayout = "framed" | "band" | "side";
 export const PHOTO_FRAMED = { w: 0.65, h: 0.43, top: 0.31, keylineGapMm: 1.6 };
 export const PHOTO_BAND = { top: 0.64 };
+// "side": yazar portresi ön kapağın SAĞ ALTINDA; sağ ve alt kenardan taşar.
+// Başlık üstte (yuvanın üstünde), alt başlık + yazar sol sütunda.
+export const PHOTO_SIDE = { left: 0.42, top: 0.34 };
 
 /** Fotoğraf yuvası (tam tuval mm'si): yapay zekâya "burayı boş bırak" diye
  *  verilir, uygulama fotoğrafı tam buraya oturtur. */
@@ -71,6 +76,11 @@ export function photoSlotMm(
       w,
       h: d.bookHeight * PHOTO_FRAMED.h,
     };
+  }
+  if (layout === "side") {
+    const x = d.spineEnd + d.bookWidth * PHOTO_SIDE.left;
+    const y = d.topTrim + d.bookHeight * PHOTO_SIDE.top;
+    return { x, y, w: d.totalWidth - x, h: d.totalHeight - y };
   }
   return {
     x: d.spineEnd,
@@ -148,6 +158,7 @@ type TextOpts = {
   lineHeight?: number;
   fontFamily?: string; // tuval font yığını (vars. FONT)
   align?: "center" | "left"; // vars. center
+  shrinkToFit?: boolean; // en uzun kelime kutudan genişse puntoyu küçült
   editId?: string; // sürüklenebilir nesne kimliği (title/author/subtitle)
 };
 
@@ -175,6 +186,16 @@ function centeredText(ctx: TemplateCtx, text: string, o: TextOpts) {
     selectable: false,
     evented: false,
   });
+  if (o.shrinkToFit) {
+    const maxPx = px(o.maxWidthMm);
+    const w = t.width ?? 0;
+    if (w > maxPx + 0.5) {
+      // fabric kutuyu en uzun kelimeye göre büyüttü → puntoyu oranla küçült,
+      // genişliği sütuna geri çek ve yeniden ölç.
+      t.set({ fontSize: (t.fontSize ?? px(o.sizeMm)) * (maxPx / w) * 0.98, width: maxPx });
+      t.initDimensions();
+    }
+  }
   canvas.add(t);
   return t;
 }
@@ -452,6 +473,8 @@ function titlePanel(ctx: TemplateCtx, yTopMm: number, hMm: number) {
 // framed: başlık üstte ortalı → alt başlık → [fotoğraf] → yazar → tür etiketi.
 // band:   fotoğraf üst %64; alt bantta sola dayalı yazar → başlık → alt başlık,
 //         tür etiketi sağ altta.
+// side:   tür etiketi + başlık üstte sola dayalı; fotoğraf sağ altta; sol
+//         sütunda alt başlık, en altta yazar.
 function drawPhotoLayoutText(ctx: TemplateCtx, r: TemplateRecipe) {
   const { d, content, colors } = ctx;
   const titleFont = fontFamilyOf(r.titleFontId);
@@ -519,6 +542,81 @@ function drawPhotoLayoutText(ctx: TemplateCtx, r: TemplateRecipe) {
         upper: true,
         fontFamily: sansFont,
         editId: "genreLabel",
+      });
+    }
+    return;
+  }
+
+  if (ctx.photoLayout === "side") {
+    const leftMm = d.spineEnd + d.bookWidth * 0.08;
+    const fullW = d.frontEnd - d.bookWidth * 0.08 - leftMm;
+    // Sol sütun: fotoğrafın (ölçülmüş ya da varsayılan) soluna kadar, arada küçük boşluk.
+    const slot = ctx.photoRect ?? photoSlotMm(d, "side");
+    const colW = Math.max(d.bookWidth * 0.2, slot.x - leftMm - 3);
+    let y = d.topTrim + d.bookHeight * 0.07;
+    if (content.genreLabel) {
+      const g = centeredText(ctx, content.genreLabel, {
+        cx: leftMm,
+        leftMm,
+        align: "left",
+        top: y,
+        maxWidthMm: fullW,
+        sizeMm: Math.max(d.bookWidth * 0.024, 2.3),
+        color: colors.ink,
+        weight: "600",
+        spacing: 380,
+        upper: true,
+        fontFamily: sansFont,
+        editId: "genreLabel",
+      });
+      y += pxToMm(ctx, g.height ?? 0) + gap * 2.4;
+    }
+    const title = centeredText(ctx, content.title || " ", {
+      ...titleBase,
+      cx: leftMm,
+      leftMm,
+      align: "left",
+      top: y,
+      maxWidthMm: fullW,
+      sizeMm: d.bookWidth * 0.1 * (r.titleScale ?? 1),
+    });
+    // Başlık fotoğrafın ÜSTÜNDE kalsın: uzun/iri başlık taşıyorsa puntoyu küçült.
+    const limitPx = ctx.px(slot.y - gap);
+    for (let i = 0; i < 12 && ctx.px(y) + (title.height ?? 0) > limitPx; i++) {
+      title.set({ fontSize: (title.fontSize ?? 0) * 0.93 });
+      title.initDimensions();
+    }
+    title.setCoords?.();
+    if (content.subtitle) {
+      centeredText(ctx, content.subtitle, {
+        shrinkToFit: true,
+        cx: leftMm,
+        leftMm,
+        align: "left",
+        top: slot.y + d.bookHeight * 0.03,
+        maxWidthMm: colW,
+        sizeMm: Math.max(d.bookWidth * 0.03, 2.7),
+        color: colors.ink,
+        weight: "400",
+        fontFamily: sansFont,
+        editId: "subtitle",
+      });
+    }
+    if (content.author) {
+      centeredTextBottom(ctx, content.author, {
+        shrinkToFit: true,
+        cx: leftMm,
+        leftMm,
+        align: "left",
+        bottom,
+        maxWidthMm: colW,
+        sizeMm: Math.max(d.bookWidth * 0.042, 3.3),
+        color: colors.ink,
+        weight: "700",
+        spacing: 160,
+        upper: true,
+        fontFamily: sansFont,
+        editId: "author",
       });
     }
     return;

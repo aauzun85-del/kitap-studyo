@@ -36,7 +36,7 @@ export type CoverDraft = {
   // Sırt bandı rengi (hex) ya da null/yok = bant yok.
   spineBand?: string | null;
   // Yazarın kendi fotoğrafı için yerleşim (çerçeveli portre / üstte + bant).
-  photoLayout?: "framed" | "band" | null;
+  photoLayout?: "framed" | "band" | "side" | null;
   // Yazarın kendi fotoğrafı: yapay zekânın kapakta BOŞ bıraktığı yere oturur
   // (kapak görseli = coverImage ayrı kalır).
   photoImage?: string | null;

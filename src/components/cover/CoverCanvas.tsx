@@ -729,6 +729,8 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
         titlePos,
         authorPos,
         photoLayout: images.cover || images.photo ? (images.photoLayout ?? null) : null,
+        // Fotoğrafın ölçülmüş yeri → yazı düzeni sütunu ona göre kurar.
+        photoRect: images.photo ? (images.photoRect ?? null) : null,
       };
 
       // 1) Zemin rengi (editId "background"). Katman panelinden gizlenmişse görünmez yap.
@@ -981,7 +983,17 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       if (images.logo) {
         const logo = await fabric.FabricImage.fromURL(images.logo);
         if (disposed || !fabricCanvasRef.current) return;
-        const targetWmm = spread.bookWidth * (images.logoSize / 100);
+        // "side" düzeni: portre sağ altta → alt logo sol sütuna alınır ve yuvanın
+        // soluna sığacak kadar küçültülür (yoksa portrenin üstüne biner).
+        const sideSlot =
+          ctx.photoLayout === "side" && images.logoPos !== "top"
+            ? ((images.photo ? images.photoRect : null) ?? photoSlotMm(spread, "side"))
+            : null;
+        const sideLeftMm = spread.spineEnd + spread.bookWidth * 0.08;
+        const baseWmm = spread.bookWidth * (images.logoSize / 100);
+        const targetWmm = sideSlot
+          ? Math.min(baseWmm, Math.max(sideSlot.x - sideLeftMm - 3, 5))
+          : baseWmm;
         const lscale = px(targetWmm) / (logo.width ?? 1);
         // Logonun yüksekliğini (mm) en/boy oranından bul; güvenli çizgiye HİZALA:
         // alt logo → alt kenarı alt güvenli çizgide, üst logo → üst kenarı üst
@@ -994,7 +1006,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
         logo.set({
           originX: "center",
           originY: "center",
-          left: px(spread.frontCenter),
+          left: px(sideSlot ? sideLeftMm + targetWmm / 2 : spread.frontCenter),
           top: px(yMm),
           scaleX: lscale,
           scaleY: lscale,
@@ -1322,7 +1334,8 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
         const objs2 = canvas.getObjects() as unknown as BoxObj[];
         const titleO = objs2.find((o) => o.editId === "title");
         const subO = objs2.find((o) => o.editId === "subtitle");
-        if (titleO && subO && !positionsRef.current["subtitle"]) {
+        // Fotoğraf düzenlerinde alt başlık bilerek başlığın ALTINDA durur → bu koruma uygulanmaz.
+        if (titleO && subO && !ctx.photoLayout && !positionsRef.current["subtitle"]) {
           const tr = titleO.getBoundingRect?.(true, true);
           const sr = subO.getBoundingRect?.(true, true);
           if (tr && sr && typeof subO.top === "number") {
