@@ -148,12 +148,46 @@ export const COVER_STANDARDS: CoverStandard[] = [
     name: { tr: "Felsefe", en: "Philosophy" },
     label: { tr: "FELSEFE", en: "PHILOSOPHY" },
     concepts: [
-      c("tipografik", "Tipografik", "Typographic", "Yalnız yazı, güçlü düzen.", "Type only, strong grid.",
-        "plain muted ground with a faint grid or rule texture, no imagery — a typographic cover where the title is the design", ["#ece9e3", "#15140f", "#8c1d18"]),
-      c("bust", "Klasik büst / gravür", "Classical bust / engraving", "Antik heykel, çizgi.", "Antique statue, line.",
-        "classical marble bust rendered as a fine line engraving or soft studio photograph, neutral stone tones, timeless", ["#f0ede6", "#222", "#5a6b7a"]),
-      c("sembol", "Minimal sembol", "Minimal symbol", "Tek geometrik işaret.", "One geometric mark.",
-        "one minimal geometric mark — a circle, a cut line, a fold — on a calm ground, extremely restrained", ["#f7f5f1", "#141414", "#3a6ea5"]),
+      {
+        ...c("tipografik", "Tipografik", "Typographic", "Yalnız yazı; başlıkta kasıtlı hizalama oyunu ve boşluk.", "Type only; a deliberate alignment gesture and empty space in the title.",
+          "typography is the entire image: a warm pale limestone paper ground with very subtle natural uncoated-paper grain and NOTHING else — no illustration, icon, " +
+            "figurative imagery, busts, statues, brains, light bulbs, question marks, borders, flourishes or geometric symbols; flat printed colors (near-black ink plus " +
+            "one deep ultramarine accent), no gradients, no shadows, no embossing; an understated contemporary European literary publishing sensibility", ["#ece6d8", "#15140f", "#0b2a8a"]),
+        textLayout:
+          "Generous outer margins (about 9% of the width), everything LEFT-aligned on the same margin. Author near the upper left in small beautifully tracked uppercase " +
+          "humanist sans. The title occupies the middle of the cover with an intellectually engaging gesture: set it in a refined editorial serif, its most important " +
+          "word dramatically larger and near-black, and let the final syllable of that word be displaced toward the right in deep ultramarine (same size), ending at the " +
+          "right margin with untouched paper between — language approaching an edge; the lines stay one connected title with impeccable kerning, no hyphen, no cut " +
+          "letters, dotless Turkish ı preserved. The subtitle well below the title in two small quiet sans lines; the tiny tracked genre label at the bottom left. " +
+          "The asymmetric layout must feel optically balanced.",
+      },
+      {
+        ...c("bust", "Klasik büst / gravür", "Classical bust / engraving", "Koyu zemin üzerine fildişi mürekkeple gravür büst; modern kırpım.", "Ivory-ink engraved bust on a deep ground; bold modern crop.",
+          "a large original engraved classical marble bust of an anonymous ancient philosopher in contemplative three-quarter profile, occupying the lower two thirds and " +
+            "weighted to one side (shoulder and pedestal may run off the edges, face fully visible) — an expert nineteenth-century copperplate drawing printed in warm " +
+            "bone-ivory ink on a full-bleed deep oxblood burgundy (or another single deep) ground with restrained matte ink grain: meticulous curved hatching, fine " +
+            "cross-hatching, engraved stippling, worn stone, articulated neck and shoulders; one subtle conceptual intervention where the dense contours near the back of " +
+            "the head separate into a few unfinished lines fading into the ground (the limit of knowledge); the opposite side stays a calm open field for text; " +
+            "no photographic rendering, no smooth CGI statue, no cartoon outlines, no columns, temples, laurels, scrolls, light bulbs, question marks, frames, metallic " +
+            "effects, fake aging stains or collage", ["#4a0f14", "#efe6d6", "#b87333"], true),
+        textLayout:
+          "Warm bone-ivory lettering, LEFT-aligned with generous margins, all in the calm top third / left field, never over the engraving. Author at the upper left in " +
+          "small widely tracked uppercase humanist sans; the title on two lines in a large beautiful editorial serif, second line modestly larger, confident and " +
+          "carefully kerned; the subtitle beneath the title in two small clean sans lines; the tiny tracked genre label at the bottom left. Hierarchy: title, engraved " +
+          "face, author and subtitle.",
+      },
+      {
+        ...c("sembol", "Minimal sembol", "Minimal symbol", "Tek geometrik işaret, tek vurgu rengi, bol boşluk.", "One geometric mark, one accent color, lots of space.",
+          "a single minimal geometric symbol on a full-bleed muted single-color ground (sage green, limestone, dusty blue) like softly pigmented uncoated book paper with very " +
+            "subtle fine grain; the symbol in deep almost-black ink about 45–50% of the width, placed in the middle-to-lower area: one precise, visually simple emblem " +
+            "with a quiet conceptual twist (an almost complete circle with a small deliberate opening and one slender burnt-orange line passing through it — thought moving " +
+            "beyond the boundary of the known; or a comparable single geometric gesture), clean confident strokes, no arrowheads, interior the same as the ground; " +
+            "flat ink colors, one small warm accent; no eye, compass, clock, orbiting dots, maze, statues, faces, landscapes, photographs, borders, shadows, bevels or glow", ["#9fae8a", "#0f2a1a", "#d9682b"]),
+        textLayout:
+          "Deep forest-green (near-black) lettering on a disciplined CENTRAL axis with generous margins. Author at the top in small widely tracked uppercase humanist sans; " +
+          "the title on two centered lines in a sophisticated medium-weight contemporary serif, substantial yet compact, occupying roughly the upper quarter with ample air; " +
+          "the subtitle centered beneath the symbol in two small refined sans lines with substantial breathing room; the tiny tracked genre label at the bottom center.",
+      },
     ],
   },
   {
