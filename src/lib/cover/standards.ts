@@ -551,14 +551,54 @@ export const COVER_STANDARDS: CoverStandard[] = [
   {
     code: "FU",
     name: { tr: "Hiciv / mizah", en: "Satire / humour" },
-    label: { tr: "HİCİV", en: "SATIRE" },
+    label: { tr: "HİCİV / MİZAH", en: "SATIRE / HUMOUR" },
     concepts: [
-      c("gravur", "Gravür + sert yazı", "Engraving + sharp type", "Züppeler düzeni: gravür + keskin serif.", "Engraving + crisp serif.",
-        "satirical period engraving of a character or scene, fine cross-hatching, single ink on cream paper, witty", ["#efe6d2", "#2a241c", "#8a2f1f"]),
-      c("karikatur", "Karikatür", "Caricature", "Çizgi, abartı.", "Line, exaggeration.",
-        "bold caricature illustration with exaggerated features, confident ink line and flat color, playful", ["#fff5d6", "#1a1a1a", "#e8552d"]),
-      c("tipografik", "Tipografik şaka", "Typographic joke", "Yazı oyunlu, renkli.", "Playful type, color.",
-        "bright flat color ground with a single small playful icon, lots of empty space for witty typography", ["#ffd166", "#1a1a1a", "#ef476f"]),
+      {
+        ...c("gravur", "Gravür + sert yazı", "Engraving + forceful type", "Ciddi gravür portre + absürt bir ayrıntı; kırmızı-siyah güçlü başlık.", "Serious engraved portrait + one absurd detail; forceful red-and-black title.",
+          "one original nineteenth-century satirical copperplate illustration in the lower half on warm ivory uncoated paper (clean, subtle grain, rich black engraved " +
+            "lines): a pompous fictional figure tied to the book's target of satire, drawn with the full seriousness of fine engraved portraiture, with ONE elegantly " +
+            "understated absurd proportion or detail carrying the joke (e.g. a self-satisfied gentleman in an extravagant frock coat sitting very upright on an absurdly " +
+            "small plain stool, chin lifted, hands solemnly on his knees); the entire figure visible with ample ivory around it, slightly right of center, a small " +
+            "hatched ground shadow, no scene background; fine curved hatching and delicate cross-hatching, natural anatomy, a fictional face not based on any real " +
+            "person; the joke clear but not grotesque; no crown, throne, medals, extra props, extra people, speech bubbles, slapstick, colorful caricature, borders, " +
+            "corner flourishes, sepia stains, faux aging, gold foil or vector-cartoon look", ["#efe6d2", "#111111", "#c8102e"]),
+        textLayout:
+          "LEFT-aligned with generous margins, in the upper ~38%. Author at the upper left in small tracked black uppercase sans; below it an emphatic title of 2–3 " +
+          "lines in a masterfully spaced bold condensed grotesque uppercase face forming one compact block without stretching letters — black, with ONE key word/line " +
+          "in flat deep vermilion; crisp and disciplined, Turkish dots and accents exact, no distressed or bubble letters; breathing room beneath the title before " +
+          "the engraving; the tiny tracked genre label at the bottom left in black, clear of the figure.",
+      },
+      {
+        ...c("karikatur", "Karikatür", "Caricature", "Elle çizilmiş editoryal karikatür; tek, akıllı bir görsel şaka.", "Hand-drawn editorial caricature; one smart visual joke.",
+          "an original hand-drawn editorial caricature on a flat muted single-color paper ground (butter yellow, pale mint, dusty peach) with very subtle matte texture: " +
+            "ONE fictional pompous contemporary figure tied to the book's target of satire, caught in a single clear absurd situation that IS the joke (e.g. a man " +
+            "ceremoniously carrying a framed portrait of himself, the portrait even prouder than he is); elegant caricature proportions (small body, slightly oversized " +
+            "head, exaggerated nose, raised chin, thin self-satisfied smile), no resemblance to any real person, coherent hands; the entire figure visible in the lower " +
+            "~60%, slightly right of center, generous empty space, a tiny ink ground mark, no room or scenery; confident slightly irregular black pen lines, selective " +
+            "flat gouache fills, a few dry-brush accents, lots of open paper — expert magazine illustration; limited palette (charcoal ink, one dusty clothing color, " +
+            "restrained brick-red accents, warm ivory); no vector clip art, 3D cartoon, children's-book look, crowds, extra props, medals, crowns, money, speech " +
+            "balloons, sound effects, borders or writing inside the picture", ["#f2d98a", "#1f1f1f", "#b23a2a"]),
+        textLayout:
+          "LEFT-aligned compact block in the upper third. Author at the upper left in small tracked charcoal uppercase humanist sans; below it the title on 2–3 " +
+          "left-aligned lines in a substantial beautifully spaced condensed slab-serif display face with slightly softened square serifs — charcoal, with ONE key " +
+          "word/line in brick red; mature and highly readable, not bubbly or graffiti-like, never overlapping the illustration; the tiny tracked genre label at the " +
+          "bottom left in charcoal sans.",
+      },
+      {
+        ...c("tipografik", "Tipografik şaka", "Typographic joke", "Şaka yazının ölçeğinde: bir sözcük şişer, ötekiler kenara itilir.", "The joke is in the scale: one word inflates, the rest are pushed aside.",
+          "a typographic joke where the spatial hierarchy itself is the satire: a flat saturated single-color paper ground (cobalt blue, tomato red, emerald) with very " +
+            "subtle matte print texture and NOTHING else — no characters, portraits, caricatures, engravings, icons, crowns, speech balloons, frames, stripes, " +
+            "photographic textures, gradients, shadows, bevels or gloss; the cover is built entirely from type in two or three flat colors, with the confidence of a " +
+            "carefully art-directed printed poster that still functions as a book cover", ["#1034b8", "#f4e36b", "#e8402a"], true),
+        textLayout:
+          "NOT a conventional stacked title. Pick the ONE word of the title that carries the satire and let it behave like an inflated ego: set it enormous in " +
+          "exceptionally heavy broad neo-grotesque uppercase, in a warm pale contrasting color, broken across two lines if needed (no hyphen, no repeated letters), " +
+          "occupying about 75% of the height and 85% of the width without clipping any letter or Turkish dot. The remaining title words are deliberately tiny but " +
+          "clearly legible, pushed to the margins in reading order (the word before it small near the upper left in a vermilion accent; the word after it small " +
+          "near the bottom left in ivory with moderate tracking) so the whole title still reads in order. The author runs along the right margin as one small ivory " +
+          "line rotated 90° clockwise, with a clear gutter; the tiny genre label sits horizontally in the upper right. No arbitrary rotation of title words, no " +
+          "distortion, no extra punctuation.",
+      },
     ],
   },
   {
