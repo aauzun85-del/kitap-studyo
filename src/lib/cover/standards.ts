@@ -784,14 +784,56 @@ export const COVER_STANDARDS: CoverStandard[] = [
   {
     code: "A",
     name: { tr: "Sanat", en: "Art" },
-    label: { tr: "SANAT", en: "ART" },
+    label: { tr: "", en: "" }, // sanat kitabında kapakta tür etiketi yok
     concepts: [
-      c("gorsel", "Görsel tam kapak", "Full-bleed artwork", "Eser ön planda, yazı küçük.", "Artwork first, small type.",
-        "a striking full-bleed artwork detail — painting texture, color and composition — rich and museum-quality", ["#2a2a2a", "#f2f2f2", "#d49a4a"], true),
-      c("galeri", "Beyaz galeri", "White gallery", "Beyaz zemin, küçük görsel.", "White ground, small image.",
-        "pure white gallery ground with one small centered artwork or object, generous white space", ["#ffffff", "#111", "#111"]),
-      c("katalog", "Tipografik katalog", "Typographic catalogue", "Yazı ızgarası.", "Type grid.",
-        "plain light ground with a faint typographic grid texture and nothing else", ["#f4f4f4", "#111", "#e8552d"]),
+      {
+        ...c("gorsel", "Görsel tam kapak", "Full-bleed artwork", "Eser kapağın tamamı; yazı küçük ve sol altta.", "The artwork is the whole cover; small type at the lower left.",
+          "an original materially convincing artwork filling the entire cover to all four edges as the unmistakable protagonist — e.g. an abstract painting with a " +
+            "deliberate asymmetrical composition: a broad imperfect cobalt sweep curving from the upper left through the center toward the lower right, partly " +
+            "interrupted by scraped warm-white passages, a substantial quiet burnt-sienna plane in the upper right, small exposed ochre underpainting and a few precise " +
+            "charcoal marks; physically worked surface (opaque oil pigment, thin translucent glazes, palette-knife scraping, restrained impasto ridges, dry-brush " +
+            "interruptions, occasional exposed linen weave), varied density and scale of marks; a relatively quiet deep region in the lower-left quarter, organically " +
+            "part of the painting (never a banner or rectangle), for type; the top two thirds contain only art; saturated mineral blue, earthy red-brown, warm chalk, " +
+            "sparing black; faithful high-resolution reproduction, museum-bookshop quality; no equal-sized color blocks, regular geometry, centered circles, digital " +
+            "splatter, marbling, fluid-art swirls, watercolor clouds, wallpaper patterns, imitation of any particular artist or existing artwork, frames, white " +
+            "borders or gallery walls", ["#1f3f9a", "#f3ead2", "#a8481f"], true),
+        textLayout:
+          "Small restrained typography in warm ivory with about 6% safe margins, all in the quiet lower area; the artwork stays the protagonist. The title on 1–2 " +
+          "modest LEFT-aligned lines near the lower left, beginning around 77% down, in a beautifully proportioned medium-weight contemporary serif (no italics), no " +
+          "wider than about 44% of the cover and no taller than about 10%; directly below it the subtitle in very small clean sans; at the lower RIGHT the author in " +
+          "small tracked uppercase sans on the same baseline as the subtitle, over a calm dark area. No genre label, rules, shadows or outlines.",
+      },
+      {
+        ...c("galeri", "Beyaz galeri", "White gallery", "Bol beyaz boşluk, sağ ortada tek küçük eser; solda ölçülü yazı.", "Lots of white space, one small artwork middle-right; measured type on the left.",
+          "a white-gallery art-monograph cover: an almost-white warm paper ground with extremely subtle uncoated texture occupying most of the cover, and ONE small " +
+            "rectangular reproduction of an original artwork in the middle-right (about 48% of the width and 34% of the height, right edge about 9% from the cover " +
+            "edge, top beginning around 43% down) with crisp reproduction edges printed directly on the cover — no physical frame, shadow, mat or wall; within it an " +
+            "exquisite original abstract study on linen (e.g. a dense mineral cobalt-blue vertical form slightly left of center, a warm burnt-sienna plane in the " +
+            "upper right, broad chalk-white scraped passages, tiny exposed ochre underlayers, irregular painterly boundaries, restrained impasto, thin glazes, " +
+            "delicate charcoal traces) rich enough to reward close viewing yet readable at its modest size; the white space is an active part of the composition, " +
+            "balanced through asymmetry rather than a centered stack; no imitation of any particular artist or existing artwork, multiple pictures, full-bleed " +
+            "painting, centered symmetry, borders, banners, fake gallery labels, rules, gradients or gold foil", ["#f3f0ea", "#1a1a1a", "#1f3f9a"]),
+        textLayout:
+          "Soft near-black lettering on one consistent LEFT axis (9% left margin). The title at the upper left (about 10% top margin) on 1–2 left-aligned lines in " +
+          "an elegant medium-weight contemporary serif (normal width, no italics), about 43% of the width — clearly readable but not oversized; immediately below, " +
+          "after a restrained gap, the subtitle in very small charcoal sans on one line; the author at the lower left on the same left axis (about 88% down) in " +
+          "small charcoal uppercase sans with restrained tracking. The artwork's right edge aligns with the opposite safe margin. No genre label, rules or ornaments.",
+      },
+      {
+        ...c("katalog", "Pastel dokulu tipografi", "Pastel-textured typography", "Başlığın kendisi eser: harflerin içi pastel boya dokusu.", "The title is the artwork: letters filled with pastel paint textures.",
+          "artistic typography as the artwork: a warm off-white matte paper ground with subtle grain and NOTHING outside the letters — no separate painting, floral " +
+            "decoration, colored blobs, rectangles, geometric ornaments, underlines, visible grid, rainbow gradients or gold; all visual richness comes from painted " +
+            "color INSIDE the title's letterforms: sophisticated pastel gouache and cut-paper textures in overlapping softly edged planes (dusty peach, muted sage, " +
+            "powder lavender, pale apricot, with occasional darker desaturated terracotta or eucalyptus for definition), colors flowing through the whole title as one " +
+            "intentional abstract artwork clipped within the letters, saturated enough to read clearly on the ivory paper; crisp outer contours, no outlines, shadows " +
+            "or 3D effects; a refined contemporary art monograph", ["#f6ecdc", "#2a2a2a", "#e89a7a"]),
+        textLayout:
+          "The TITLE itself is the artwork: enormous beautifully drawn HEAVY contemporary serif letters (generous thick strokes, refined curved terminals, moderate " +
+          "contrast — not a thin fashion serif) filled with the pastel painted textures, set on exactly 1–2 complete horizontal lines occupying about 80% of the width " +
+          "and up to ~57% of the height, starting about 22% down; the first line slightly left, the second extending a little farther right (subtle asymmetry); never " +
+          "split, crop, distort or overlap words; same lettering family on both lines. The author at the top left (about 9% from top and left) in small restrained " +
+          "dark-charcoal uppercase sans; the subtitle at the lower left (about 87% down, same left edge) in small dark-charcoal sans on one line. No genre label.",
+      },
     ],
   },
 ];
