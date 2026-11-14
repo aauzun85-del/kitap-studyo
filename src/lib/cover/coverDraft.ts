@@ -37,6 +37,9 @@ export type CoverDraft = {
   spineBand?: string | null;
   // Yazarın kendi fotoğrafı için yerleşim (çerçeveli portre / üstte + bant).
   photoLayout?: "framed" | "band" | null;
+  // Yazarın kendi fotoğrafı: yapay zekânın kapakta BOŞ bıraktığı yere oturur
+  // (kapak görseli = coverImage ayrı kalır).
+  photoImage?: string | null;
   colorOverrides?: Partial<CoverColors>;
   showGuides?: boolean;
   // Görseller

@@ -110,8 +110,6 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
     try {
       const payload: CoverBrief = {
         ...brief,
-        // Fotoğraflı kapakta yazıyı uygulama basar (düzenlenebilir).
-        textBy: usingPhoto ? "app" : brief.textBy,
         photo: usingPhoto ? { mono: brief.photo?.mono ?? true } : undefined,
         skipped: mode === "skip" ? true : undefined,
         createdAt: new Date().toISOString(),
@@ -138,11 +136,11 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
   const path = themaPath(brief.themaCode);
   const standardIsExact = standard.code === brief.themaCode;
   const currentConcept = standard.concepts.find((k) => k.id === brief.conceptId) ?? standard.concepts[0];
-  // Konsept yazarın kendi fotoğrafını kabul ediyorsa ve fotoğraf yüklendiyse
-  // kapağı yapay zekâ değil uygulama kurar (jeton yok, yazı uygulamadan).
+  // Konsept yazarın kendi fotoğrafını kabul ediyorsa: kapağı yine yapay zekâ
+  // tasarlar ama fotoğraf yuvasını boş bırakır; fotoğraf oraya birebir oturur.
   const photoMode = currentConcept.photo?.layout ?? null;
   const usingPhoto = !!photoMode && !!photoPreview;
-  const textBy: "ai" | "app" = usingPhoto ? "app" : (brief.textBy ?? "ai");
+  const textBy: "ai" | "app" = brief.textBy ?? "ai";
   const mono = brief.photo?.mono ?? true;
   // Seçili konsept notu kapağa birebir basıyorsa (şiir dizeleri) alanın adı değişir.
   const noteIsText = !!currentConcept.noteAsText && textBy === "ai";
@@ -287,11 +285,11 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
             <p className={stepHint}>
               {photoMode === "framed"
                 ? tr
-                  ? "Yazarın portresini yükle: kapağı yapay zekâ çizmez, fotoğrafın çerçeveli olarak yerleşir — yüz birebir kalır, jeton harcanmaz."
-                  : "Upload the author's portrait: AI doesn't draw the cover; your photo is placed in a frame — the face stays exact, no credits used."
+                  ? "Yazarın portresini yükle: kapağı yapay zekâ tasarlar (zemin, yazılar, arka kapak) ve ortada bir çerçeve yeri boş bırakır; senin fotoğrafın o yere birebir oturur — yüz değişmez."
+                  : "Upload the author's portrait: AI designs the cover (ground, type, back cover) leaving a framed window empty; your photo is placed there exactly — the face never changes."
                 : tr
-                  ? "Aile albümünden bir fotoğraf yükle (bir sokak, bir ev, bir an): kapağın üst kısmına yerleşir, altına renkli yazı bandı gelir — jeton harcanmaz."
-                  : "Upload a family-album photo (a street, a house, a moment): it fills the top, with a colored title band below — no credits used."}
+                  ? "Aile albümünden bir fotoğraf yükle (bir sokak, bir ev, bir an): yapay zekâ alttaki renkli bandı, yazıları ve arka kapağı tasarlar; fotoğrafın ön kapağın üst kısmına birebir oturur."
+                  : "Upload a family-album photo (a street, a house, a moment): AI designs the colored band, the type and the back cover; your photo fills the top of the front cover exactly."}
             </p>
           </div>
           <div className="flex flex-wrap items-start gap-4">
@@ -333,7 +331,7 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
                     </button>
                   </div>
                   <button type="button" onClick={removePhoto} className="text-xs font-medium text-accent hover:underline">
-                    {tr ? "Fotoğrafı kaldır (yapay zekâ üretsin)" : "Remove photo (let AI generate)"}
+                    {tr ? "Fotoğrafı kaldır (fotoğrafı da yapay zekâ çizsin)" : "Remove photo (let AI draw the picture too)"}
                   </button>
                 </>
               )}
@@ -364,14 +362,7 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
               : "Who prints the title, author and genre label? ChatGPT: example-quality typography baked into the art (changing it = regenerate). App: our fonts, editable on the canvas."}
           </p>
         </div>
-        {usingPhoto && (
-          <p className={stepHint}>
-            {tr
-              ? "Fotoğraflı kapakta yazıyı uygulama basar (tuvalde düzenlenebilir). Yazı stilini seç:"
-              : "With your photo, the app prints the text (editable on the canvas). Pick a type style:"}
-          </p>
-        )}
-        <div className={`grid grid-cols-2 gap-2 sm:max-w-md ${usingPhoto ? "hidden" : ""}`}>
+        <div className="grid grid-cols-2 gap-2 sm:max-w-md">
           {(
             [
               ["ai", tr ? "ChatGPT bassın (önerilen)" : "ChatGPT prints it (recommended)"],
@@ -494,12 +485,8 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
           disabled={saving !== "none"}
           className="rounded-lg bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {saving === "run"
-            ? tr ? "Kaydediliyor…" : "Saving…"
-            : usingPhoto
-              ? tr ? "Tuvale gönder" : "Send to canvas"
-              : tr ? "Tuvale gönder ve üret" : "Send to canvas & generate"}
-          {saving !== "run" && !usingPhoto && BRIEF_COVER_COST > 0 && (
+          {saving === "run" ? (tr ? "Kaydediliyor…" : "Saving…") : tr ? "Tuvale gönder ve üret" : "Send to canvas & generate"}
+          {saving !== "run" && BRIEF_COVER_COST > 0 && (
             <span className="ml-2 font-normal opacity-80">
               · {BRIEF_COVER_COST} {tr ? "jeton" : "credits"}
             </span>

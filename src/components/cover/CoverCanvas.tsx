@@ -10,8 +10,8 @@ import {
 import { mmToPx, type SpreadDimensions } from "@/lib/cover/spread";
 import {
   getTemplate,
-  PHOTO_BAND,
   PHOTO_FRAMED,
+  photoSlotMm,
   type CoverContent,
   type CoverColors,
   type PhotoLayout,
@@ -48,6 +48,8 @@ export type CoverImages = {
   // Yazarın kendi fotoğrafı için yerleşim: "framed" = ön kapakta çerçeveli
   // portre, "band" = ön kapağın üst %64'ü fotoğraf. null = tam kapak (varsayılan).
   photoLayout?: PhotoLayout | null;
+  // Yazarın kendi fotoğrafı (dataURL/URL): kapak görselinden AYRI; yuvaya oturur.
+  photo?: string | null;
 };
 
 // Kullanıcının elle değiştirdiği nesnenin kayıtlı dönüşümü:
@@ -723,7 +725,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
         hasImage: !!images.cover,
         titlePos,
         authorPos,
-        photoLayout: images.cover ? (images.photoLayout ?? null) : null,
+        photoLayout: images.cover || images.photo ? (images.photoLayout ?? null) : null,
       };
 
       // 1) Zemin rengi (editId "background"). Katman panelinden gizlenmişse görünmez yap.
@@ -737,27 +739,35 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
         }
       }
 
+      // Çerçeveli portre: fotoğrafın dışında, arada ince boşlukla tek çizgi
+      // (paspartulu arşiv baskısı gibi). Renk = yazı mürekkebi.
+      const addKeyline = (r: { x: number; y: number; w: number; h: number }) => {
+        const g = PHOTO_FRAMED.keylineGapMm;
+        canvas.add(
+          new fabric.Rect({
+            left: px(r.x - g),
+            top: px(r.y - g),
+            width: px(r.w + g * 2),
+            height: px(r.h + g * 2),
+            fill: "transparent",
+            stroke: (colors ?? template.palette).ink,
+            strokeWidth: px(0.35),
+            editId: "photoFrame",
+            selectable: false,
+            evented: false,
+          }),
+        );
+      };
+
       // 2) Kapak görseli (object-fit cover + kırpma) ve karartma örtüsü.
       if (images.cover) {
-        // Fotoğraflı düzenler (yazarın kendi fotoğrafı) ön kapakta sabit bir
-        // dikdörtgene oturur; yazı düzeni aynı ölçüleri kullanır (templates.ts).
-        const framedW = spread.bookWidth * PHOTO_FRAMED.w;
-        const rectMm =
-          images.photoLayout === "framed"
-            ? {
-                x: spread.frontCenter - framedW / 2,
-                y: spread.topTrim + spread.bookHeight * PHOTO_FRAMED.top,
-                w: framedW,
-                h: spread.bookHeight * PHOTO_FRAMED.h,
-              }
-            : images.photoLayout === "band"
-              ? {
-                  x: spread.spineEnd,
-                  y: 0,
-                  w: spread.totalWidth - spread.spineEnd,
-                  h: spread.topTrim + spread.bookHeight * PHOTO_BAND.top,
-                }
-              : images.coverScope === "wrap"
+        // Fotoğraflı düzen + ayrı fotoğraf YOKSA kapak görselinin kendisi yuvaya
+        // oturur. Ayrı fotoğraf varsa (yapay zekâ kapağı + yazarın fotoğrafı)
+        // kapak görseli tam çizilir, fotoğraf aşağıda (2b) yuvaya yerleşir.
+        const slotOnCover = images.photoLayout && !images.photo ? images.photoLayout : null;
+        const rectMm = slotOnCover
+          ? photoSlotMm(spread, slotOnCover)
+          : images.coverScope === "wrap"
                 ? { x: 0, y: 0, w: spread.totalWidth, h: spread.totalHeight }
                 : {
                     x: spread.spineEnd,
@@ -805,25 +815,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
         });
         canvas.add(img);
 
-        // Çerçeveli portre: fotoğrafın dışında, arada ince boşlukla tek çizgi
-        // (müzede paspartulu arşiv baskısı gibi). Renk = yazı mürekkebi.
-        if (images.photoLayout === "framed") {
-          const g = PHOTO_FRAMED.keylineGapMm;
-          canvas.add(
-            new fabric.Rect({
-              left: px(rectMm.x - g),
-              top: px(rectMm.y - g),
-              width: px(rectMm.w + g * 2),
-              height: px(rectMm.h + g * 2),
-              fill: "transparent",
-              stroke: (colors ?? template.palette).ink,
-              strokeWidth: px(0.35),
-              editId: "photoFrame",
-              selectable: false,
-              evented: false,
-            }),
-          );
-        }
+        if (slotOnCover === "framed") addKeyline(rectMm);
 
         // Karartma örtüsü: editId "darken" ile katman listesine girer; göz ikonuyla
         // gizlenince (visible:false) hem ekranda hem baskıda yok olur. Taşınamaz/boyutlanamaz.
@@ -863,6 +855,39 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
             }),
           );
         }
+      }
+
+      // 2b) Yazarın KENDİ fotoğrafı: yapay zekânın boş bıraktığı yuvaya, tam
+      // ölçüsünde (kırparak doldurur). Yapay zekâ bu fotoğrafa dokunmaz.
+      if (images.photo && images.photoLayout) {
+        const slot = photoSlotMm(spread, images.photoLayout);
+        const sx = px(slot.x), sy = px(slot.y), sw = px(slot.w), sh = px(slot.h);
+        const ph = await fabric.FabricImage.fromURL(images.photo);
+        if (disposed || !fabricCanvasRef.current) return;
+        const scale = Math.max(sw / (ph.width ?? 1), sh / (ph.height ?? 1));
+        ph.set({
+          originX: "center",
+          originY: "center",
+          left: sx + sw / 2,
+          top: sy + sh / 2,
+          scaleX: scale,
+          scaleY: scale,
+          editId: "photo",
+          selectable: false,
+          evented: false,
+        });
+        ph.clipPath = new fabric.Rect({
+          left: sx + sw / 2,
+          top: sy + sh / 2,
+          width: sw,
+          height: sh,
+          originX: "center",
+          originY: "center",
+          absolutePositioned: true,
+        });
+        ph.visible = !(hiddenRef.current ?? {})["photo"];
+        canvas.add(ph);
+        if (images.photoLayout === "framed") addKeyline(slot);
       }
 
       // 3) Şablonun ön planı (tasarım + başlık/yazar/barkod) — görselin üstünde.

@@ -336,6 +336,16 @@ export type LayeredText = {
   extra?: string;
 };
 
+// Yazarın kendi fotoğrafının oturacağı yuva (tam tuval mm'si). Model burayı
+// BOŞ bırakır; fotoğrafı uygulama tam bu dikdörtgene yerleştirir.
+export type PhotoSlot = {
+  layout: "framed" | "band";
+  xMm: number;
+  yMm: number;
+  wMm: number;
+  hMm: number;
+};
+
 export function buildLayeredPrompt(opts: {
   styleId: string;
   description: string;
@@ -343,6 +353,7 @@ export function buildLayeredPrompt(opts: {
   geo: CoverGeometry;
   override?: LayeredStyleOverride;
   text?: LayeredText;
+  photoSlot?: PhotoSlot;
 }): string {
   const preset = getAiStyle(opts.styleId);
   const style = {
@@ -371,12 +382,38 @@ export function buildLayeredPrompt(opts: {
       "Not a book mockup, not a 3D book, not a product photo, no frame, no border, " +
       "no inset panel, no margins, no badges.",
   ];
-  if (desc) lines.push(`SCENE: ${desc}`);
+  // Fotoğraf yuvası varsa sahne = yazarın fotoğrafı; ayrıca sahne çizdirme.
+  if (desc && !opts.photoSlot) lines.push(`SCENE: ${desc}`);
   lines.push(
     `STYLE: ${style.prompt}. Gallery-quality, striking and memorable; rich detail and ` +
       "depth concentrated in the focal subject, elegant restraint everywhere else.",
   );
   lines.push("LAYOUT (strict, follow exactly):");
+  const ps = opts.photoSlot;
+  if (ps) {
+    // Görselin kapsadığı alan: sarmalda tüm tuval, önde yalnız ön kapak (+taşma).
+    const frontStart = g.bleed + g.bookWidth + g.spine;
+    const imgX0 = opts.wrap ? 0 : frontStart;
+    const imgW = opts.wrap ? g.totalWidth : g.totalWidth - frontStart;
+    const x1 = (ps.xMm - imgX0) / imgW;
+    const x2 = (ps.xMm + ps.wMm - imgX0) / imgW;
+    const y1 = ps.yMm / H;
+    const y2 = (ps.yMm + ps.hMm) / H;
+    lines.push(
+      ps.layout === "framed"
+        ? `- RESERVED PHOTO WINDOW (most important rule): the rectangle from ${pct(x1)} to ${pct(x2)} ` +
+            `of the width and from ${pct(y1)} to ${pct(y2)} of the height must stay completely EMPTY — the same ` +
+            "plain flat ground color as its surroundings, no texture change, no frame, no drawing, no person, no text " +
+            "inside or crossing it. The author's real photograph (with a fine keyline) will be mounted exactly there " +
+            "afterwards; compose the whole cover so it looks complete and harmonious with a photograph in that window. " +
+            "Do NOT paint any portrait, face or figure anywhere."
+        : `- RESERVED PHOTO AREA (most important rule): on the front cover, everything from the top edge down to ` +
+            `${pct(y2)} of the height (from ${pct(x1)} to ${pct(x2)} of the width) is one completely plain flat field ` +
+            "in EXACTLY the band color — no texture change, no drawing, no person, no text. It will be covered entirely " +
+            "by the author's real photograph afterwards. The solid band and all front-cover text sit below that line. " +
+            "Do NOT paint any photograph, street, figure or face anywhere.",
+    );
+  }
   if (opts.wrap) {
     const backEnd = (g.bleed + g.bookWidth) / g.totalWidth;
     const spineEnd = backEnd + g.spine / g.totalWidth;
@@ -448,7 +485,7 @@ export function buildLayeredPrompt(opts: {
     `- Logo zone: the bottom ${pct(logoBand)} of ${front} must be light-toned, plain and ` +
       "free of detail — a publisher logo and the author name go there.",
   );
-  lines.push(
+  if (!ps) lines.push(
     `- Main subject: between ${pct(focalTop)} and ${pct(focalBottom)} of the height of ` +
       `${front}, clearly visible, not touching the edges; placed slightly off-center ` +
       "to avoid dull perfect symmetry; strong composition with purposeful negative space.",

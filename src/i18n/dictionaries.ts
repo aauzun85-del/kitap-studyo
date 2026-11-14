@@ -372,6 +372,8 @@ type CoverStudioCopy = {
   selCover: string;
   selDarken: string;
   selSpineBand: string;
+  selPhoto: string;
+  selPhotoFrame: string;
   selBackground: string;
   darkenRemove: string;
   comingNextHeading: string;
@@ -1534,6 +1536,8 @@ const tr: Dictionary = {
     selCover: "Kapak görseli",
     selDarken: "Karartma örtüsü",
     selSpineBand: "Sırt bandı",
+    selPhoto: "Yazar fotoğrafı",
+    selPhotoFrame: "Fotoğraf çerçevesi",
     selBackground: "Arka plan (zemin)",
     comingNextHeading: "Sırada ne var?",
     comingNext: [
@@ -2721,6 +2725,8 @@ const en: Dictionary = {
     selCover: "Cover image",
     selDarken: "Darkening overlay",
     selSpineBand: "Spine band",
+    selPhoto: "Author photo",
+    selPhotoFrame: "Photo frame",
     selBackground: "Background",
     comingNextHeading: "Coming next",
     comingNext: [

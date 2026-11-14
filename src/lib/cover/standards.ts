@@ -25,7 +25,14 @@ export type CoverConcept = {
   noteAsText?: boolean;
   /** Yazar KENDİ fotoğrafını yükleyebilir: kapağı yapay zekâ değil uygulama
    *  kurar ("framed" = çerçeveli portre, "band" = üstte fotoğraf + altta bant). */
-  photo?: { layout: "framed" | "band"; bg: string; ink: string };
+  photo?: {
+    layout: "framed" | "band";
+    bg: string;
+    ink: string;
+    /** Yazar kendi fotoğrafını verdiyse konsept cümlesinin YERİNE geçer: kapak
+     *  tasarlanır ama fotoğraf yuvası boş bırakılır (fotoğrafı uygulama oturtur). */
+    prompt: string;
+  };
 };
 
 export type CoverStandard = {
@@ -210,7 +217,16 @@ export const COVER_STANDARDS: CoverStandard[] = [
             "approachable expression, authentic anatomy, understated clothing, no glamour; delicate silver-gelatin tonal quality with fine grain, no sepia, no damage effects; " +
             "no text over the photograph, no full-bleed face, no ornamental corners, no flowers, no collage, no gold foil, no drop shadows", ["#8b1a1a", "#f3ead2", "#f3ead2"]),
         dark: true,
-        photo: { layout: "framed", bg: "#7d1d1d", ink: "#f3ead2" },
+        photo: {
+          layout: "framed",
+          bg: "#7d1d1d",
+          ink: "#f3ead2",
+          prompt:
+            "traditional publisher portrait-series layout for a literary memoir: a deep warm brick-red (or another single deep, dignified) solid matte " +
+            "uncoated-paper ground covering the whole cover with a subtle tactile texture, no gradients, no decoration; a calm centered composition built " +
+            "around an empty rectangular window reserved for the author's own photograph (see LAYOUT); refined, quietly distinguished, warm and serious; " +
+            "no ornamental corners, flowers, collage, gold foil, drop shadows or illustrations",
+        },
         textLayout:
           "Warm ivory lettering on the solid ground. Title centered in the upper quarter on 1–2 lines in a moderately condensed literary serif, substantial yet restrained; " +
           "small subtitle centered directly below the title; the framed photograph below the subtitle; the author name centered BELOW the photograph in medium uppercase " +
@@ -238,7 +254,16 @@ export const COVER_STANDARDS: CoverStandard[] = [
             "the lower ~36% is a completely opaque flat muted burnt-terracotta (or another single warm) band spanning the full width with a crisp horizontal edge, " +
             "no gradient, no border, no shadow; no text over the photograph; no close-up portraits, frames, scrapbook collage, handwriting, stamps, tape, sepia, sunsets, " +
             "dramatic lighting, famous landmarks or badges", ["#d9d2c5", "#f3ead2", "#a84a2a"]),
-        photo: { layout: "band", bg: "#a3472b", ink: "#f3ead2" },
+        photo: {
+          layout: "band",
+          bg: "#a3472b",
+          ink: "#f3ead2",
+          prompt:
+            "a disciplined two-part memoir cover: the upper part of the front cover is reserved for the author's own archival photograph (see LAYOUT); " +
+            "below it a completely opaque flat muted burnt-terracotta (or another single warm, contemporary) band spanning the full width with a crisp " +
+            "horizontal edge, fine matte printing texture, no gradient, no border, no shadow; the back cover continues the same calm band color; " +
+            "warm contemporary contrast with a cool black-and-white photograph; no illustrations, collage, frames, stamps or badges",
+        },
         textLayout:
           "All text sits inside the lower solid band, aligned to one generous LEFT margin (about 8% of the width), in warm ivory. At the top of the band the author in " +
           "small tracked uppercase humanist sans; below it the title on 1–2 lines in a substantial literary serif as the dominant text, comfortably contained in the band; " +
@@ -330,8 +355,19 @@ export const COVER_STANDARDS: CoverStandard[] = [
           "elegant literary serif, unmistakable at thumbnail size, never oversized; clear separation from the engraving; the tiny tracked genre label at the lower left " +
           "inside a quiet pale area of the picture, without a banner.",
       },
-      c("minimal", "Minimal dizi", "Minimal series", "Tek renk zemin + küçük motif.", "Single-color ground + small motif.",
-        "single flat series color ground with one small centered symbolic motif in a contrasting ink, very restrained", ["#2f6f6a", "#f6f2ea", "#f6f2ea"], true),
+      {
+        ...c("minimal", "Minimal dizi", "Minimal series", "Tek düz seri rengi, disiplinli yazı, küçük anlamlı amblem.", "One flat series color, disciplined type, one small meaningful emblem.",
+          "minimal classics-series design: one full-bleed muted flat series color (saffron ochre, teal, brick, slate) with an extremely subtle matte paper grain; one small " +
+            "original editorial emblem (about 17% of the width) centered horizontally at about two thirds of the height — a precise simple silhouette in warm ivory with two or " +
+            "three fine dark lines, a witty visual metaphor merging two ideas from the book (e.g. an envelope whose flap is a house roof with a tiny doorway); it reads as a " +
+            "literary emblem, not an app icon or realistic object; a large amount of uninterrupted flat color around it; no frame, circle, shadow, wax seal, borders, panels, " +
+            "landscapes, people, photographs, engravings, flourishes, metallic effects, embossing or fake aging", ["#d99a2b", "#4a1f33", "#f6ecd2"]),
+        textLayout:
+          "Deep dark ink (aubergine or near-black) lettering on a precise repeatable grid with margins of about 10% of the width, all LEFT-aligned. A discreet series header: " +
+          "the tiny tracked uppercase series/genre word at the top left and a small number at the top right on the same baseline (only if a number is given). Around 23% " +
+          "down, the author in small refined uppercase humanist sans with generous tracking; beneath it the title in a beautifully drawn medium-weight old-style serif on 1–2 " +
+          "left-aligned lines without splitting words, strong and readable, in the upper-middle region; the tiny tracked genre label at the bottom left.",
+      },
     ],
   },
   {

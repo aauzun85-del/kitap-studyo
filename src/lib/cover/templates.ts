@@ -57,6 +57,29 @@ export type PhotoLayout = "framed" | "band";
 export const PHOTO_FRAMED = { w: 0.65, h: 0.43, top: 0.31, keylineGapMm: 1.6 };
 export const PHOTO_BAND = { top: 0.64 };
 
+/** Fotoğraf yuvası (tam tuval mm'si): yapay zekâya "burayı boş bırak" diye
+ *  verilir, uygulama fotoğrafı tam buraya oturtur. */
+export function photoSlotMm(
+  d: SpreadDimensions,
+  layout: PhotoLayout,
+): { x: number; y: number; w: number; h: number } {
+  if (layout === "framed") {
+    const w = d.bookWidth * PHOTO_FRAMED.w;
+    return {
+      x: d.frontCenter - w / 2,
+      y: d.topTrim + d.bookHeight * PHOTO_FRAMED.top,
+      w,
+      h: d.bookHeight * PHOTO_FRAMED.h,
+    };
+  }
+  return {
+    x: d.spineEnd,
+    y: 0,
+    w: d.totalWidth - d.spineEnd,
+    h: d.topTrim + d.bookHeight * PHOTO_BAND.top,
+  };
+}
+
 export type CoverTemplate = {
   id: string;
   name: { tr: string; en: string };

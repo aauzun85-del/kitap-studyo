@@ -17,6 +17,7 @@ import {
 import {
   DEFAULT_TEMPLATE_ID,
   getTemplate,
+  photoSlotMm,
   type CoverColors,
 } from "@/lib/cover/templates";
 import { STANDARD_PROFILES } from "@/lib/layout/standards";
@@ -63,6 +64,7 @@ import {
   type AiModel,
   type LayeredStyleOverride,
   type LayeredText,
+  type PhotoSlot,
 } from "@/lib/cover/aiStyles";
 import {
   briefStyleOverride,
@@ -152,6 +154,8 @@ type AiGenOpts = {
   override?: LayeredStyleOverride;
   /** Verilirse ChatGPT başlık/yazar/tür etiketini GÖRSELE basar (yazı katmanları gizlenir). */
   text?: LayeredText;
+  /** Yazarın fotoğrafı için boş bırakılacak yuva (ChatGPT yolu). */
+  photoSlot?: PhotoSlot;
 };
 // Tarayıcı tarafı SON ÇARE zaman aşımları. Sunucu 120 sn içinde kendi temiz
 // hatasını döndürür; bunlar ancak bağlantı tamamen koparsa devreye girer.
@@ -221,6 +225,8 @@ export default function CoverStudio({
   const [spineBand, setSpineBand] = useState<string | null>(null);
   // Yazarın kendi fotoğrafı için yerleşim (anı/biyografi kurgusu): null = tam kapak.
   const [photoLayout, setPhotoLayout] = useState<"framed" | "band" | null>(null);
+  // Yazarın kendi fotoğrafı (kapak görselinden AYRI katman; yuvaya oturur).
+  const [photoImage, setPhotoImage] = useState<string | null>(null);
   // Kullanıcının değiştirdiği renkler (yalnız değişenler). Boşsa şablon paleti kullanılır.
   const [colorOverrides, setColorOverrides] = useState<Partial<CoverColors>>({});
   // Baskı kılavuzları varsayılan AÇIK gelir (kesim/sırt/güvenli alan görünür).
@@ -829,8 +835,9 @@ export default function CoverStudio({
       logoPos,
       spineBand,
       photoLayout,
+      photo: photoImage,
     }),
-    [coverImage, coverDarken, coverOpacity, coverScope, coverFit, coverPanX, coverZoom, logoImage, logoSize, logoPos, spineBand, photoLayout],
+    [coverImage, coverDarken, coverOpacity, coverScope, coverFit, coverPanX, coverZoom, logoImage, logoSize, logoPos, spineBand, photoLayout, photoImage],
   );
 
   // labels'ı sabit referansa al → seçim değişince tuval gereksiz yere yeniden çizilmesin.
@@ -1031,6 +1038,7 @@ export default function CoverStudio({
     if (d.brief) setBrief(d.brief);
     if (typeof d.spineBand === "string" || d.spineBand === null) setSpineBand(d.spineBand);
     if (d.photoLayout === "framed" || d.photoLayout === "band") setPhotoLayout(d.photoLayout);
+    if (typeof d.photoImage === "string") setPhotoImage(d.photoImage);
     if (d.colorOverrides) setColorOverrides(d.colorOverrides);
     if (typeof d.showGuides === "boolean") setShowGuides(d.showGuides);
     // Görseller
@@ -1204,6 +1212,7 @@ export default function CoverStudio({
       brief: brief ?? undefined,
       spineBand,
       photoLayout,
+      photoImage,
       colorOverrides,
       showGuides,
       coverImage,
@@ -1273,6 +1282,7 @@ export default function CoverStudio({
     brief,
     spineBand,
     photoLayout,
+    photoImage,
     colorOverrides,
     showGuides,
     coverImage,
@@ -1510,6 +1520,7 @@ export default function CoverStudio({
       brief: brief ?? undefined,
       spineBand,
       photoLayout,
+      photoImage,
       colorOverrides,
       showGuides,
       coverImage,
@@ -1580,6 +1591,12 @@ export default function CoverStudio({
   // AI kapak görseli üret → mevcut "kapak görseli" boru hattına aktar.
   // Başarıyla görsel yerleştiyse true döner (sihirbaz arka kapak yazısını
   // yalnız o zaman ekler).
+  // Kapakta yazarın fotoğrafı varsa onun yuvası (yeniden üretimde de boş kalsın).
+  const currentPhotoSlot = (): PhotoSlot | undefined => {
+    if (!photoImage || !photoLayout) return undefined;
+    const sl = photoSlotMm(spread, photoLayout);
+    return { layout: photoLayout, xMm: sl.x, yMm: sl.y, wMm: sl.w, hMm: sl.h };
+  };
   const generateAiCover = async (opts?: AiGenOpts): Promise<boolean> => {
     if (aiBusyRef.current) return false; // zaten üretiliyor → çift istek yok
     aiBusyRef.current = true;
@@ -1621,6 +1638,8 @@ export default function CoverStudio({
               geo: spread,
               override: opts?.override,
               text: opts?.text,
+              // Fotoğraf zaten yerleştirildiyse yeniden üretimde de yuva boş kalsın.
+              photoSlot: opts?.photoSlot ?? currentPhotoSlot(),
             })
           : embed
             ? buildNanoCoverPrompt({
@@ -1707,7 +1726,7 @@ export default function CoverStudio({
       setAiLastCost(typeof data.usage?.estUsd === "number" ? data.usage.estUsd : null);
       // ChatGPT görseli üst bandı başlık için sade bırakır → başlığı oraya al.
       if (useModel === "openai") setTitlePos("top");
-      setPhotoLayout(null); // yapay zekâ görseli tam kapak olur
+      if (!photoImage) setPhotoLayout(null); // fotoğraf yoksa yapay zekâ görseli tam kapak olur
       // Sarmal üretimde sırt bandı: görselin koyu tonundan otomatik renk.
       if (wrap) {
         void spineColorFromImage(data.image).then((c) => {
@@ -1861,30 +1880,26 @@ export default function CoverStudio({
     briefFiredRef.current = true;
     const b = brief;
     void (async () => {
-      // Yazarın KENDİ fotoğrafı (anı/biyografi): yapay zekâ YOK — yüz birebir
-      // kalır, jeton harcanmaz; kapağı uygulama konseptin düzeniyle kurar.
+      // Yazarın KENDİ fotoğrafı (anı/biyografi): kapağı yine yapay zekâ tasarlar
+      // ama fotoğraf yuvasını BOŞ bırakır; fotoğraf o yuvaya birebir oturur
+      // (yapay zekâ fotoğrafa dokunmaz, yüz aynı kalır).
       const concept = getConceptOf(resolveStandard(b.themaCode), b.conceptId);
+      let photoSlot: PhotoSlot | undefined;
       if (concept.photo && b.photo && projectId) {
         const raw = await loadBriefPhoto(projectId);
         if (raw) {
           const img = b.photo.mono ? await toMonoPhoto(raw) : raw;
-          setTemplateId(getTextStyle(b.textStyleId).templateId);
-          setTitlePos("top");
-          setColorOverrides({ bg: concept.photo.bg, ink: concept.photo.ink, accent: concept.photo.ink });
+          const sl = photoSlotMm(spread, concept.photo.layout);
+          photoSlot = { layout: concept.photo.layout, xMm: sl.x, yMm: sl.y, wMm: sl.w, hMm: sl.h };
+          setPhotoImage(img);
           setPhotoLayout(concept.photo.layout);
-          setCoverScope("front");
-          setCoverFit("fill");
-          setCoverPanX(0);
-          setCoverZoom(1);
-          setCoverDarken(0);
-          setCoverOpacity(1);
-          setSpineBand(null);
-          setHidden((p) => ({ ...p, title: false, author: false, subtitle: false }));
-          setCoverImage(img);
-          showCoverLayer();
+          setHidden((p) => ({ ...p, photo: false }));
+          // Yazıyı uygulama basacaksa açık renk mürekkep (koyu zemin üstünde).
+          if ((b.textBy ?? "ai") === "app") {
+            setColorOverrides({ bg: concept.photo.bg, ink: concept.photo.ink, accent: concept.photo.ink });
+          }
           pushUserImage(img, "upload");
           void deleteBriefPhoto(projectId);
-          return;
         }
       }
       const genre = initialProject?.data.meta.genre ?? "";
@@ -1947,8 +1962,10 @@ export default function CoverStudio({
           model: "openai",
           scope: b.scope,
           embedText: false,
+          // Fotoğraflı kapakta konsept cümlesi yerine "yuvayı boş bırak" tarifi.
+          photoSlot,
           override: {
-            stylePrompt: ov.stylePrompt,
+            stylePrompt: photoSlot && concept.photo ? concept.photo.prompt : ov.stylePrompt,
             dark: ov.dark,
             tonePrompt: TONE_PROMPTS[ov.tone],
             textLayout: ov.textLayout,
@@ -3250,7 +3267,7 @@ export default function CoverStudio({
                           <EyeIcon className="h-4 w-4" />
                         )}
                       </button>
-                      {id !== "darken" && id !== "background" && id !== "spineBand" && (
+                      {id !== "darken" && id !== "background" && id !== "spineBand" && id !== "photo" && id !== "photoFrame" && (
                         <button
                           type="button"
                           onClick={() => toggleLocked(id)}
@@ -4660,6 +4677,8 @@ function selectedName(
     selCover: string;
     selDarken: string;
     selSpineBand: string;
+    selPhoto: string;
+    selPhotoFrame: string;
     selBackground: string;
     selObjText: string;
     selObjRect: string;
@@ -4720,6 +4739,8 @@ function selectedName(
     darken: t.selDarken,
     background: t.selBackground,
     spineBand: t.selSpineBand,
+    photo: t.selPhoto,
+    photoFrame: t.selPhotoFrame,
   };
   return map[id] ?? id;
 }

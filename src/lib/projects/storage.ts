@@ -4,7 +4,7 @@
 // onlar süreli, ~1 saat sonra 404 olur. Kalıcı olarak HER ZAMAN storage YOLU
 // saklanır. Yükleme anında yol → imzalı URL'e çözülür (fabric render için).
 //
-// Görsel alanları: CoverDraft.coverImage, .logoImage, .objects[].src.
+// Görsel alanları: CoverDraft.coverImage, .photoImage, .logoImage, .objects[].src.
 // coverImage (opak, en büyük) JPEG'e sıkıştırılır; logo + nesne PNG'leri
 // (saydam olabilir) olduğu gibi yüklenir.
 
@@ -122,6 +122,25 @@ export async function uploadDraftImages(
     }
   }
 
+  // photoImage (yazarın kendi fotoğrafı, kurgu kapağında ayrılan yere) → JPEG
+  const pi = out.photoImage;
+  if (pi) {
+    if (isDataUrl(pi)) {
+      const hit = cached(pi);
+      if (hit) {
+        out.photoImage = hit;
+      } else {
+        const blob = await compressToJpeg(pi, 2400, 0.9);
+        const path = `${dir}/photo-${rnd()}.jpg`;
+        await uploadOne(supabase, path, blob);
+        remember(pi, path);
+        out.photoImage = path;
+      }
+    } else {
+      out.photoImage = toStoragePath(pi) ?? pi;
+    }
+  }
+
   // logoImage → olduğu gibi (saydamlık korunur)
   const li = out.logoImage;
   if (li) {
@@ -176,6 +195,7 @@ export async function resolveDraftImages(
     if (v && !isDataUrl(v) && !/^https?:\/\//i.test(v)) paths.add(v);
   };
   consider(draft.coverImage);
+  consider(draft.photoImage);
   consider(draft.logoImage);
   if (Array.isArray(draft.objects)) {
     for (const o of draft.objects) consider((o as { src?: string }).src);
@@ -194,6 +214,7 @@ export async function resolveDraftImages(
   const out: CoverDraft = {
     ...draft,
     coverImage: sub(draft.coverImage) ?? draft.coverImage,
+    photoImage: sub(draft.photoImage) ?? draft.photoImage,
     logoImage: sub(draft.logoImage) ?? draft.logoImage,
   };
   if (Array.isArray(draft.objects)) {
