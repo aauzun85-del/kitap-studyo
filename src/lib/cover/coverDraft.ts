@@ -40,6 +40,9 @@ export type CoverDraft = {
   // Yazarın kendi fotoğrafı: yapay zekânın kapakta BOŞ bıraktığı yere oturur
   // (kapak görseli = coverImage ayrı kalır).
   photoImage?: string | null;
+  // Fotoğrafın GERÇEK yeri (mm): yapay zekânın bıraktığı yeşil yer tutucudan
+  // ölçülür; yoksa düzenin varsayılan yuvası kullanılır.
+  photoRect?: { x: number; y: number; w: number; h: number } | null;
   colorOverrides?: Partial<CoverColors>;
   showGuides?: boolean;
   // Görseller

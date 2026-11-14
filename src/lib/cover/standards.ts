@@ -393,12 +393,38 @@ export const COVER_STANDARDS: CoverStandard[] = [
   {
     code: "FF",
     name: { tr: "Polisiye / gerilim", en: "Crime / thriller" },
-    label: { tr: "POLİSİYE", en: "CRIME" },
+    label: { tr: "POLİSİYE / GERİLİM", en: "CRIME / THRILLER" },
     concepts: [
-      c("nesne", "Koyu + tek nesne + kırmızı", "Dark + single object + red", "Karanlık zemin, tek ipucu.", "Dark ground, one clue.",
-        "near-black ground with a single small object as a clue, one red accent, cold dramatic light, high contrast", ["#0f1216", "#e8e2d6", "#c0392b"], true),
-      c("siluet", "Silüet ve sis", "Silhouette and fog", "Figür, sokak, gece.", "Figure, street, night.",
-        "a figure in silhouette in fog on a night street, faint glow, noir atmosphere, deep shadows", ["#1a2028", "#dfe3e8", "#b03a2e"], true),
+      {
+        ...c("nesne", "Koyu + tek nesne + kırmızı", "Dark + single object + red", "Karanlık zemin, tek ipucu nesne, tek kırmızı vurgu.", "Dark ground, one clue object, one red accent.",
+          "a near-black charcoal matte surface almost disappearing into shadow, and ONE clue object related to the book photographed from above in the central " +
+            "lower half on a slight diagonal (e.g. an old scratched steel key with a short crimson thread knotted through its bow) — realistic proportions, worn " +
+            "edges, subtle oxidation, fine scratches, convincing weight; a narrow raking light from the upper left catching edges and fibers, a restrained soft " +
+            "shadow, editorial still-life photography with natural optics and superb texture; cool desaturated steel plus ONE precise crimson accent; emotionally " +
+            "suggestive, not overexplained; no city, fog, silhouettes, buildings, secondary props, multiple objects, blood, weapons, hands, evidence tags, police " +
+            "tape, smoke, lens flares, CGI shine or fantasy glow", ["#111214", "#efe8da", "#c1121f"], true),
+        textLayout:
+          "LEFT-aligned with about 9% outer margins. Author at the top left in modest warm off-white uppercase sans with generous tracking; below it, in the upper " +
+          "third, the title in very large bold condensed uppercase sans on 1–2 lines with disciplined sharp letterforms and close controlled spacing, first line warm " +
+          "off-white and second line deep crimson matching the accent (one line: off-white with the key word crimson); clean solid lettering, not distressed or " +
+          "glitchy, readable at thumbnail; a generous dark interval between title and object, never overlapping; the small widely tracked genre label in muted " +
+          "off-white at the bottom left.",
+      },
+      {
+        ...c("siluet", "Silüet ve sis", "Silhouette and fog", "Gece sokağı, sis, uzaklaşan küçük bir figür.", "A night street, fog, a small figure walking away.",
+          "a narrow believable old-city side street at night photographed at pedestrian eye level: old plaster facades and recessed doorways on both sides " +
+            "creating deep perspective, damp paving stones with sparse reflections, cool blue-gray fog obscuring the far end; ONE small anonymous adult figure in a " +
+            "plain dark coat walking away, slightly right of center in the middle distance (about 14% of the height), natural stride, no visible face; one distant " +
+            "warm amber streetlamp making a dim pool of light and a broken reflection; foreground architecture in rich charcoal shadow; authentic editorial " +
+            "photography with subtle film grain and plausible light scattering, not a video-game scene; deep midnight blue, charcoal, desaturated slate, pale fog " +
+            "gray and a single subdued amber; no red accent, no landmarks, cars, neon, readable signs, keys, guns, blood, police tape, fedoras, multiple " +
+            "silhouettes, giant moons, rain streaks or lens flares", ["#141b26", "#efe8da", "#e0a34a"], true),
+        textLayout:
+          "CENTERED. The upper third is a calm dark area of the scene for exceptional readability: the author at the top center in modest widely tracked uppercase " +
+          "pale-gray sans; below it the title in very large strong condensed uppercase sans on 1–2 centered lines as one compact monumental block, warm off-white, " +
+          "clean precise letterforms; the figure fully visible below and never overlapping letters; the small tracked genre label at the bottom center in pale gray " +
+          "over a quiet dark area.",
+      },
       c("tipografik", "Sert tipografi", "Hard typography", "Büyük, kesik, gerilimli yazı.", "Big, cut, tense type.",
         "dark gritty textured ground — concrete, scratches, grain — nothing else; built for huge aggressive typography", ["#14161a", "#f2f2f2", "#e63946"], true),
     ],

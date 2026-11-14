@@ -50,6 +50,8 @@ export type CoverImages = {
   photoLayout?: PhotoLayout | null;
   // Yazarın kendi fotoğrafı (dataURL/URL): kapak görselinden AYRI; yuvaya oturur.
   photo?: string | null;
+  // Yuvanın ölçülmüş gerçek yeri (mm; yeşil yer tutucudan). Yoksa varsayılan yuva.
+  photoRect?: { x: number; y: number; w: number; h: number } | null;
 };
 
 // Kullanıcının elle değiştirdiği nesnenin kayıtlı dönüşümü:
@@ -860,7 +862,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       // 2b) Yazarın KENDİ fotoğrafı: yapay zekânın boş bıraktığı yuvaya, tam
       // ölçüsünde (kırparak doldurur). Yapay zekâ bu fotoğrafa dokunmaz.
       if (images.photo && images.photoLayout) {
-        const slot = photoSlotMm(spread, images.photoLayout);
+        const slot = images.photoRect ?? photoSlotMm(spread, images.photoLayout);
         const sx = px(slot.x), sy = px(slot.y), sw = px(slot.w), sh = px(slot.h);
         const ph = await fabric.FabricImage.fromURL(images.photo);
         if (disposed || !fabricCanvasRef.current) return;

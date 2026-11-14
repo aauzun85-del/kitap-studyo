@@ -74,7 +74,7 @@ import {
 } from "@/lib/cover/brief";
 import { getConceptOf, resolveStandard } from "@/lib/cover/standards";
 import { deleteBriefPhoto, loadBriefPhoto, toMonoPhoto } from "@/lib/cover/briefPhoto";
-import { spineColorFromImage } from "@/lib/cover/palette";
+import { findChromaRect, spineColorFromImage } from "@/lib/cover/palette";
 import {
   AI_HISTORY_LIMIT,
   loadAiHistory,
@@ -227,6 +227,8 @@ export default function CoverStudio({
   const [photoLayout, setPhotoLayout] = useState<"framed" | "band" | null>(null);
   // Yazarın kendi fotoğrafı (kapak görselinden AYRI katman; yuvaya oturur).
   const [photoImage, setPhotoImage] = useState<string | null>(null);
+  // Fotoğrafın ölçülmüş yeri (mm) — yapay zekânın yeşil yer tutucusundan.
+  const [photoRect, setPhotoRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   // Kullanıcının değiştirdiği renkler (yalnız değişenler). Boşsa şablon paleti kullanılır.
   const [colorOverrides, setColorOverrides] = useState<Partial<CoverColors>>({});
   // Baskı kılavuzları varsayılan AÇIK gelir (kesim/sırt/güvenli alan görünür).
@@ -836,8 +838,9 @@ export default function CoverStudio({
       spineBand,
       photoLayout,
       photo: photoImage,
+      photoRect,
     }),
-    [coverImage, coverDarken, coverOpacity, coverScope, coverFit, coverPanX, coverZoom, logoImage, logoSize, logoPos, spineBand, photoLayout, photoImage],
+    [coverImage, coverDarken, coverOpacity, coverScope, coverFit, coverPanX, coverZoom, logoImage, logoSize, logoPos, spineBand, photoLayout, photoImage, photoRect],
   );
 
   // labels'ı sabit referansa al → seçim değişince tuval gereksiz yere yeniden çizilmesin.
@@ -1039,6 +1042,7 @@ export default function CoverStudio({
     if (typeof d.spineBand === "string" || d.spineBand === null) setSpineBand(d.spineBand);
     if (d.photoLayout === "framed" || d.photoLayout === "band") setPhotoLayout(d.photoLayout);
     if (typeof d.photoImage === "string") setPhotoImage(d.photoImage);
+    if (d.photoRect) setPhotoRect(d.photoRect);
     if (d.colorOverrides) setColorOverrides(d.colorOverrides);
     if (typeof d.showGuides === "boolean") setShowGuides(d.showGuides);
     // Görseller
@@ -1213,6 +1217,7 @@ export default function CoverStudio({
       spineBand,
       photoLayout,
       photoImage,
+      photoRect,
       colorOverrides,
       showGuides,
       coverImage,
@@ -1283,6 +1288,7 @@ export default function CoverStudio({
     spineBand,
     photoLayout,
     photoImage,
+    photoRect,
     colorOverrides,
     showGuides,
     coverImage,
@@ -1521,6 +1527,7 @@ export default function CoverStudio({
       spineBand,
       photoLayout,
       photoImage,
+      photoRect,
       colorOverrides,
       showGuides,
       coverImage,
@@ -1726,7 +1733,40 @@ export default function CoverStudio({
       setAiLastCost(typeof data.usage?.estUsd === "number" ? data.usage.estUsd : null);
       // ChatGPT görseli üst bandı başlık için sade bırakır → başlığı oraya al.
       if (useModel === "openai") setTitlePos("top");
-      if (!photoImage) setPhotoLayout(null); // fotoğraf yoksa yapay zekâ görseli tam kapak olur
+      // Fotoğraf yuvası istendiyse: yapay zekânın bıraktığı YEŞİL yer tutucunun
+      // gerçek yerini ölç → fotoğraf tam oraya oturur (yazılarla hizalı kalır).
+      const slotUsed = useModel === "openai" ? (opts?.photoSlot ?? currentPhotoSlot()) : undefined;
+      if (!slotUsed) {
+        if (!photoImage) setPhotoLayout(null); // fotoğraf yoksa tam kapak
+      } else {
+        const img = data.image;
+        void findChromaRect(img).then((cr) => {
+          if (!cr) {
+            setPhotoRect(null); // bulunamadı → varsayılan yuva
+            return;
+          }
+          const r = wrap
+            ? { x: 0, y: 0, w: spread.totalWidth, h: spread.totalHeight }
+            : { x: spread.spineEnd, y: 0, w: spread.totalWidth - spread.spineEnd, h: spread.totalHeight };
+          // Tuval görseli "doldur" ile çizer: aynı ölçek ve ortalama.
+          const sc = Math.max(r.w / cr.iw, r.h / cr.ih);
+          const dw = cr.iw * sc, dh = cr.ih * sc;
+          const left = r.x + r.w / 2 - dw / 2, top = r.y + r.h / 2 - dh / 2;
+          const pad = 0.6; // kenar yumuşatmasındaki yeşili de kapat
+          if (slotUsed.layout === "band") {
+            // Bant: fotoğraf ön kapağın tepesinden (taşma dahil) yeşilin altına.
+            const bottom = top + (cr.fy + cr.fh) * dh + pad;
+            setPhotoRect({ x: spread.spineEnd, y: 0, w: spread.totalWidth - spread.spineEnd, h: bottom });
+          } else {
+            setPhotoRect({
+              x: left + cr.fx * dw - pad,
+              y: top + cr.fy * dh - pad,
+              w: cr.fw * dw + pad * 2,
+              h: cr.fh * dh + pad * 2,
+            });
+          }
+        });
+      }
       // Sarmal üretimde sırt bandı: görselin koyu tonundan otomatik renk.
       if (wrap) {
         void spineColorFromImage(data.image).then((c) => {
@@ -2405,13 +2445,13 @@ export default function CoverStudio({
                 }
               >
                 <div className="grid grid-cols-3 gap-2">
-                  <SegButton active={!photoLayout} onClick={() => setPhotoLayout(null)}>
+                  <SegButton active={!photoLayout} onClick={() => { setPhotoLayout(null); setPhotoRect(null); }}>
                     {lang === "tr" ? "Tam kapak" : "Full cover"}
                   </SegButton>
-                  <SegButton active={photoLayout === "framed"} onClick={() => { setPhotoLayout("framed"); setCoverScope("front"); }}>
+                  <SegButton active={photoLayout === "framed"} onClick={() => { setPhotoLayout("framed"); setPhotoRect(null); if (!photoImage) setCoverScope("front"); }}>
                     {lang === "tr" ? "Çerçeveli" : "Framed"}
                   </SegButton>
-                  <SegButton active={photoLayout === "band"} onClick={() => { setPhotoLayout("band"); setCoverScope("front"); }}>
+                  <SegButton active={photoLayout === "band"} onClick={() => { setPhotoLayout("band"); setPhotoRect(null); if (!photoImage) setCoverScope("front"); }}>
                     {lang === "tr" ? "Üstte + bant" : "Top + band"}
                   </SegButton>
                 </div>

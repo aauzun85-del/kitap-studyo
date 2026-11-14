@@ -401,17 +401,18 @@ export function buildLayeredPrompt(opts: {
     const y2 = (ps.yMm + ps.hMm) / H;
     lines.push(
       ps.layout === "framed"
-        ? `- RESERVED PHOTO WINDOW (most important rule): the rectangle from ${pct(x1)} to ${pct(x2)} ` +
-            `of the width and from ${pct(y1)} to ${pct(y2)} of the height must stay completely EMPTY — the same ` +
-            "plain flat ground color as its surroundings, no texture change, no frame, no drawing, no person, no text " +
-            "inside or crossing it. The author's real photograph (with a fine keyline) will be mounted exactly there " +
-            "afterwards; compose the whole cover so it looks complete and harmonious with a photograph in that window. " +
-            "Do NOT paint any portrait, face or figure anywhere."
-        : `- RESERVED PHOTO AREA (most important rule): on the front cover, everything from the top edge down to ` +
-            `${pct(y2)} of the height (from ${pct(x1)} to ${pct(x2)} of the width) is one completely plain flat field ` +
-            "in EXACTLY the band color — no texture change, no drawing, no person, no text. It will be covered entirely " +
-            "by the author's real photograph afterwards. The solid band and all front-cover text sit below that line. " +
-            "Do NOT paint any photograph, street, figure or face anywhere.",
+        ? `- PHOTO PLACEHOLDER (most important rule): fill the rectangle from ${pct(x1)} to ${pct(x2)} ` +
+            `of the width and from ${pct(y1)} to ${pct(y2)} of the height with a perfectly uniform flat pure ` +
+            "chroma-key green (#00FF00) — sharp straight edges, no gradient, no texture, no frame, no shadow, nothing " +
+            "inside it. It will be replaced by the author's real photograph (with a fine keyline), so keep all text and " +
+            "elements outside it with a small margin, and compose the cover around it as if a photograph sits there. Use " +
+            "this green ONLY in the placeholder, nowhere else. Do NOT paint any portrait, face or figure."
+        : `- PHOTO PLACEHOLDER (most important rule): on the front cover, everything from the top edge down to ` +
+            `${pct(y2)} of the height (from ${pct(x1)} to ${pct(x2)} of the width) is one perfectly uniform flat pure ` +
+            "chroma-key green (#00FF00) field — sharp straight lower edge, no gradient, no texture, nothing drawn. It will " +
+            "be replaced entirely by the author's real photograph. The solid band starts exactly at its lower edge and all " +
+            "front-cover text sits in the band below it. Use this green ONLY there. Do NOT paint any photograph, street, " +
+            "figure or face.",
     );
   }
   if (opts.wrap) {
