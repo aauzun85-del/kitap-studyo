@@ -320,6 +320,9 @@ export type LayeredStyleOverride = {
   dark: boolean;
   /** Palet kuralı metni (TONE_PROMPTS); yoksa dark'a göre varsayılan. */
   tonePrompt?: string;
+  /** Konsepte özel yazı yerleşimi (İngilizce); varsa genel "yazar üstte, başlık
+   *  altında" düzeninin yerine geçer (yalnız yazıyı ChatGPT basarken). */
+  textLayout?: string;
 };
 
 // Yazıyı ChatGPT bassın istenirse: BİREBİR yazılacak metinler. Yoksa görsel
@@ -393,7 +396,20 @@ export function buildLayeredPrompt(opts: {
   }
   const tx = opts.text;
   const q = (s: string) => `"${s.replace(/"/g, "'")}"`;
-  if (tx) {
+  if (tx && opts.override?.textLayout) {
+    // Konseptin kendi yazı düzeni (kurgu standardından).
+    const items = [
+      `author ${q(tx.author)}`,
+      `title ${q(tx.title)}`,
+      tx.subtitle ? `subtitle ${q(tx.subtitle)}` : "",
+      tx.genreLabel ? `genre label ${q(tx.genreLabel)}` : "",
+    ].filter(Boolean);
+    lines.push(
+      `- Typography (strict): ${opts.override.textLayout} Text elements: ${items.join("; ")}. ` +
+        "Correct Turkish diacritics (İ ı Ş ş Ğ ğ Ü ü Ö ö Ç ç), optical kerning, generous margins; " +
+        "image and typography share one purposeful design.",
+    );
+  } else if (tx) {
     // Yazı görsele gömülür: konum/ölçü senin örnek komutlarındaki düzen.
     const parts = [
       `- Typography zone: the top ${pct(titleBottom)} of ${front} is quiet negative space ` +

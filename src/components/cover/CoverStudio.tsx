@@ -1907,7 +1907,12 @@ export default function CoverStudio({
           model: "openai",
           scope: b.scope,
           embedText: false,
-          override: { stylePrompt: ov.stylePrompt, dark: ov.dark, tonePrompt: TONE_PROMPTS[ov.tone] },
+          override: {
+            stylePrompt: ov.stylePrompt,
+            dark: ov.dark,
+            tonePrompt: TONE_PROMPTS[ov.tone],
+            textLayout: ov.textLayout,
+          },
           text,
         });
         if (done && blurb) addBackCoverBlurb(blurb);

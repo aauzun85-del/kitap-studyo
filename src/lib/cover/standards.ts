@@ -17,6 +17,9 @@ export type CoverConcept = {
   dark?: boolean;
   /** Örnek görsel yokken kart kartelası [zemin, mürekkep, vurgu]. */
   swatch: [string, string, string];
+  /** Konsepte özel yazı yerleşimi (İngilizce) — ChatGPT yazıyı basarken
+   *  genel düzenin (yazar üstte, başlık altında, ortalı) yerine geçer. */
+  textLayout?: string;
 };
 
 export type CoverStandard = {
@@ -45,12 +48,19 @@ export const COVER_STANDARDS: CoverStandard[] = [
     name: { tr: "Kişisel gelişim", en: "Self-help" },
     label: { tr: "KİŞİSEL GELİŞİM", en: "SELF-HELP" },
     concepts: [
-      c("sembol", "Büyük başlık + tek sembol", "Big title + single symbol", "Düz zemin, iri başlık, tek küçük ikon.", "Flat ground, large title, one small icon.",
+      {
+        ...c("sembol", "Büyük başlık + tek sembol", "Big title + single symbol", "Düz zemin, iri başlık, tek küçük ikon.", "Flat ground, large title, one small icon.",
         "warm light solid matte ground (pistachio, apricot, sand) with subtle fine uncoated paper texture; " +
           "ONE small sculptural conceptual symbol in the lower right (a knot unravelling into an open loop, a folded card, a single leaf) — " +
           "clear silhouette, tactile real-material texture, restrained soft shadow, an intelligent compact visual metaphor; " +
           "huge calm space reserved for a dominant title; rigorously aligned grid, calm contemporary personal-development design; " +
           "no stairs, arrows, lightbulbs, motivational badges, scattered icons, shiny 3D or gradients", ["#e9ecd9", "#3a2436", "#e8612b"]),
+        textLayout:
+          "Very dark (aubergine or ink) lettering on the light ground, LEFT-aligned text block starting at about 10% from the left. Author small tracked uppercase at the top " +
+          "(about 9% of the height); the title as the dominant element in an elegant bold humanist sans serif (not an ultra-condensed poster font), 2–3 deliberate " +
+          "left-aligned lines occupying roughly 22–65% of the height with confident generous leading; the subtitle small and neat in 1–2 lines near the bottom left " +
+          "(about 78%), leaving the lower-right corner free for the single symbol.",
+      },
       c("metafor", "Metafor fotoğraf", "Metaphor photo", "Yol, kapı, ışık, ufuk; gerçekçi görsel.", "Road, door, light, horizon; photographic.",
         "metaphor through exceptional editorial photography: a quiet sunlit interior or place where ONE simple object (an armchair in a " +
           "rectangle of morning light, an open window with a billowing linen curtain, a single door) carries the idea of making space for oneself; " +
@@ -110,12 +120,19 @@ export const COVER_STANDARDS: CoverStandard[] = [
           "turquoise details, flat restrained metallic-ink effect (no embossed CGI, glitter, luminous gradients or fake leather); the center stays quiet and empty; a thin gold rule " +
           "near the edge is allowed, no heavy decorative frame; no Arabic text, no pseudo-calligraphy, no literal heart, mosque, crescent, stars, astrolabe, occult geometry, " +
           "circular medallion, stock ornament collage or wedding-invitation look", ["#101c3a", "#f3ead2", "#c9a24a"], true),
-      c("tipografik", "Sade tipografik", "Plain typographic", "Yazı odaklı, sakin, tek renk zemin.", "Text-led, calm, single-color ground.",
+      {
+        ...c("tipografik", "Sade tipografik", "Plain typographic", "Yazı odaklı, sakin, tek renk zemin.", "Text-led, calm, single-color ground.",
         "restrained typographic spirituality cover: stillness expressed through space, proportion and a quiet vertical pause; warm natural ivory uncoated paper ground, " +
           "tactile softly fibrous cream paper with very subtle natural surface variation; the ONLY graphic element is one very fine muted antique-gold vertical rule on the " +
           "left (around 15% from the left edge, spanning the middle of the height) as a quiet anchor; no illustration, photograph, botanical motif, ornamental frame, mosque, " +
           "emblem, icon, Arabic lettering or pseudo-calligraphy; large uninterrupted ivory space above, below and to the right; no stains, heavy grain, gradients, shadows, " +
           "bevels, embossing or gloss", ["#f3ecdd", "#1f3a2a", "#b8923f"]),
+        textLayout:
+          "Deep forest-green lettering, an asymmetrical LEFT-aligned text block starting at about 23% from the left (to the right of the thin gold rule), with a generous " +
+          "right margin. Author small tracked uppercase at about 13% of the height; the title on two lines with a contemplative gap between them, occupying roughly 32–52% " +
+          "of the height in a distinguished humanist old-style serif of medium weight, never oversized; the subtitle in two quiet small lines at about 62–69% in an " +
+          "understated sans; the tiny genre label below it. All three share the same left alignment; the bottom 20% stays empty.",
+      },
       c("mimari", "Mimari / ışık", "Architecture / light", "Cami, kubbe, ışık huzmesi.", "Mosque, dome, beam of light.",
         "architecture and light: refined architectural editorial photography of an imaginary modest historic Ottoman mosque interior — view from a shaded side arcade through " +
           "gracefully proportioned stone arches toward a quiet prayer hall, a small high arched window admitting soft early-morning sunlight that lays a long luminous patch " +
@@ -142,14 +159,49 @@ export const COVER_STANDARDS: CoverStandard[] = [
   {
     code: "DN",
     name: { tr: "Biyografi / deneme", en: "Biography / essays" },
-    label: { tr: "BİYOGRAFİ", en: "BIOGRAPHY" },
+    label: { tr: "ANI / DENEME", en: "MEMOIR / ESSAYS" },
     concepts: [
-      c("portre", "Portre", "Portrait", "Yüz ağırlıklı, siyah-beyaz ya da renkli.", "Face-led, mono or color.",
-        "expressive portrait photograph or painted portrait, face in soft light, quiet background, dignified", ["#e8e4dc", "#1b1b1b", "#9c3b2a"]),
-      c("isim", "İsim büyük", "Name as the cover", "Yazar adı kapağın kendisi.", "The author's name is the design.",
-        "uniform elegant ground with a subtle paper texture and nothing else — built for very large typography", ["#f3ece0", "#2b2a27", "#b8923f"]),
-      c("arsiv", "Arşiv fotoğraf + bant", "Archive photo + band", "Eski foto, renkli şerit.", "Old photo, colored band.",
-        "vintage archival photograph with film grain and faded tones, composed so a solid color band can sit across the lower third", ["#d9d2c5", "#222", "#c0392b"]),
+      {
+        ...c("portre", "Portre", "Portrait", "Düz zemin, çerçeveli siyah-beyaz portre; klasik yayınevi portre dizisi.", "Solid ground, framed black-and-white portrait; classic publisher portrait series.",
+          "traditional publisher portrait-series layout: a deep warm brick-red (or another single deep) solid matte uncoated-paper ground covering the whole cover, no gradients, " +
+            "no decoration; centered in the middle a vertical rectangular black-and-white documentary photograph (about 65% of the width, 43% of the height) with a fine ivory " +
+            "keyline and a narrow gap inside the frame like a mounted archival print, never touching the edges; the portrait: the author seated in a quiet real environment " +
+            "(a writing desk by a window, a softly blurred bookshelf), shown from the waist up with relaxed hands, face about a third of the photo's height, thoughtful " +
+            "approachable expression, authentic anatomy, understated clothing, no glamour; delicate silver-gelatin tonal quality with fine grain, no sepia, no damage effects; " +
+            "no text over the photograph, no full-bleed face, no ornamental corners, no flowers, no collage, no gold foil, no drop shadows", ["#8b1a1a", "#f3ead2", "#f3ead2"]),
+        dark: true,
+        textLayout:
+          "Warm ivory lettering on the solid ground. Title centered in the upper quarter on 1–2 lines in a moderately condensed literary serif, substantial yet restrained; " +
+          "small subtitle centered directly below the title; the framed photograph below the subtitle; the author name centered BELOW the photograph in medium uppercase " +
+          "humanist sans with refined tracking, with clear breathing room; the tiny tracked genre label centered near the bottom. Hierarchy: title, portrait, author, subtitle, label.",
+      },
+      {
+        ...c("isim", "İsim büyük", "Name as the cover", "Yazar adı kapağın kendisi; portre ya da resim yok.", "The author's name is the design; no portrait or illustration.",
+          "a confident typographic publishing design with no portrait or illustration: a deep midnight petrol-blue (or another single deep) ground with an extremely subtle " +
+            "matte uncoated-paper texture and nothing else; a clear rectangular grid and generous outer margins; the design is built entirely from typography; " +
+            "no faces, photographs, signatures, frames, stripes, icons, emblems, ornaments, gradients, metallic shine, embossing, badges or shadows", ["#0f2a3a", "#f3ead2", "#f2a775"]),
+        dark: true,
+        textLayout:
+          "Warm ivory lettering with one muted apricot accent, everything flush LEFT on the same margin. The AUTHOR NAME is the unmistakable hero occupying roughly the " +
+          "upper 60% of the cover: first name on one line and surname immediately beneath, very large bold slightly condensed neo-grotesque uppercase, both lines fitted to " +
+          "about the same visual width without distorting letters, first line ivory and second line apricot, no outlines or overlaps. Above the name a very small widely " +
+          "tracked genre label. Below the name a substantial pause of empty ground, then the TITLE in an elegant medium-weight literary serif, left-aligned, 1–2 lines, " +
+          "clearly secondary but readable in thumbnail; near the bottom left the subtitle small in a clean humanist sans. Hierarchy: author name, title, subtitle, label.",
+      },
+      {
+        ...c("arsiv", "Arşiv fotoğraf + bant", "Archive photo + band", "Üstte eski siyah-beyaz fotoğraf, altta düz renkli yazı bandı.", "Archival black-and-white photo above, solid colored title band below.",
+          "a disciplined two-part composition: the upper ~64% is an original fictional black-and-white family-album photograph of ordinary remembered everyday life " +
+            "(a 1970s neighborhood street at eye level, small figures walking away, weathered facades, tall wooden windows, a recessed doorway; or a comparable candid " +
+            "scene of companionship and passing time), bleeding to the top and both sides, no readable signs, no modern objects, no celebrities; natural overcast light, " +
+            "authentic analog softness, gently faded silver-gray midtones, deep charcoal details, delicate film grain, no scratches, stains or torn edges; " +
+            "the lower ~36% is a completely opaque flat muted burnt-terracotta (or another single warm) band spanning the full width with a crisp horizontal edge, " +
+            "no gradient, no border, no shadow; no text over the photograph; no close-up portraits, frames, scrapbook collage, handwriting, stamps, tape, sepia, sunsets, " +
+            "dramatic lighting, famous landmarks or badges", ["#d9d2c5", "#f3ead2", "#a84a2a"]),
+        textLayout:
+          "All text sits inside the lower solid band, aligned to one generous LEFT margin (about 8% of the width), in warm ivory. At the top of the band the author in " +
+          "small tracked uppercase humanist sans; below it the title on 1–2 lines in a substantial literary serif as the dominant text, comfortably contained in the band; " +
+          "below the title the subtitle in small sans; the tiny tracked genre label near the bottom RIGHT of the band with ample clearance. Nothing over the photograph.",
+      },
     ],
   },
   {
