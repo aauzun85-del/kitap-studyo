@@ -304,10 +304,17 @@ export default function Dashboard({
     return l.startsWith("bugün") ? "Bugün" : l.startsWith("dün") ? "Dün" : l.startsWith("today") ? "Today" : l.startsWith("yesterday") ? "Yesterday" : l;
   };
 
-  const hour = new Date().getHours();
-  const greet = tr
-    ? hour < 6 ? "İyi geceler" : hour < 12 ? "Günaydın" : hour < 18 ? "İyi günler" : "İyi akşamlar"
-    : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  // Saate göre selam YALNIZ tarayıcıda (kitaplar yüklendikten sonra) hesaplanır:
+  // sunucu saati (UTC) üyenin saatiyle aynı değil.
+  const hour = items !== null ? new Date().getHours() : null;
+  const greet =
+    hour === null
+      ? tr
+        ? "Merhaba"
+        : "Hello"
+      : tr
+        ? hour < 6 ? "İyi geceler" : hour < 12 ? "Günaydın" : hour < 18 ? "İyi günler" : "İyi akşamlar"
+        : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   // Arama: kitap adı ya da yazar (Türkçe harf duyarlı).
   const q = query.trim().toLocaleLowerCase("tr");
@@ -328,7 +335,8 @@ export default function Dashboard({
         alt={title}
         width={w}
         height={h}
-        className="shrink-0 rounded-md object-cover shadow-[0_6px_16px_rgba(20,24,40,.18)]"
+        // Küçük resim açık kapağın tamamı (arka · sırt · ön) → ön kapak sağda.
+        className="shrink-0 rounded-md object-cover object-right shadow-[0_6px_16px_rgba(20,24,40,.18)]"
         style={{ width: w, height: h }}
       />
     ) : (
@@ -397,7 +405,7 @@ export default function Dashboard({
         {/* ── başlık ── */}
         <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="m-0 text-[28px] font-extrabold tracking-tight text-[#141827] sm:text-[32px]" suppressHydrationWarning>
+            <h1 className="m-0 text-[28px] font-extrabold tracking-tight text-[#141827] sm:text-[32px]">
               {empty ? (tr ? `Hoş geldin, ${firstName}` : `Welcome, ${firstName}`) : `${greet}, ${firstName}`}
             </h1>
             <p className="mt-1.5 text-[15.5px] text-[#6b7280]">
