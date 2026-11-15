@@ -508,6 +508,12 @@ export default function CoverStudio({
     "idle",
   );
   const [draftRestored, setDraftRestored] = useState(false);
+  // "Önceki tasarım geri yüklendi" bildirimi birkaç saniye sonra kendiliğinden kapanır.
+  useEffect(() => {
+    if (!draftRestored) return;
+    const id = window.setTimeout(() => setDraftRestored(false), 6000);
+    return () => window.clearTimeout(id);
+  }, [draftRestored]);
   const hydratedRef = useRef(false); // ilk yükleme bitti mi (öncesinde kayıt yapma)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestDraftRef = useRef<CoverDraft | null>(null); // sekme kapanınca yazmak için
@@ -3561,7 +3567,7 @@ export default function CoverStudio({
         />
       )}
       {draftRestored && (
-        <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-emerald-500/40 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
+        <div className="fixed left-1/2 top-20 z-[80] flex -translate-x-1/2 items-center justify-between gap-3 rounded-lg border border-emerald-500/40 bg-emerald-50 px-4 py-2 text-sm text-emerald-700 shadow-lg">
           <span>{t.draftRestored}</span>
           <button
             type="button"
@@ -3604,7 +3610,7 @@ export default function CoverStudio({
         )}
 
         {/* ── Tuval ── */}
-        <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col p-3 lg:min-h-0 lg:p-4">
+        <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col p-2 lg:min-h-0 lg:p-3">
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
             {preview ? (
               <div className="absolute right-3 top-3 z-30">
@@ -3617,7 +3623,7 @@ export default function CoverStudio({
                 </button>
               </div>
             ) : (
-              <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-3 py-2.5 sm:px-4">
+              <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-2.5 py-1.5 sm:gap-3 sm:px-3">
                 <div className="flex rounded-xl border border-border bg-background p-1" role="group" aria-label={lang === "tr" ? "Görünüm" : "View"}>
                   {(
                     [
@@ -3631,7 +3637,7 @@ export default function CoverStudio({
                       type="button"
                       onClick={() => setViewFocus(v)}
                       aria-pressed={viewFocus === v}
-                      className={`rounded-lg px-3.5 py-2 text-sm font-medium transition ${
+                      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
                         viewFocus === v ? "bg-accent-soft text-accent" : "text-foreground/70 hover:text-foreground"
                       }`}
                     >
@@ -3639,7 +3645,48 @@ export default function CoverStudio({
                     </button>
                   ))}
                 </div>
+                <span className="hidden whitespace-nowrap text-sm text-muted xl:inline" title={t.totalSizeLabel}>
+                  {formatMm(spread.totalWidth)} × {formatMm(spread.totalHeight)}
+                </span>
                 <div className="flex-1" />
+                <div className="flex items-center gap-0.5 rounded-xl border border-border bg-surface px-1 py-0.5" role="group" aria-label={lang === "tr" ? "Yakınlaştırma" : "Zoom"}>
+                <button
+                  type="button"
+                  onClick={() => setZoom((z) => zoomStep(z, -1))}
+                  disabled={zoom <= ZOOM_STEPS[0]}
+                  aria-label={lang === "tr" ? "Küçült" : "Zoom out"}
+                  title={lang === "tr" ? "Küçült" : "Zoom out"}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-foreground/80 transition hover:bg-accent-soft disabled:opacity-30"
+                >
+                  −
+                </button>
+                <span className="min-w-[3.5rem] text-center text-sm font-semibold tabular-nums text-foreground" aria-live="polite">
+                  {viewInfo.realPercent}%
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setZoom((z) => zoomStep(z, 1))}
+                  disabled={!canZoomIn}
+                  aria-label={lang === "tr" ? "Büyüt" : "Zoom in"}
+                  title={lang === "tr" ? "Büyüt" : "Zoom in"}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-foreground/80 transition hover:bg-accent-soft disabled:opacity-30"
+                >
+                  +
+                </button>
+                <span className="mx-1 h-6 w-px bg-border" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setZoom(1);
+                    setViewFocus("all");
+                  }}
+                  title={lang === "tr" ? "Ekrana sığdır" : "Fit to screen"}
+                  className="flex h-9 items-center gap-2 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-foreground/80 transition hover:bg-accent-soft"
+                >
+                  <ArrowsOutIcon className="h-4 w-4" />
+                  <span className="hidden sm:inline">{lang === "tr" ? "Ekrana sığdır" : "Fit to screen"}</span>
+                </button>
+                </div>
                 <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/80" title={t.bleedNote}>
                   <span className="relative inline-flex">
                     <input
@@ -3671,7 +3718,7 @@ export default function CoverStudio({
               </div>
             )}
 
-            <div className="relative flex min-h-0 flex-1 flex-col px-1 pt-1">
+            <div className="relative flex min-h-0 flex-1 flex-col">
             {/* Tuval, kalan yüksekliği doldurur; içinde hem ene hem boya sığar. */}
             <div className="relative min-h-0 flex-1">
               {aiWaiting && (
@@ -3832,50 +3879,6 @@ export default function CoverStudio({
 
             </div>
 
-            {/* Alt şerit: tam kapak ölçüsü + yakınlaştırma */}
-            <div className="relative flex h-14 shrink-0 items-center px-4">
-              <span className="hidden text-sm text-muted sm:inline" title={t.totalSizeLabel}>
-                {formatMm(spread.totalWidth)} × {formatMm(spread.totalHeight)}
-              </span>
-              <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-xl border border-border bg-surface px-1.5 py-1 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setZoom((z) => zoomStep(z, -1))}
-                  disabled={zoom <= ZOOM_STEPS[0]}
-                  aria-label={lang === "tr" ? "Küçült" : "Zoom out"}
-                  title={lang === "tr" ? "Küçült" : "Zoom out"}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-foreground/80 transition hover:bg-accent-soft disabled:opacity-30"
-                >
-                  −
-                </button>
-                <span className="min-w-[3.5rem] text-center text-sm font-semibold tabular-nums text-foreground" aria-live="polite">
-                  {viewInfo.realPercent}%
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setZoom((z) => zoomStep(z, 1))}
-                  disabled={!canZoomIn}
-                  aria-label={lang === "tr" ? "Büyüt" : "Zoom in"}
-                  title={lang === "tr" ? "Büyüt" : "Zoom in"}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-foreground/80 transition hover:bg-accent-soft disabled:opacity-30"
-                >
-                  +
-                </button>
-                <span className="mx-1 h-6 w-px bg-border" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setZoom(1);
-                    setViewFocus("all");
-                  }}
-                  title={lang === "tr" ? "Ekrana sığdır" : "Fit to screen"}
-                  className="flex h-9 items-center gap-2 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-foreground/80 transition hover:bg-accent-soft"
-                >
-                  <ArrowsOutIcon className="h-4 w-4" />
-                  <span className="hidden sm:inline">{lang === "tr" ? "Ekrana sığdır" : "Fit to screen"}</span>
-                </button>
-              </div>
-            </div>
           </div>
         </section>
 

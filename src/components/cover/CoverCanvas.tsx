@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -183,9 +184,9 @@ const MAX_DISPLAY_WIDTH = 2000;
 // Yakınlaştırmada tuvalin ekrandaki en büyük genişliği (piksel).
 const MAX_ZOOM_WIDTH = 6000;
 // Cetvel kalınlıkları ve dış bölüm etiketi satırı (px).
-const RULER_TOP = 26;
-const RULER_LEFT = 34;
-const LABEL_ROW = 26;
+const RULER_TOP = 24;
+const RULER_LEFT = 32;
+const LABEL_ROW = 22;
 export type ViewFocus = "all" | "front" | "back";
 
 export type CoverCanvasHandle = {
@@ -282,6 +283,20 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   onView,
 }, ref) {
   const wrapperRef = useRef<HTMLDivElement>(null);
+  // Kaydırılan iç kutu (tuval + bölüm etiketleri). Cetveller bunun DIŞINDA,
+  // alanın kenarlarında durur; sıfır noktası kapağın kenarına hizalanır.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [origin, setOrigin] = useState({ x: 0, y: 0 });
+  const measureOrigin = useCallback(() => {
+    const sb = scrollRef.current;
+    const cv = canvasElRef.current;
+    if (!sb || !cv) return;
+    const a = cv.getBoundingClientRect();
+    const b = sb.getBoundingClientRect();
+    const x = Math.round(a.left - b.left);
+    const y = Math.round(a.top - b.top);
+    setOrigin((o) => (o.x === x && o.y === y ? o : { x, y }));
+  }, []);
   const canvasElRef = useRef<HTMLCanvasElement>(null);
   const fabricCanvasRef = useRef<{ dispose: () => void } | null>(null);
   const displayDpiRef = useRef(96);
@@ -548,8 +563,9 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       // Kapak yatay olduğundan çoğu ekranda yükseklik belirleyici olur → taşmaz.
       const aspect = spread.totalWidth / spread.totalHeight;
       // Cetveller açıksa onların payını düş.
-      const availW = Math.max(40, containerW - (rulers ? RULER_LEFT : 0));
-      const availH = Math.max(40, containerH - (rulers ? RULER_TOP + LABEL_ROW : 0));
+      // (+1: cetvel şeritlerinin kenar çizgisi)
+      const availW = Math.max(40, containerW - (rulers ? RULER_LEFT + 1 : 0));
+      const availH = Math.max(40, containerH - (rulers ? RULER_TOP + 1 + LABEL_ROW : 0));
       const heightCap = containerH > 0 ? availH * aspect : Infinity;
       // Odak: "ön"/"arka" seçiliyse o bölge kutunun enine sığar (kapak taşar, kaydırılır).
       const region =
@@ -583,7 +599,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
         maxZoom: fitW > 0 ? Math.max(1, capW / fitW) : 1,
       });
       // Görünür merkez: büyütme/odak değişince korunur; yeni odakta bölgenin ortası.
-      const wrapEl = wrapperRef.current;
+      const wrapEl = scrollRef.current;
       const viewKey = `${zoom}|${focus}`;
       let centerTo: { fx: number; fy: number } | null = null;
       if (wrapEl && viewKey !== prevViewKeyRef.current) {
@@ -850,12 +866,14 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
         const ta = scrollable ? "pan-x pan-y" : "none";
         for (const el of [cvx.upperCanvasEl, cvx.lowerCanvasEl, cvx.wrapperEl]) if (el) el.style.touchAction = ta;
       }
-      if (centerTo && wrapEl) {
+      {
         const c = centerTo;
         requestAnimationFrame(() => {
-          if (!wrapEl.isConnected) return;
-          wrapEl.scrollLeft = Math.max(0, c.fx * wrapEl.scrollWidth - wrapEl.clientWidth / 2);
-          wrapEl.scrollTop = Math.max(0, c.fy * wrapEl.scrollHeight - wrapEl.clientHeight / 2);
+          if (c && wrapEl && wrapEl.isConnected) {
+            wrapEl.scrollLeft = Math.max(0, c.fx * wrapEl.scrollWidth - wrapEl.clientWidth / 2);
+            wrapEl.scrollTop = Math.max(0, c.fy * wrapEl.scrollHeight - wrapEl.clientHeight / 2);
+          }
+          measureOrigin();
         });
       }
       canvas.clear();
@@ -1889,7 +1907,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       // kalmasın → bir sonraki seçim olayları yine parent'a yansıyabilsin.
       rebuildingRef.current = false;
     };
-  }, [spread, labels, lang, templateId, titlePos, authorPos, colors, content, showGuides, images, objects, positions, layers, hidden, locked, autoContrast, textStyles, containerW, containerH, fontsReady, zoom, focus, rulers]);
+  }, [spread, labels, lang, templateId, titlePos, authorPos, colors, content, showGuides, images, objects, positions, layers, hidden, locked, autoContrast, textStyles, containerW, containerH, fontsReady, zoom, focus, rulers, measureOrigin]);
 
   useEffect(() => {
     return () => {
@@ -1933,55 +1951,63 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   return (
     <div
       ref={wrapperRef}
-      // Sığmıyorsa (büyütme/odak) kutu kaydırılır; m-auto: taşınca da sol/üst
-      // kenara erişilir. Sığıyorsa kaydırma çubuğu yok.
-      className={`flex h-full min-h-0 ${view.scroll ? "overflow-auto" : "overflow-hidden"} ${
-        rulers ? "" : "rounded-xl border border-border bg-[#efe9de] p-2"
-      }`}
-      style={{ touchAction: view.scroll ? "pan-x pan-y" : "none" }}
+      className={`flex h-full min-h-0 flex-col ${rulers ? "" : "rounded-xl border border-border bg-[#efe9de] p-2"}`}
     >
-      <div className="m-auto shrink-0">
-        {rulers && view.pxPerMm > 0 && (
-          <div className="sticky top-0 z-[2] flex bg-surface" style={{ height: RULER_TOP }}>
-            <div className="sticky left-0 z-[3] shrink-0 bg-surface" style={{ width: RULER_LEFT }} />
-            <div className="overflow-hidden" style={{ width: view.clipW || view.w }}>
-              <div style={{ marginLeft: -view.x0 }}>
-                <Ruler orientation="h" lengthMm={spread.totalWidth} pxPerMm={view.pxPerMm} />
-              </div>
-            </div>
+      {rulers && (
+        // Üst cetvel: alanın ÜST kenarı boyunca; 0 kapağın sol kenarında.
+        <div className="flex shrink-0 border-b border-border bg-surface" style={{ height: RULER_TOP }}>
+          <div className="shrink-0 border-r border-border" style={{ width: RULER_LEFT }} />
+          <div className="relative min-w-0 flex-1 overflow-hidden">
+            {view.pxPerMm > 0 && (
+              <EdgeRuler orientation="h" lengthMm={spread.totalWidth} pxPerMm={view.pxPerMm} offset={origin.x} />
+            )}
+          </div>
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1">
+        {rulers && (
+          // Sol cetvel: alanın SOL kenarı boyunca; 0 kapağın üst kenarında.
+          <div className="relative shrink-0 overflow-hidden border-r border-border bg-surface" style={{ width: RULER_LEFT }}>
+            {view.pxPerMm > 0 && (
+              <EdgeRuler orientation="v" lengthMm={spread.totalHeight} pxPerMm={view.pxPerMm} offset={origin.y} />
+            )}
           </div>
         )}
-        <div className="flex">
-          {rulers && view.pxPerMm > 0 && (
-            <div className="sticky left-0 z-[2] shrink-0 bg-surface" style={{ width: RULER_LEFT, paddingTop: LABEL_ROW }}>
-              <Ruler orientation="v" lengthMm={spread.totalHeight} pxPerMm={view.pxPerMm} />
-            </div>
-          )}
-          <div className="overflow-hidden" style={view.clipW ? { width: view.clipW } : undefined}>
-           <div style={{ marginLeft: -view.x0, width: view.w || undefined }}>
-            {rulers && view.pxPerMm > 0 && (
-              <div className="relative text-sm text-muted" style={{ height: LABEL_ROW, width: view.w }}>
-                {(
-                  [
-                    [labels.backCover, spread.backCenter],
-                    [labels.spine, spread.spineCenter],
-                    [labels.frontCover, spread.frontCenter],
-                  ] as [string, number][]
-                ).map(([txt, mm]) => (
-                  <span
-                    key={txt}
-                    className="absolute top-1 -translate-x-1/2 whitespace-nowrap font-medium"
-                    style={{ left: mm * view.pxPerMm }}
-                  >
-                    {txt}
-                  </span>
-                ))}
+        <div
+          ref={scrollRef}
+          onScroll={measureOrigin}
+          // Sığmıyorsa (büyütme/odak) kutu kaydırılır; m-auto: taşınca da sol/üst
+          // kenara erişilir. Sığıyorsa kaydırma çubuğu yok.
+          className={`flex min-h-0 min-w-0 flex-1 ${view.scroll ? "overflow-auto" : "overflow-hidden"}`}
+          style={{ touchAction: view.scroll ? "pan-x pan-y" : "none" }}
+        >
+          <div className="m-auto shrink-0">
+            <div className="overflow-hidden" style={view.clipW ? { width: view.clipW } : undefined}>
+              <div style={{ marginLeft: -view.x0, width: view.w || undefined }}>
+                {rulers && view.pxPerMm > 0 && (
+                  <div className="relative text-sm text-muted" style={{ height: LABEL_ROW, width: view.w }}>
+                    {(
+                      [
+                        [labels.backCover, spread.backCenter],
+                        [labels.spine, spread.spineCenter],
+                        [labels.frontCover, spread.frontCenter],
+                      ] as [string, number][]
+                    ).map(([txt, mm]) => (
+                      <span
+                        key={txt}
+                        className="absolute top-0.5 -translate-x-1/2 whitespace-nowrap font-medium"
+                        style={{ left: mm * view.pxPerMm }}
+                      >
+                        {txt}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className={rulers ? "shadow-[0_1px_8px_rgba(20,20,40,0.12)]" : undefined}>
+                  <canvas ref={canvasElRef} className="block" />
+                </div>
               </div>
-            )}
-            <div className={rulers ? "shadow-[0_1px_8px_rgba(20,20,40,0.12)]" : undefined}>
-              <canvas ref={canvasElRef} className="block" />
             </div>
-           </div>
           </div>
         </div>
       </div>
@@ -1991,34 +2017,33 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
 
 export default CoverCanvas;
 
-// mm cetveli: her 5 mm kısa, her 10 mm orta çizgi; sayı aralığı ölçeğe göre
-// (yazılar sıkışmasın). Yatay cetvel tuvalle birlikte kaydırılır, dikey olan da.
-function Ruler({
+// Kenar cetveli: alanın kenarı boyunca uzanır; ölçüler kapağın kenarından
+// (0) başlar ve yalnız kapak boyunca (0 … toplam mm) çizilir. offset = kapağın
+// bu kenardaki ekran konumu (kaydırmayla güncellenir).
+function EdgeRuler({
   orientation,
   lengthMm,
   pxPerMm,
+  offset,
 }: {
   orientation: "h" | "v";
   lengthMm: number;
   pxPerMm: number;
+  offset: number;
 }) {
-  const len = Math.round(lengthMm * pxPerMm);
+  const h = orientation === "h";
   const step = pxPerMm * 20 >= 44 ? 20 : pxPerMm * 50 >= 44 ? 50 : 100;
   const ticks: { mm: number; size: number }[] = [];
   for (let mm = 0; mm <= lengthMm + 0.001; mm += 5) {
     ticks.push({ mm, size: mm % step === 0 ? 9 : mm % 10 === 0 ? 6 : 3 });
   }
-  const h = orientation === "h";
-  const T = h ? 26 : 34;
+  const T = h ? 24 : 32;
+  const pos = (mm: number) => Math.round(offset + mm * pxPerMm);
+  const endPos = pos(lengthMm);
   return (
-    <svg
-      width={h ? len : T}
-      height={h ? T : len}
-      className="block shrink-0 text-muted"
-      aria-hidden="true"
-    >
+    <svg className="absolute inset-0 h-full w-full text-muted" aria-hidden="true">
       {ticks.map(({ mm, size }) => {
-        const p = Math.round(mm * pxPerMm) + 0.5;
+        const p = pos(mm) + 0.5;
         return h ? (
           <line key={mm} x1={p} x2={p} y1={T - size} y2={T} stroke="currentColor" strokeOpacity={0.55} />
         ) : (
@@ -2027,20 +2052,19 @@ function Ruler({
       })}
       {ticks
         .filter((t) => t.mm % step === 0)
-        .map(({ mm }) => {
-          const p = Math.round(mm * pxPerMm);
-          return h ? (
-            <text key={`t${mm}`} x={p + (mm === 0 ? 1 : 0)} y={12} fontSize={11} textAnchor={mm === 0 ? "start" : "middle"} fill="currentColor">
+        .map(({ mm }) =>
+          h ? (
+            <text key={`t${mm}`} x={pos(mm)} y={12} fontSize={11} textAnchor="middle" fill="currentColor">
               {mm}
             </text>
           ) : (
-            <text key={`t${mm}`} x={T - 12} y={p + 4} fontSize={11} textAnchor="end" fill="currentColor">
+            <text key={`t${mm}`} x={T - 11} y={pos(mm) + 4} fontSize={11} textAnchor="end" fill="currentColor">
               {mm}
             </text>
-          );
-        })}
+          ),
+        )}
       {h && (
-        <text x={len - 2} y={12} fontSize={11} textAnchor="end" fill="currentColor" opacity={0.8}>
+        <text x={endPos + 8} y={12} fontSize={11} textAnchor="start" fill="currentColor" opacity={0.8}>
           mm
         </text>
       )}
