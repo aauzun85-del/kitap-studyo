@@ -1731,7 +1731,7 @@ export default function LayoutStudio({
               )}
               <div className="flex-1" />
               <span className="whitespace-nowrap text-sm text-muted">
-                {previewEngine === "typst" && docPageCount === 0 ? "…" : (previewEngine === "typst" ? docPageCount : pages.length) || 0}{" "}
+                {previewEngine === "typst" && docPageCount === 0 && !isEmpty ? "…" : (previewEngine === "typst" ? docPageCount : pages.length) || 0}{" "}
                 {tr ? "sayfa" : "pages"}
               </span>
               {!isEmpty && (
