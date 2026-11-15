@@ -1856,7 +1856,7 @@ const tr: Dictionary = {
     deepHint: "Daha güçlü model; en ince hataları da yakalar ama biraz daha pahalıdır.",
     resultsHeading: "Öneriler",
     emptyResults:
-      "Soldaki kutuya metninizi yapıştırın. Öneriler — eski ifade, önerilen düzeltme ve nedeni — burada tek tek listelenecek.",
+      "Üstteki “Metni incele” düğmesine bas ya da aşağıdan bir kontrol seç. Öneriler — eski ifade, önerilen düzeltme ve nedeni — burada tek tek listelenir, metinde de işaretlenir.",
     resultsCount: "{count} öneri bulundu",
     noIssues: "Belirgin bir sorun bulunamadı. Metin temiz görünüyor.",
     tidyCount: "{count} fazla boşluk",
@@ -3045,7 +3045,7 @@ const en: Dictionary = {
     deepHint: "A stronger model that catches even subtle errors, but costs a bit more.",
     resultsHeading: "Suggestions",
     emptyResults:
-      "Paste your text into the box on the left. Suggestions — the original phrase, the proposed fix and the reason — will be listed here one by one.",
+      "Press “Review text” at the top or pick a check below. Suggestions — the original phrase, the proposed fix and the reason — are listed here one by one and marked in the text.",
     resultsCount: "{count} suggestions found",
     noIssues: "No notable issues found. The text looks clean.",
     tidyCount: "{count} extra spaces",
