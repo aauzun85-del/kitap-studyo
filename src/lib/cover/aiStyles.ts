@@ -646,7 +646,10 @@ export function buildLayeredPrompt(opts: {
     lines.push(
       `EXACT TEXT: render only these words, spelled exactly: ${allowed}. No other words, ` +
         "no publisher name, no logo, no badges, no watermark, no signature. Keep all text " +
-        "legible and exact." +
+        "legible and exact. Every listed element must appear — none may be dropped. The title " +
+        `${q(tx.title)} must read in exactly this word order (top to bottom, then left to right): ` +
+        "no word moved before or after another, dropped, repeated or added — however playful the " +
+        "layout, the title's meaning must never change." +
         (opts.wrap
           ? " All text lives on the FRONT COVER section only; the back cover and the spine carry no text."
           : ""),

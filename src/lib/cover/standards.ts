@@ -20,6 +20,10 @@ export type CoverConcept = {
   /** Konsepte özel yazı yerleşimi (İngilizce) — ChatGPT yazıyı basarken
    *  genel düzenin (yazar üstte, başlık altında, ortalı) yerine geçer. */
   textLayout?: string;
+  /** Yazı düzenini GERÇEK metinle kurar (koşulları modele bırakmamak için:
+   *  ör. hangi sözcüğün dev basılacağını uygulama seçer). Varsa textLayout'un
+   *  yerine geçer (yalnız yazıyı ChatGPT basarken). */
+  textLayoutFor?: (t: ConceptText, lang: "tr" | "en") => string;
   /** Kullanıcının kurgu notu kapağa BİREBİR basılır (ör. şiir dizeleri) —
    *  sahne tarifi olarak değil, EXACT TEXT listesinde. */
   noteAsText?: boolean;
@@ -38,6 +42,107 @@ export type CoverConcept = {
     prompt: string;
   };
 };
+
+/** Konseptin yazı düzenini kurarken kullanılan metinler (aiStyles LayeredText ile aynı şekil). */
+export type ConceptText = {
+  title: string;
+  author: string;
+  subtitle?: string;
+  genreLabel?: string;
+  extra?: string;
+};
+
+const q = (s: string) => `"${s.replace(/"/g, "'")}"`;
+const upper = (s: string, lang: "tr" | "en") => (lang === "tr" ? s.toLocaleUpperCase("tr-TR") : s.toUpperCase());
+// Dev basılacak sözcük: dolgu sözcükleri (bir, ve, için…) dışındaki EN UZUN sözcük.
+const FILLER = new Set([
+  "bir", "ve", "ile", "için", "de", "da", "ki", "bu", "şu", "o", "gibi", "kadar", "en", "ya", "veya", "hem", "mi", "mı", "mu", "mü",
+  "the", "a", "an", "of", "and", "or", "to", "in", "on", "for", "with", "is", "at", "by",
+]);
+const VOWELS = "aeıioöuüâîûAEIİOÖUÜÂÎÛ";
+// Sözcüğü hece sınırından ikiye böler (Türkçe: hece, ünlüden önceki ünsüzle başlar);
+// ortaya en yakın sınır seçilir. 5 harften kısa ya da sınır yoksa bölünmez.
+function splitAtSyllable(w: string): string[] {
+  const ch = [...w];
+  if (ch.length < 5) return [w];
+  let best = -1;
+  for (let i = 2; i <= ch.length - 2; i++) {
+    if (!VOWELS.includes(ch[i]) && VOWELS.includes(ch[i + 1] ?? "")) {
+      if (best === -1 || Math.abs(i - ch.length / 2) < Math.abs(best - ch.length / 2)) best = i;
+    }
+  }
+  return best === -1 ? [w] : [ch.slice(0, best).join(""), ch.slice(best).join("")];
+}
+function pickGiant(words: string[]): number {
+  const bare = (w: string) => w.replace(/[^\p{L}]/gu, "");
+  let idx = -1;
+  words.forEach((w, i) => {
+    if (FILLER.has(bare(w).toLocaleLowerCase("tr-TR"))) return;
+    if (idx === -1 || bare(w).length > bare(words[idx]).length) idx = i;
+  });
+  if (idx !== -1) return idx;
+  words.forEach((w, i) => {
+    if (idx === -1 || bare(w).length > bare(words[idx]).length) idx = i;
+  });
+  return Math.max(0, idx);
+}
+
+/** Hiciv "Tipografik şaka": dev sözcüğü UYGULAMA seçer ve satırları birebir verir;
+ *  önceki sözcükler üstte, sonrakiler altta kalır → başlığın sırası/anlamı bozulmaz. */
+function jokeLayout(t: ConceptText, lang: "tr" | "en"): string {
+  const words = t.title.trim().split(/\s+/).filter(Boolean);
+  const gi = pickGiant(words);
+  const before = upper(words.slice(0, gi).join(" "), lang);
+  const giant = upper(words[gi] ?? t.title, lang);
+  const after = upper(words.slice(gi + 1).join(" "), lang);
+  const parts = splitAtSyllable(giant);
+  const out: string[] = [
+    "NOT a conventional stacked title — the joke is in the scale. Set the title as exactly these pieces, top to bottom, and nothing else from it:",
+  ];
+  if (before) {
+    out.push(`at the upper left, small but clearly legible, in a vermilion accent with moderate tracking: ${q(before)};`);
+  }
+  out.push(
+    `the GIANT word ${q(giant)}` +
+      (parts.length === 2 ? `, set as two stacked lines ${q(parts[0])} / ${q(parts[1])} (no hyphen)` : ", on one line") +
+      ", in exceptionally heavy broad neo-grotesque uppercase, warm pale contrasting colour, occupying about 75% of the height and about 85% of the width, " +
+      "never clipping any letter or Turkish dot, never distorted;",
+  );
+  if (after) {
+    out.push(`directly BELOW the giant word at the bottom left, small but clearly legible, in ivory with moderate tracking: ${q(after)}.`);
+  }
+  if (!before) out.push("There is NO small line above the giant word and NO vermilion lettering anywhere on this cover.");
+  if (!after) out.push("There is NO small line below the giant word.");
+  out.push(
+    `Read from top to bottom these pieces must form exactly ${q(upper(t.title, lang))} — no piece moved, dropped or repeated.`,
+    "The author runs along the right margin as one small ivory line rotated 90° clockwise, with a clear gutter; the tiny genre label sits " +
+      "horizontally in the upper right.",
+  );
+  if (t.subtitle) {
+    out.push("The subtitle is one tiny ivory horizontal line at the very top left, level with the genre label, above everything else.");
+  }
+  out.push("No other rotation, no distortion, no extra punctuation.");
+  return out.join(" ");
+}
+
+/** Şiir "Tipografik şiir": dize verilmezse başlık BİR KEZ, büyük kademeli italik olarak. */
+function poetryLayout(t: ConceptText): string {
+  if (t.extra && t.extra.trim()) return POETRY_WITH_EXCERPT;
+  return (
+    "Warm ivory lettering with one pale blush accent word. Upper quarter, LEFT-aligned about 9% from the edges: the small tracked uppercase author, then " +
+    "the tiny tracked genre label — NO small title there. The main expressive element is the title itself, set ONCE in the central and lower-middle area, " +
+    "larger in a beautifully drawn literary italic serif: one whole word or short phrase per line, staggered — a line aligned left, the next indented " +
+    "noticeably to the right — in exact word order from top to bottom, never split inside a word; one key word in pale blush, the rest ivory; nothing " +
+    "else in that area — no excerpt, no verse, no invented lines; every line within the margins and a generous empty lower margin."
+  );
+}
+const POETRY_WITH_EXCERPT =
+  "Warm ivory lettering with one pale blush accent word. Upper quarter, LEFT-aligned about 9% from the edges: the small tracked uppercase author, beneath it the " +
+  "title on two lines in a refined medium-weight upright literary serif (modest, easily readable), then the tiny tracked genre label. The main expressive " +
+  "element is the excerpt in the central and lower-middle area, set larger in a beautifully drawn literary italic serif: break it across staggered lines — " +
+  "a phrase aligned left, the next indented noticeably to the right, a generous vertical pause of empty ground between the sentences, then the same again; " +
+  "one key word in pale blush, the rest ivory; normal readable letter spacing, grammatical reading order, no repeated words, every line within the margins, " +
+  "a generous empty lower margin.";
 
 export type CoverStandard = {
   /** Thema kodu (düğüm). */
@@ -322,13 +427,8 @@ export const COVER_STANDARDS: CoverStandard[] = [
             "illustration, photograph, branch, watercolor, symbol, border, ornament, oversized quotation marks, handwriting, shadows, embossing, gold foil or gradients; " +
             "the composition is built entirely from the rhythm of language, typography and empty space", ["#4a2a3e", "#f3ead2", "#e8a9b4"], true),
         noteAsText: true,
-        textLayout:
-          "Warm ivory lettering with one pale blush accent word. Upper quarter, LEFT-aligned about 9% from the edges: the small tracked uppercase author, beneath it the " +
-          "title on two lines in a refined medium-weight upright literary serif (modest, easily readable), then the tiny tracked genre label. The main expressive " +
-          "element is the excerpt in the central and lower-middle area, set larger in a beautifully drawn literary italic serif: break it across staggered lines — " +
-          "a phrase aligned left, the next indented noticeably to the right, a generous vertical pause of empty ground between the sentences, then the same again; " +
-          "one key word in pale blush, the rest ivory; normal readable letter spacing, grammatical reading order, no repeated words, every line within the margins, " +
-          "a generous empty lower margin. If no excerpt is supplied, set the title itself as the large staggered italic element instead.",
+        textLayout: POETRY_WITH_EXCERPT,
+        textLayoutFor: (t) => poetryLayout(t),
       },
     ],
   },
@@ -610,16 +710,19 @@ export const COVER_STANDARDS: CoverStandard[] = [
             "subtle matte print texture and NOTHING else — no characters, portraits, caricatures, engravings, icons, crowns, speech balloons, frames, stripes, " +
             "photographic textures, gradients, shadows, bevels or gloss; the cover is built entirely from type in two or three flat colors, with the confidence of a " +
             "carefully art-directed printed poster that still functions as a book cover", ["#1034b8", "#f4e36b", "#e8402a"], true),
+        textLayoutFor: (t, lang) => jokeLayout(t, lang),
         textLayout:
           "NOT a conventional stacked title. Pick the ONE word of the title that carries the satire and let it behave like an inflated ego: set it enormous in " +
-          "exceptionally heavy broad neo-grotesque uppercase, in a warm pale contrasting color, broken across two lines if needed (no hyphen, no repeated letters), " +
-          "occupying about 75% of the height and 85% of the width without clipping any letter or Turkish dot. The remaining title words are deliberately tiny but " +
-          "clearly legible, pushed to the margins in reading order (the word before it small near the upper left in a vermilion accent; the word after it small " +
-          "near the bottom left in ivory with moderate tracking) so the whole title still reads in order. The author runs along the right margin as one small ivory " +
-          "line rotated 90° clockwise, with a clear gutter; the tiny genre label sits horizontally in the upper right. A subtitle, if any, is " +
-          "one tiny ivory horizontal line at the very top left, level with the genre label and above the small leading title word — never under the giant word. " +
-          "No arbitrary rotation of title words, no " +
-          "distortion, no extra punctuation.",
+          "exceptionally heavy broad neo-grotesque uppercase, in a warm pale contrasting color, broken across two lines only at a natural syllable boundary if " +
+          "needed (no hyphen, no repeated letters), occupying about 70% of the height and about 75% of the width from the left margin — leaving a clear strip " +
+          "along the right edge for the author — without clipping any letter or Turkish dot. All other title words stay deliberately tiny but clearly legible and " +
+          "KEEP THEIR PLACE IN THE SENTENCE: every word that comes BEFORE the giant word in the title sits small ABOVE it at the upper left in a vermilion accent; " +
+          "every word that comes AFTER it sits small BELOW it at the bottom left in ivory with moderate tracking. If the giant word is the FIRST word of the title, " +
+          "nothing sits above it and all the other words go below it in their original order; if it is the LAST word, all the other words go above it. Never move " +
+          "a word to the other side of the giant word — read from top to bottom the cover must say exactly the given title, with its meaning unchanged. The author " +
+          "MUST appear: one small ivory line running along the right-edge strip, rotated 90° clockwise, with a clear gutter from the giant word; the tiny genre " +
+          "label sits horizontally in the upper right. A subtitle, if any, is one tiny ivory horizontal line at the very top left, level with the genre label and " +
+          "above everything else — never between the title words. No arbitrary rotation of title words, no distortion, no extra punctuation.",
       },
     ],
   },

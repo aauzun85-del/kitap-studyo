@@ -1636,18 +1636,22 @@ export default function CoverStudio({
     const usePhoto = !!photoSlot && concept.photo?.layout === photoSlot.layout;
     const note = (b.note ?? "").trim();
     const byAi = (b.textBy ?? "ai") === "ai";
+    // Yazıyı ChatGPT bassın (varsayılan): başlık/yazar/tür etiketi birebir.
+    const text: LayeredText | undefined = byAi
+      ? {
+          title,
+          author,
+          subtitle: subtitle.trim() || undefined,
+          genreLabel: standard.label[lang] || undefined,
+          // Konsept "notu bas" diyorsa (şiir dizeleri) not kapağa birebir basılır.
+          extra: ov.noteAsText && note ? note : undefined,
+        }
+      : undefined;
+    // Konsept yazı düzenini gerçek metinle kurabiliyorsa (ör. dev sözcüğü uygulama
+    // seçer) onu kullan — koşulları modele bırakmak başlığın sırasını bozuyordu.
+    const layout = text && concept.textLayoutFor ? concept.textLayoutFor(text, lang) : ov.textLayout;
     return {
-      // Yazıyı ChatGPT bassın (varsayılan): başlık/yazar/tür etiketi birebir.
-      text: byAi
-        ? {
-            title,
-            author,
-            subtitle: subtitle.trim() || undefined,
-            genreLabel: standard.label[lang] || undefined,
-            // Konsept "notu bas" diyorsa (şiir dizeleri) not kapağa birebir basılır.
-            extra: ov.noteAsText && note ? note : undefined,
-          }
-        : undefined,
+      text,
       override: {
         // Fotoğraflı kapakta konsept cümlesi yerine "yuvayı boş bırak" tarifi;
         // zemin rengi konsepte aittir → ton seçimi komuta girmez.
@@ -1655,7 +1659,7 @@ export default function CoverStudio({
         dark: usePhoto ? !!concept.dark : ov.dark,
         tonePrompt: usePhoto ? undefined : ov.tonePrompt,
         // Fotoğraf yuvası varken konsept kendi "yuvalı" yazı düzenini verebilir.
-        textLayout: usePhoto && concept.photo?.textLayout ? concept.photo.textLayout : ov.textLayout,
+        textLayout: usePhoto && concept.photo?.textLayout ? concept.photo.textLayout : layout,
         bookTitle: title,
       },
     };
