@@ -1,16 +1,18 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Locale } from "@/i18n/config";
-import { listProjects, createProject, renameProject, deleteProject } from "@/lib/projects/data";
+import { listProjects, createProject, renameProject, deleteProject, updateProjectManuscript } from "@/lib/projects/data";
+import { docxToText } from "@/lib/editor/docxText";
+import { patchSession } from "@/lib/editor/session";
 import { signThumbs } from "@/lib/projects/storage";
 import { createClient } from "@/lib/supabase/client";
 import type { ProjectListItem } from "@/lib/projects/types";
 import { WIZARD_PROFILES, STANDARD_PROFILES, profileSizeOptions, type PrintStandard } from "@/lib/layout/standards";
 import { GENRES } from "@/lib/projects/genres";
-import AppShell, { Icon, MODULES, type ShellUser } from "./AppShell";
+import AppShell, { Icon, type ShellUser } from "./AppShell";
 
 // ── Yerel metinler (Pano'ya özel; tasarım Türkçe, app iki dilli) ──
 const COPY = {
@@ -125,25 +127,6 @@ function spineFor(id: string): string {
   return SPINES[h % SPINES.length];
 }
 
-function relTime(iso: string, lang: Locale): string {
-  const tr = lang === "tr";
-  const diff = Math.max(0, Date.now() - new Date(iso).getTime());
-  const min = 60000, hr = 3600000, day = 86400000;
-  if (diff < min) return tr ? "az önce" : "just now";
-  if (diff < hr) {
-    const n = Math.floor(diff / min);
-    return tr ? `${n} dakika önce` : `${n} min ago`;
-  }
-  if (diff < day) {
-    const n = Math.floor(diff / hr);
-    return tr ? `${n} saat önce` : `${n}h ago`;
-  }
-  if (diff < 7 * day) {
-    const n = Math.floor(diff / day);
-    return tr ? `${n} gün önce` : `${n}d ago`;
-  }
-  return new Date(iso).toLocaleDateString(tr ? "tr-TR" : "en-US");
-}
 
 export default function Dashboard({
   lang,
@@ -177,6 +160,15 @@ export default function Dashboard({
   const [nAuthor, setNAuthor] = useState("");
   const [nGenre, setNGenre] = useState("");
   const [nIsbn, setNIsbn] = useState("");
+  // Pano: arama, tüm kitaplar, kart menüsü, "Nasıl çalışır?"
+  const [query, setQuery] = useState("");
+  const [showAll, setShowAll] = useState(false);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [howOpen, setHowOpen] = useState(false);
+  // "Word yükle": dosya önce okunur, kitap formu adıyla açılır; kitap oluşunca
+  // metin kitaba yazılır ve AI Editör'de açılır (orijinal .docx biçimiyle).
+  const wordInputRef = useRef<HTMLInputElement>(null);
+  const [wordDoc, setWordDoc] = useState<{ name: string; text: string; buffer: ArrayBuffer; paragraphs: number } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -195,10 +187,24 @@ export default function Dashboard({
     void refresh();
   }, [refresh, previewItems]);
 
-  const openProject = (id: string) => router.push(`/${lang}/kapak?project=${id}`);
 
   // "Yeni Kitap" → önce başlangıç formunu aç (ad/yazar/tür).
+  async function pickWord(file: File) {
+    setError(null);
+    try {
+      const buffer = await file.arrayBuffer();
+      const { text, paragraphCount } = docxToText(buffer);
+      if (!text.trim()) throw new Error("empty");
+      onNew();
+      setWordDoc({ name: file.name, text, buffer, paragraphs: paragraphCount });
+      setNTitle(file.name.replace(/\.docx$/i, "").replace(/[_-]+/g, " ").trim());
+    } catch {
+      setError(lang === "tr" ? "Word dosyası okunamadı. .docx biçiminde, metin içeren bir dosya seç." : "Couldn't read the Word file. Choose a .docx file with text.");
+    }
+  }
+
   function onNew() {
+    setWordDoc(null);
     setNProfile("kdy");
     setNSizeId("");
     setNTitle("");
@@ -218,6 +224,12 @@ export default function Dashboard({
       const sizeOpts = profileSizeOptions(nProfile);
       const sizeId = sizeOpts.length ? (nSizeId || STANDARD_PROFILES[nProfile].defaultSizeId) : undefined;
       const { id } = await createProject(nTitle.trim(), nAuthor.trim(), nGenre, nIsbn.trim(), nProfile, sizeId);
+      if (wordDoc) {
+        // Word metni kitaba yazılır; orijinal dosya AI Editör oturumuna verilir
+        // (Word indirirken biçim korunsun diye).
+        await updateProjectManuscript(id, wordDoc.text, "editor", new Date().toISOString());
+        patchSession(id, { originalDocx: wordDoc.buffer, docxEdits: [], manualEdit: false });
+      }
       router.push(`/${lang}/editor?project=${id}`);
     } catch (e) {
       console.error(e);
@@ -241,334 +253,477 @@ export default function Dashboard({
 
   const count = items?.length ?? 0;
   const recent = items?.[0] ?? null;
+  const tr = lang === "tr";
+  const firstName = user.name.trim().split(/\s+/)[0] || user.name;
 
-  // ── küçük yardımcı stiller ──
-  const sectionTitle: CSSProperties = { margin: 0, fontSize: 19, fontWeight: 800, letterSpacing: "-.3px" };
-  const cardBase: CSSProperties = {
-    background: "#fff",
-    border: "1px solid #eceef5",
-    borderRadius: 16,
-    boxShadow: "0 1px 2px rgba(20,24,40,.04)",
+  // ── Kitabın adımları (sihirbaz) → ilerleme çubuğu, durum rozeti, sıradaki adım ──
+  type Step = { key: "editor" | "mizanpaj" | "kapak" | "indir"; label: string; done: boolean };
+  const stepsOf = (p: ProjectListItem): Step[] => {
+    const w = p.wizard ?? {};
+    const e = !!w.editorCompleted;
+    const l = !!w.layoutCompleted;
+    const c = !!w.coverCompleted;
+    return [
+      { key: "editor", label: tr ? "Metin" : "Text", done: e },
+      { key: "mizanpaj", label: tr ? "Mizanpaj" : "Layout", done: l },
+      { key: "kapak", label: tr ? "Kapak" : "Cover", done: c },
+      { key: "indir", label: tr ? "Baskı" : "Print", done: false },
+    ];
+  };
+  const nextStep = (p: ProjectListItem): Step => stepsOf(p).find((s) => !s.done) ?? stepsOf(p)[3];
+  const statusOf = (p: ProjectListItem): { label: string; cls: string } => {
+    const st = stepsOf(p);
+    const doneCount = st.filter((s) => s.done).length;
+    if (doneCount >= 3) return { label: tr ? "Baskıya hazır" : "Print ready", cls: "bg-emerald-50 text-emerald-700" };
+    if (doneCount > 0 || Date.now() - new Date(p.updated_at).getTime() < 86400000)
+      return { label: tr ? "Düzenleniyor" : "In progress", cls: "bg-[var(--pri-soft)] text-[var(--pri)]" };
+    return { label: tr ? "Taslak" : "Draft", cls: "bg-[#f1f2f6] text-[#5b6273]" };
+  };
+  const continueLabel = (p: ProjectListItem): string => {
+    const n = nextStep(p).key;
+    if (tr)
+      return n === "editor" ? "Metne devam et" : n === "mizanpaj" ? "Mizanpaja devam et" : n === "kapak" ? "Kapağa devam et" : "Dosyaları indir";
+    return n === "editor" ? "Continue text" : n === "mizanpaj" ? "Continue layout" : n === "kapak" ? "Continue cover" : "Download files";
+  };
+  const hrefOf = (p: ProjectListItem) => `/${lang}/${nextStep(p).key}?project=${p.id}`;
+
+  // "bugün, 18.42" / "dün, 09.10" / "12 Kasım"
+  const editedLabel = (iso: string): string => {
+    const d = new Date(iso);
+    const now = new Date();
+    const hm = d.toLocaleTimeString(tr ? "tr-TR" : "en-US", { hour: "2-digit", minute: "2-digit" });
+    const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+    const y = new Date(now);
+    y.setDate(now.getDate() - 1);
+    if (sameDay(d, now)) return tr ? `bugün, ${hm}` : `today, ${hm}`;
+    if (sameDay(d, y)) return tr ? `dün, ${hm}` : `yesterday, ${hm}`;
+    return d.toLocaleDateString(tr ? "tr-TR" : "en-US", { day: "numeric", month: "long" });
+  };
+  const shortDate = (iso: string): string => {
+    const l = editedLabel(iso);
+    return l.startsWith("bugün") ? "Bugün" : l.startsWith("dün") ? "Dün" : l.startsWith("today") ? "Today" : l.startsWith("yesterday") ? "Yesterday" : l;
   };
 
-  function spineChip(p: ProjectListItem, w: number, h: number) {
+  const hour = new Date().getHours();
+  const greet = tr
+    ? hour < 6 ? "İyi geceler" : hour < 12 ? "Günaydın" : hour < 18 ? "İyi günler" : "İyi akşamlar"
+    : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
+  // Arama: kitap adı ya da yazar (Türkçe harf duyarlı).
+  const q = query.trim().toLocaleLowerCase("tr");
+  const others = (items ?? []).filter((p) => p.id !== recent?.id);
+  const matches = q
+    ? (items ?? []).filter((p) => `${p.title} ${p.author}`.toLocaleLowerCase("tr").includes(q))
+    : others;
+  const shown = q || showAll ? matches : matches.slice(0, 3);
+
+  // Kapak: küçük resim varsa o, yoksa adıyla üretilmiş sade bir kapak.
+  const cover = (p: ProjectListItem, w: number, h: number) => {
     const thumb = p.thumb_path ? thumbs.get(p.thumb_path) : undefined;
-    return (
-      <span
-        style={{
-          width: w,
-          height: h,
-          borderRadius: 5,
-          flex: "none",
-          background: thumb ? `center/cover no-repeat url(${thumb})` : spineFor(p.id),
-        }}
+    const title = p.title?.trim() || t.untitled;
+    return thumb ? (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={thumb}
+        alt={title}
+        width={w}
+        height={h}
+        className="shrink-0 rounded-md object-cover shadow-[0_6px_16px_rgba(20,24,40,.18)]"
+        style={{ width: w, height: h }}
       />
+    ) : (
+      <div
+        className="flex shrink-0 flex-col justify-between overflow-hidden rounded-md p-2.5 text-center shadow-[0_6px_16px_rgba(20,24,40,.16)]"
+        style={{ width: w, height: h, background: spineFor(p.id) }}
+        aria-label={title}
+      >
+        <div className="font-serif font-semibold uppercase leading-tight text-white" style={{ fontSize: Math.max(9, w / 8) }}>
+          {title}
+        </div>
+        <div className="truncate text-[8px] uppercase tracking-wider text-white/80">{p.author?.trim()}</div>
+      </div>
     );
-  }
+  };
+
+  const btnPrimary =
+    "inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--pri)] px-5 py-3 text-[15px] font-bold text-white shadow-[0_6px_16px_rgba(79,70,229,.28)] transition hover:opacity-90 disabled:opacity-60";
+  const btnOutline =
+    "inline-flex items-center justify-center gap-2 rounded-xl border border-[#dcdfea] bg-white px-5 py-3 text-[15px] font-semibold text-[#1d2333] transition hover:border-[var(--pri)] hover:text-[var(--pri)] disabled:opacity-60";
+  const card = "rounded-2xl border border-[#eceef5] bg-white shadow-[0_1px_2px_rgba(20,24,40,.04)]";
+
+  const TOOLS = [
+    {
+      icon: "ai" as const,
+      title: tr ? "Metni incele" : "Review text",
+      titleEmpty: tr ? "Metnini düzenle" : "Edit your text",
+      desc: tr ? "Yazım, üslup ve tutarlılık" : "Spelling, style and consistency",
+      descEmpty: tr ? "Yazım, üslup ve tutarlılığı gözden geçir." : "Check spelling, style and consistency.",
+      seg: "editor",
+    },
+    {
+      icon: "layout" as const,
+      title: tr ? "Mizanpaj oluştur" : "Create layout",
+      titleEmpty: tr ? "Sayfalarını tasarla" : "Design your pages",
+      desc: tr ? "Metnini kitap sayfalarına dönüştür" : "Turn your text into book pages",
+      descEmpty: tr ? "Metnini baskıya hazır sayfalara dönüştür." : "Turn your text into print-ready pages.",
+      seg: "mizanpaj",
+    },
+    {
+      icon: "cover" as const,
+      title: tr ? "Kapak tasarla" : "Design a cover",
+      titleEmpty: tr ? "Kapağını hazırla" : "Prepare your cover",
+      desc: tr ? "Ön kapak, sırt ve arka kapak" : "Front, spine and back cover",
+      descEmpty: tr ? "Ön kapak, sırt ve arka kapağı birlikte tasarla." : "Design front, spine and back together.",
+      seg: "kapak",
+    },
+  ];
+
+  const empty = items !== null && count === 0;
 
   return (
     <AppShell lang={lang} user={user} signOut={signOut} active="home" defaultCollapsed={defaultCollapsed}>
-      <div style={{ maxWidth: 1180, margin: "0 auto", padding: "30px 34px 60px" }}>
+      <input
+        ref={wordInputRef}
+        type="file"
+        accept=".docx"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) void pickWord(f);
+        }}
+      />
+      <div className="mx-auto w-full max-w-[1180px] px-4 pb-16 pt-7 sm:px-8">
         {/* ── başlık ── */}
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "#9aa1b1", marginBottom: 4 }}>{t.kicker}</div>
-            <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800, letterSpacing: "-.6px" }}>{t.greeting(user.name)}</h1>
-            <div style={{ fontSize: 15, color: "#6b7280", marginTop: 5 }}>
-              {count === 0 ? t.subEmpty : t.sub(count)}
-            </div>
+        <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="m-0 text-[28px] font-extrabold tracking-tight text-[#141827] sm:text-[32px]" suppressHydrationWarning>
+              {empty ? (tr ? `Hoş geldin, ${firstName}` : `Welcome, ${firstName}`) : `${greet}, ${firstName}`}
+            </h1>
+            <p className="mt-1.5 text-[15.5px] text-[#6b7280]">
+              {empty
+                ? tr
+                  ? "İlk kitabın için çalışma alanın hazır."
+                  : "Your workspace is ready for your first book."
+                : tr
+                  ? "Kitabına kaldığın yerden devam et."
+                  : "Pick up your book where you left off."}
+            </p>
           </div>
-          <button
-            onClick={onNew}
-            disabled={busy}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "12px 20px",
-              border: "none",
-              borderRadius: 12,
-              background: "var(--pri)",
-              color: "#fff",
-              fontFamily: "inherit",
-              fontSize: 14.5,
-              fontWeight: 700,
-              cursor: busy ? "default" : "pointer",
-              opacity: busy ? 0.65 : 1,
-              boxShadow: "0 6px 16px rgba(79,70,229,.28)",
-            }}
-          >
-            <Icon name="plus" size={18} sw={2.1} />
-            {busy ? t.creating : t.newBook}
-          </button>
-        </div>
-
-        {/* ── kaldığın yerden devam et ── */}
-        {recent && (
-          <div
-            style={{
-              borderRadius: 18,
-              padding: "26px 28px",
-              background: "linear-gradient(120deg,var(--pri),#7c3aed 92%)",
-              color: "#fff",
-              display: "flex",
-              alignItems: "center",
-              gap: 26,
-              boxShadow: "0 14px 30px rgba(79,70,229,.25)",
-              position: "relative",
-              overflow: "hidden",
-            }}
-          >
-            <div style={{ position: "absolute", right: -40, top: -60, width: 220, height: 220, borderRadius: "50%", background: "rgba(255,255,255,.08)" }} />
-            <div style={{ position: "absolute", right: 90, bottom: -90, width: 180, height: 180, borderRadius: "50%", background: "rgba(255,255,255,.06)" }} />
-            {/* mini kapak */}
-            <div
-              style={{
-                width: 84,
-                height: 116,
-                borderRadius: 8,
-                background: recent.thumb_path && thumbs.get(recent.thumb_path)
-                  ? `center/cover no-repeat url(${thumbs.get(recent.thumb_path)})`
-                  : "linear-gradient(160deg,#fff,#e7e9ff)",
-                flex: "none",
-                boxShadow: "0 8px 18px rgba(0,0,0,.22)",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "flex-end",
-                padding: "11px 10px",
-                zIndex: 1,
-              }}
-            >
-              {!(recent.thumb_path && thumbs.get(recent.thumb_path)) && (
-                <>
-                  <div style={{ fontFamily: "'Lora',serif", fontSize: 13, fontWeight: 600, color: "#3a3360", lineHeight: 1.1, overflow: "hidden", maxHeight: 42 }}>
-                    {recent.title?.trim() || t.untitled}
-                  </div>
-                  <div style={{ fontSize: 8, color: "#8a85ad", marginTop: 3, textTransform: "uppercase", letterSpacing: 1 }}>
-                    {recent.author?.trim() || ""}
-                  </div>
-                </>
-              )}
-            </div>
-            <div style={{ flex: 1, minWidth: 0, zIndex: 1 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: ".6px", opacity: 0.85 }}>{t.continueKicker}</div>
-              <div style={{ fontSize: 24, fontWeight: 800, margin: "5px 0 3px", letterSpacing: "-.3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {recent.title?.trim() || t.untitled}
-              </div>
-              <div style={{ fontSize: 14, opacity: 0.9 }}>
-                {(recent.author?.trim() || t.noAuthor) + " · " + relTime(recent.updated_at, lang)}
-              </div>
-            </div>
-            <button
-              onClick={() => openProject(recent.id)}
-              style={{
-                zIndex: 1,
-                flex: "none",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "13px 22px",
-                border: "none",
-                borderRadius: 12,
-                background: "#fff",
-                color: "var(--pri)",
-                fontFamily: "inherit",
-                fontSize: 15,
-                fontWeight: 700,
-                cursor: "pointer",
-                boxShadow: "0 8px 18px rgba(0,0,0,.18)",
-              }}
-            >
-              {t.continueCta}
-              <Icon name="arrow" size={18} sw={2.1} />
-            </button>
-          </div>
-        )}
-
-        {/* ── Kitap Tasarım Sihirbazı (asıl başlangıç noktası) ── */}
-        <div
-          style={{
-            marginTop: recent ? 28 : 8,
-            borderRadius: 18,
-            padding: "22px 26px",
-            background: "linear-gradient(120deg, #eef0fd, #f3edfe)",
-            border: "1px solid #dfe0fb",
-            display: "flex",
-            alignItems: "center",
-            gap: 22,
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 260 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, fontWeight: 800, letterSpacing: ".6px", color: "var(--pri)" }}>
-              <Icon name="ai" size={15} />
-              {t.wizKicker}
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.3px", marginTop: 6 }}>{t.wizTitle}</div>
-            <div style={{ fontSize: 14, color: "#6b7280", marginTop: 4, lineHeight: 1.5 }}>{t.wizSub}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-              {t.wizSteps.map((s, i) => (
-                <Fragment key={s}>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "6px 12px", borderRadius: 99, background: "#fff", border: "1px solid #e1e3ee", fontSize: 13, fontWeight: 600 }}>
-                    <span style={{ width: 20, height: 20, flex: "none", borderRadius: "50%", background: "var(--pri)", color: "#fff", fontSize: 11.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
-                    {s}
-                  </span>
-                  {i < t.wizSteps.length - 1 && <Icon name="arrow" size={15} style={{ color: "#b6bbcb" }} />}
-                </Fragment>
-              ))}
-            </div>
-          </div>
-          <button
-            onClick={onNew}
-            disabled={busy}
-            style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "14px 24px", border: "none", borderRadius: 13, background: "linear-gradient(135deg, var(--pri), #7c3aed)", color: "#fff", fontFamily: "inherit", fontSize: 15, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1, boxShadow: "0 8px 20px rgba(79,70,229,.30)", flex: "none" }}
-          >
-            {t.wizCta}
-            <Icon name="arrow" size={18} sw={2.1} />
-          </button>
-        </div>
-
-        {/* ── modül başlatıcı ── */}
-        <div style={{ marginTop: 32, display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <h2 style={sectionTitle}>{t.whatNext}</h2>
-          <div style={{ fontSize: 13.5, color: "#9aa1b1" }}>{t.whatNextSub}</div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
-          {MODULES.map((m) => (
-            <Link
-              key={m.seg}
-              href={`/${lang}/${m.seg}`}
-              className="tipo-launch"
-              style={{ ...cardBase, padding: 20, cursor: "pointer", textDecoration: "none", color: "inherit", display: "block" }}
-            >
-              <div
-                style={{
-                  width: 46,
-                  height: 46,
-                  borderRadius: 13,
-                  background: m.tileBg,
-                  color: m.tileFg,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginBottom: 14,
-                }}
-              >
-                <Icon name={m.icon} size={23} />
-              </div>
-              <div style={{ fontSize: 16.5, fontWeight: 700, marginBottom: 5 }}>{m.label[lang]}</div>
-              <div style={{ fontSize: 13.5, color: "#6b7280", lineHeight: 1.45 }}>{m.desc[lang]}</div>
-            </Link>
-          ))}
-        </div>
-
-        {/* ── son kitaplar ── */}
-        <div style={{ marginTop: 32, ...cardBase, overflow: "hidden" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 22px", borderBottom: "1px solid #f0f1f7" }}>
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, letterSpacing: "-.3px" }}>{t.recent}</h2>
-          </div>
-
-          {/* başlık satırı */}
-          {count > 0 && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0,1fr) 150px 72px",
-                padding: "11px 22px",
-                fontSize: 11.5,
-                fontWeight: 700,
-                letterSpacing: ".5px",
-                color: "#9aa1b1",
-                borderBottom: "1px solid #f0f1f7",
-              }}
-            >
-              <div>{t.colBook}</div>
-              <div style={{ textAlign: "right" }}>{t.colUpdated}</div>
-              <div />
-            </div>
-          )}
-
-          {/* yükleniyor iskeleti */}
-          {items === null &&
-            [0, 1, 2].map((i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 22px", borderBottom: "1px solid #f4f5fa" }}>
-                <span style={{ width: 34, height: 44, borderRadius: 5, background: "#eef0f6" }} className="tipo-pulse" />
-                <span style={{ flex: 1, height: 12, borderRadius: 4, background: "#eef0f6" }} className="tipo-pulse" />
-              </div>
-            ))}
-
-          {/* boş durum */}
-          {items !== null && count === 0 && (
-            <div style={{ padding: "44px 22px", textAlign: "center" }}>
-              <div style={{ width: 54, height: 54, borderRadius: "50%", background: "var(--pri-soft)", color: "var(--pri)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
-                <Icon name="books" size={26} />
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>{t.emptyTitle}</div>
-              <div style={{ fontSize: 13.5, color: "#6b7280", marginTop: 6, maxWidth: 360, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>{t.emptyHint}</div>
-              <button
-                onClick={onNew}
-                disabled={busy}
-                style={{ marginTop: 18, display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 18px", border: "none", borderRadius: 11, background: "var(--pri)", color: "#fff", fontFamily: "inherit", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
-              >
-                <Icon name="plus" size={17} sw={2.1} />
-                {busy ? t.creating : t.newBook}
+          {!empty && (
+            <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+              <label className="relative w-full sm:w-64">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#9aa1b1]">
+                  <Icon name="search" size={18} />
+                </span>
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={tr ? "Kitaplarında ara…" : "Search your books…"}
+                  aria-label={tr ? "Kitaplarında ara" : "Search your books"}
+                  className="tipo-input w-full rounded-xl border border-[#dcdfea] bg-white py-3 pl-10 pr-3 text-[15px] text-[#1d2333]"
+                />
+              </label>
+              <button onClick={onNew} disabled={busy} className={btnPrimary}>
+                <Icon name="plus" size={18} sw={2.1} />
+                {busy ? t.creating : tr ? "Yeni kitap" : "New book"}
+              </button>
+              <button onClick={() => wordInputRef.current?.click()} disabled={busy} className={btnOutline} title={tr ? "Bir Word (.docx) dosyasından yeni kitap başlat" : "Start a new book from a Word (.docx) file"}>
+                <WordGlyph />
+                {tr ? "Word yükle" : "Upload Word"}
               </button>
             </div>
           )}
-
-          {/* satırlar */}
-          {items?.map((p, i) => {
-            const title = p.title?.trim() || t.untitled;
-            return (
-              <div
-                key={p.id}
-                className="tipo-row"
-                onClick={() => openProject(p.id)}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0,1fr) 150px 72px",
-                  alignItems: "center",
-                  padding: "14px 22px",
-                  fontSize: 14,
-                  cursor: "pointer",
-                  borderBottom: i === items.length - 1 ? "none" : "1px solid #f4f5fa",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                  {spineChip(p, 34, 44)}
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</div>
-                    <div style={{ fontSize: 12.5, color: "#9aa1b1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {p.author?.trim() || t.noAuthor}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ textAlign: "right", color: "#9aa1b1", fontSize: 13 }}>{relTime(p.updated_at, lang)}</div>
-                <div className="tipo-actions" style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); void onRename(p.id, p.title); }}
-                    title={t.rename}
-                    style={iconBtn}
-                  >
-                    <PencilSvg />
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); void onDelete(p.id); }}
-                    title={t.delete}
-                    style={iconBtn}
-                  >
-                    <TrashSvg />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
         </div>
 
+        {/* ── yükleniyor ── */}
+        {items === null && (
+          <div className={`${card} flex items-center gap-6 p-6`}>
+            <div className="tipo-pulse h-[150px] w-[108px] rounded-md bg-[#eef0f6]" />
+            <div className="flex-1 space-y-3">
+              <div className="tipo-pulse h-5 w-1/2 rounded bg-[#eef0f6]" />
+              <div className="tipo-pulse h-4 w-1/3 rounded bg-[#eef0f6]" />
+            </div>
+          </div>
+        )}
+
+        {/* ── BOŞ DURUM: ilk kitap ── */}
+        {empty && (
+          <>
+            <div className={`${card} flex flex-col items-center px-6 py-12 text-center sm:py-14`}>
+              <OpenBookArt />
+              <h2 className="mt-6 text-[28px] font-extrabold tracking-tight text-[#141827] sm:text-[34px]">
+                {tr ? "İlk kitabını oluşturalım" : "Let's create your first book"}
+              </h2>
+              <p className="mt-3 max-w-xl text-[16.5px] leading-relaxed text-[#5b6273]">
+                {tr
+                  ? "Metnini düzenle, sayfalarını tasarla ve kapağını hazırla. Tüm çalışmalarını tek bir kitap altında topla."
+                  : "Edit your text, design your pages and prepare your cover — all in one book."}
+              </p>
+              <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
+                <button onClick={onNew} disabled={busy} className={btnPrimary}>
+                  <Icon name="plus" size={18} sw={2.1} />
+                  {busy ? t.creating : tr ? "İlk kitabımı oluştur" : "Create my first book"}
+                </button>
+                <button onClick={() => wordInputRef.current?.click()} disabled={busy} className={btnOutline}>
+                  <WordGlyph />
+                  {tr ? "Word'den başla" : "Start from Word"}
+                </button>
+                <button onClick={() => setHowOpen(true)} className={btnOutline}>
+                  <QuestionGlyph />
+                  {tr ? "Nasıl çalışır?" : "How does it work?"}
+                </button>
+              </div>
+              <p className="mt-4 text-[14px] text-[#8a90a0]">
+                {tr ? "Kitap adını belirleyerek başlayabilirsin." : "Start by naming your book."}
+              </p>
+            </div>
+            <h2 className="mb-4 mt-9 text-[21px] font-extrabold tracking-tight text-[#141827]">
+              {tr ? "Laycoty ile neler yapabilirsin?" : "What you can do with Laycoty"}
+            </h2>
+            <div className="grid gap-4 md:grid-cols-3">
+              {TOOLS.map((x) => (
+                <button key={x.seg} onClick={onNew} className={`${card} tipo-launch flex items-center gap-4 p-5 text-left`}>
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--pri-soft)] text-[var(--pri)]">
+                    <Icon name={x.icon} size={23} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[16.5px] font-bold text-[#141827]">{x.titleEmpty}</span>
+                    <span className="mt-0.5 block text-[14px] leading-snug text-[#6b7280]">{x.descEmpty}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ── KALDIĞIN YERDEN DEVAM ET ── */}
+        {recent && !q && (
+          <>
+            <h2 className="mb-4 text-[21px] font-extrabold tracking-tight text-[#141827]">
+              {tr ? "Kaldığın yerden devam et" : "Pick up where you left off"}
+            </h2>
+            <div className={`${card} flex flex-col gap-6 p-5 sm:flex-row sm:items-center sm:p-7`}>
+              <button onClick={() => router.push(hrefOf(recent))} className="self-center sm:self-auto" aria-label={recent.title?.trim() || t.untitled}>
+                {cover(recent, 118, 164)}
+              </button>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[24px] font-extrabold tracking-tight text-[#141827] sm:text-[27px]">
+                  {recent.title?.trim() || t.untitled}
+                </div>
+                <div className="mt-1 text-[15px] text-[#6b7280]">
+                  {recent.author?.trim() || t.noAuthor} · {tr ? "Son düzenleme" : "Last edited"} {editedLabel(recent.updated_at)}
+                </div>
+                {/* adımlar */}
+                <ol className="mt-6 flex max-w-xl">
+                  {stepsOf(recent).map((s, i, arr) => {
+                    const cur = nextStep(recent).key === s.key;
+                    return (
+                      <li key={s.key} className="relative flex flex-1 flex-col items-center">
+                        {i < arr.length - 1 && (
+                          <span className={`absolute left-1/2 top-[11px] h-0.5 w-full ${s.done ? "bg-[var(--pri)]" : "bg-[#dfe1ea]"}`} />
+                        )}
+                        <span
+                          className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 ${
+                            s.done
+                              ? "border-[var(--pri)] bg-[var(--pri)] text-white"
+                              : cur
+                                ? "border-[var(--pri)] bg-white"
+                                : "border-[#c9ccd8] bg-white"
+                          }`}
+                        >
+                          {s.done ? <Icon name="check" size={14} sw={2.6} /> : cur ? <span className="h-2.5 w-2.5 rounded-full bg-[var(--pri)]" /> : null}
+                        </span>
+                        <span className={`mt-2 text-[14px] ${cur ? "font-bold text-[var(--pri)]" : s.done ? "text-[#1d2333]" : "text-[#8a90a0]"}`}>
+                          {s.label}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+              <button
+                onClick={() => router.push(hrefOf(recent))}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border-2 border-[var(--pri)] bg-white px-6 py-3 text-[15.5px] font-bold text-[var(--pri)] transition hover:bg-[var(--pri-soft)]"
+              >
+                {continueLabel(recent)}
+                <Icon name="arrow" size={18} sw={2.1} />
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── SON KİTAPLARIN ── */}
+        {!empty && items !== null && (q ? true : others.length > 0) && (
+          <>
+            <div className="mb-4 mt-9 flex items-center justify-between gap-3">
+              <h2 className="m-0 text-[21px] font-extrabold tracking-tight text-[#141827]">
+                {q ? (tr ? `Arama sonuçları (${matches.length})` : `Search results (${matches.length})`) : tr ? "Son kitapların" : "Recent books"}
+              </h2>
+              {!q && others.length > 3 && (
+                <button onClick={() => setShowAll((v) => !v)} className="inline-flex items-center gap-1.5 text-[15px] font-semibold text-[var(--pri)] hover:underline">
+                  {showAll ? (tr ? "Daha az göster" : "Show less") : tr ? `Tüm kitaplar (${count})` : `All books (${count})`}
+                  <Icon name="arrow" size={16} sw={2.1} />
+                </button>
+              )}
+            </div>
+            {q && matches.length === 0 && (
+              <p className="text-[15px] text-[#6b7280]">{tr ? "Bu aramayla eşleşen kitap yok." : "No books match this search."}</p>
+            )}
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {shown.map((p) => {
+                const st = statusOf(p);
+                return (
+                  <div
+                    key={p.id}
+                    role="link"
+                    tabIndex={0}
+                    onClick={() => router.push(hrefOf(p))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") router.push(hrefOf(p));
+                    }}
+                    className={`${card} tipo-launch relative flex cursor-pointer gap-4 p-4`}
+                  >
+                    {cover(p, 92, 128)}
+                    <div className="min-w-0 flex-1 pr-6">
+                      <div className="truncate text-[17px] font-bold text-[#141827]">{p.title?.trim() || t.untitled}</div>
+                      <div className="mt-1 truncate text-[14.5px] text-[#6b7280]">{p.author?.trim() || t.noAuthor}</div>
+                      <span className={`mt-3 inline-block rounded-lg px-2.5 py-1 text-[13.5px] font-semibold ${st.cls}`}>{st.label}</span>
+                      <div className="mt-3 text-[14px] text-[#6b7280]">{shortDate(p.updated_at)}</div>
+                    </div>
+                    <div className="absolute right-2 top-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMenuFor((m) => (m === p.id ? null : p.id));
+                        }}
+                        aria-label={tr ? "Kitap seçenekleri" : "Book options"}
+                        aria-haspopup="menu"
+                        aria-expanded={menuFor === p.id}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-[#8a90a0] transition hover:bg-[#f1f2f6] hover:text-[#1d2333]"
+                      >
+                        <DotsGlyph />
+                      </button>
+                      {menuFor === p.id && (
+                        <>
+                          <div className="fixed inset-0 z-30" onClick={(e) => { e.stopPropagation(); setMenuFor(null); }} />
+                          <div role="menu" className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-xl border border-[#eceef5] bg-white py-1 shadow-lg" onClick={(e) => e.stopPropagation()}>
+                            <button role="menuitem" onClick={() => { setMenuFor(null); router.push(hrefOf(p)); }} className="block w-full px-4 py-2.5 text-left text-[14px] text-[#1d2333] hover:bg-[var(--pri-soft)]">
+                              {continueLabel(p)}
+                            </button>
+                            <button role="menuitem" onClick={() => { setMenuFor(null); void onRename(p.id, p.title); }} className="block w-full px-4 py-2.5 text-left text-[14px] text-[#1d2333] hover:bg-[var(--pri-soft)]">
+                              {t.rename}
+                            </button>
+                            <button role="menuitem" onClick={() => { setMenuFor(null); void onDelete(p.id); }} className="block w-full px-4 py-2.5 text-left text-[14px] text-red-600 hover:bg-red-50">
+                              {t.delete}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* ── HIZLI ARAÇLAR ── */}
+        {!empty && items !== null && (
+          <>
+            <h2 className="mb-4 mt-9 text-[21px] font-extrabold tracking-tight text-[#141827]">{tr ? "Hızlı araçlar" : "Quick tools"}</h2>
+            <div className="grid gap-4 md:grid-cols-3">
+              {TOOLS.map((x) => (
+                <Link
+                  key={x.seg}
+                  href={recent ? `/${lang}/${x.seg}?project=${recent.id}` : `/${lang}/${x.seg}`}
+                  className={`${card} tipo-launch flex items-center gap-4 p-5 text-inherit no-underline`}
+                  title={recent ? (tr ? `“${recent.title?.trim() || t.untitled}” kitabında açılır` : `Opens in “${recent.title?.trim() || t.untitled}”`) : undefined}
+                >
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--pri-soft)] text-[var(--pri)]">
+                    <Icon name={x.icon} size={23} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[16.5px] font-bold text-[#141827]">{x.title}</span>
+                    <span className="mt-0.5 block text-[14px] text-[#6b7280]">{x.desc}</span>
+                  </span>
+                  <span className="text-[#8a90a0]">
+                    <Icon name="arrow" size={20} />
+                  </span>
+                </Link>
+              ))}
+            </div>
+            <button
+              onClick={() => setHowOpen(true)}
+              className="mt-6 flex w-full flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl border border-[#e3e1fb] bg-[linear-gradient(120deg,#f1f0fe,#f6f2fe)] px-5 py-4 text-left"
+            >
+              <span className="text-[#5b6273]">
+                <Icon name="books" size={22} />
+              </span>
+              <span className="text-[16px] font-semibold text-[#1d2333]">{tr ? "İlk kitabını mı hazırlıyorsun?" : "Preparing your first book?"}</span>
+              <span className="inline-flex items-center gap-1.5 text-[15.5px] font-bold text-[var(--pri)]">
+                {tr ? "Adım adım rehber" : "Step-by-step guide"}
+                <Icon name="arrow" size={17} sw={2.1} />
+              </span>
+            </button>
+          </>
+        )}
+
         {error && (
-          <p style={{ marginTop: 16, padding: 12, borderRadius: 12, border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", fontSize: 13.5 }}>{error}</p>
+          <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-[13.5px] text-red-700">{error}</p>
         )}
       </div>
+
+      {/* ── Nasıl çalışır? (adım adım rehber) ── */}
+      {howOpen && (
+        <div onClick={() => setHowOpen(false)} className="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(20,24,40,.45)] p-5">
+          <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" className="w-[520px] max-w-full rounded-2xl bg-white p-7 shadow-[0_24px_60px_rgba(20,24,40,.28)]">
+            <div className="text-[22px] font-extrabold tracking-tight text-[#141827]">{tr ? "Laycoty nasıl çalışır?" : "How Laycoty works"}</div>
+            <p className="mt-1 text-[15px] text-[#6b7280]">
+              {tr ? "Bir kitap, üç adımda baskıya hazır olur. Her adımı istediğin zaman yeniden açabilirsin." : "A book becomes print-ready in three steps. You can reopen any step at any time."}
+            </p>
+            <ol className="mt-5 space-y-4">
+              {(tr
+                ? [
+                    ["AI Editör", "Metnini yapıştır ya da Word dosyanı yükle. Yapay zekâ yazım ve üslup önerileri verir; her birini sen onaylarsın."],
+                    ["Mizanpaj", "Metnin baskıya hazır kitap sayfalarına dökülür. Boyutu, yazı tipini ve kenar boşluklarını seçersin."],
+                    ["Kapak", "Ön kapak, sırt ve arka kapak birlikte tasarlanır; sırt kalınlığı sayfa sayısına göre ayarlanır."],
+                    ["Baskı", "İç sayfa ve kapak PDF'lerini indirip matbaaya ya da yayın platformuna gönderirsin."],
+                  ]
+                : [
+                    ["AI Editor", "Paste your text or upload a Word file. AI suggests spelling and style fixes; you approve each one."],
+                    ["Layout", "Your text flows into print-ready pages. Choose size, font and margins."],
+                    ["Cover", "Front, spine and back are designed together; the spine matches the page count."],
+                    ["Print", "Download the interior and cover PDFs for your printer or platform."],
+                  ]
+              ).map(([h, d], i) => (
+                <li key={h} className="flex gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--pri)] text-[13px] font-extrabold text-white">{i + 1}</span>
+                  <span>
+                    <span className="block text-[16px] font-bold text-[#141827]">{h}</span>
+                    <span className="block text-[14.5px] leading-relaxed text-[#5b6273]">{d}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <div className="mt-7 flex flex-wrap justify-end gap-3">
+              <button onClick={() => setHowOpen(false)} className={btnOutline}>
+                {t.cancel}
+              </button>
+              <button
+                onClick={() => {
+                  setHowOpen(false);
+                  onNew();
+                }}
+                className={btnPrimary}
+              >
+                <Icon name="plus" size={18} sw={2.1} />
+                {tr ? "Yeni kitapla başla" : "Start a new book"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Yeni kitap başlangıç formu (sihirbazın girişi) ── */}
       {newOpen && (
@@ -582,6 +737,11 @@ export default function Dashboard({
           >
             <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: "-.3px" }}>{t.newHeading}</div>
             <div style={{ fontSize: 14, color: "#6b7280", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>{t.newSub}</div>
+            {wordDoc && (
+              <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 11, background: "var(--pri-soft)", color: "#1d2333", fontSize: 13.5, lineHeight: 1.45 }}>
+                <b>{wordDoc.name}</b> · {lang === "tr" ? `${wordDoc.paragraphs} paragraf okundu. Kitap oluşunca metin AI Editör'de açılır.` : `${wordDoc.paragraphs} paragraphs read. The text opens in the AI Editor once the book is created.`}
+              </div>
+            )}
 
             <label style={{ ...dlgLabel, marginTop: 0 }}>{t.fProfile}</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -736,31 +896,59 @@ const dlgInput: CSSProperties = {
   boxSizing: "border-box",
 };
 
-const iconBtn: CSSProperties = {
-  width: 30,
-  height: 30,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: 8,
-  border: "1px solid #ececf4",
-  background: "#fff",
-  color: "#6b7280",
-  cursor: "pointer",
-};
-
-function PencilSvg() {
+function WordGlyph() {
   return (
-    <svg viewBox="0 0 256 256" width={15} height={15} fill="currentColor" aria-hidden="true">
-      <path d="M227.31,73.37,182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM92.69,208H48V163.31l88-88L180.69,120ZM192,108.68,147.31,64l24-24L216,84.68Z" />
+    <svg viewBox="0 0 24 24" width={19} height={19} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5" />
+      <path d="m8.5 12 1.2 5 1.8-4 1.8 4 1.2-5" />
     </svg>
   );
 }
 
-function TrashSvg() {
+function QuestionGlyph() {
   return (
-    <svg viewBox="0 0 256 256" width={15} height={15} fill="currentColor" aria-hidden="true">
-      <path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z" />
+    <svg viewBox="0 0 24 24" width={19} height={19} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6" />
+      <path d="M12 17h.01" />
+    </svg>
+  );
+}
+
+function DotsGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width={18} height={18} fill="currentColor" aria-hidden="true">
+      <circle cx="5" cy="12" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="19" cy="12" r="1.8" />
+    </svg>
+  );
+}
+
+// Boş durum çizimi: açık kitap + ayraç + iki sayfa kâğıdı (sade, marka renkli).
+function OpenBookArt() {
+  return (
+    <svg viewBox="0 0 340 170" width={340} height={170} className="max-w-full" aria-hidden="true">
+      <defs>
+        <linearGradient id="ob-page" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#f1eefb" />
+        </linearGradient>
+      </defs>
+      <g transform="rotate(-14 70 70)">
+        <rect x="22" y="22" width="88" height="110" rx="8" fill="#f4f3fd" stroke="#dcd8f6" />
+        <path d="M38 50h52M38 64h44M38 78h50" stroke="#d3cff2" strokeWidth="3" strokeLinecap="round" />
+      </g>
+      <g transform="rotate(13 270 70)">
+        <rect x="228" y="18" width="88" height="110" rx="8" fill="#f4f3fd" stroke="#dcd8f6" />
+        <path d="M244 46h52M244 60h44M244 74h50" stroke="#d3cff2" strokeWidth="3" strokeLinecap="round" />
+      </g>
+      <ellipse cx="170" cy="156" rx="112" ry="9" fill="#e9e6f8" />
+      <path d="M70 52c34-10 70-8 100 8v94c-30-14-66-16-100-6z" fill="url(#ob-page)" stroke="#6b5fb5" strokeWidth="3" strokeLinejoin="round" />
+      <path d="M270 52c-34-10-70-8-100 8v94c30-14 66-16 100-6z" fill="url(#ob-page)" stroke="#6b5fb5" strokeWidth="3" strokeLinejoin="round" />
+      <path d="M62 60v96c36-10 74-8 108 6 34-14 72-16 108-6V60" fill="none" stroke="#6b5fb5" strokeWidth="3" strokeLinejoin="round" />
+      <path d="M220 46v42l11-9 11 9V42z" fill="#7c5cf2" />
     </svg>
   );
 }

@@ -65,7 +65,8 @@ export async function listProjects(): Promise<ProjectListItem[]> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("projects")
-    .select("id, title, author, thumb_path, updated_at")
+    // Sihirbaz adımları (Metin → Mizanpaj → Kapak) panodaki ilerleme çubuğu için.
+    .select("id, title, author, thumb_path, updated_at, wizard:data->wizard")
     .order("updated_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as ProjectListItem[];

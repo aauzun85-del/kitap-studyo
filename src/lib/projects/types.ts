@@ -100,6 +100,8 @@ export type ProjectListItem = {
   author: string;
   thumb_path: string | null;
   updated_at: string;
+  /** Sihirbaz durumu (eski projelerde yok → null). */
+  wizard?: Partial<WizardState> | null;
 };
 
 const EMPTY_COVER: CoverDraft = { v: 1 };
