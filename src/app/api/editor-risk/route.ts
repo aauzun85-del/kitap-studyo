@@ -34,6 +34,11 @@ const Note = z.object({
     .describe(
       "Somut öneri (kaynak ekle, yumuşat, izin al, çıkar); metnin diliyle, kısa. Yoksa boş bırak.",
     ),
+  rewrite: z
+    .string()
+    .describe(
+      "Pasajın (excerpt) yerine BİREBİR konacak düzeltilmiş hâli: excerpt'le aynı kapsamda (aynı yerden başlar, aynı yerde biter), öncesi ve sonrasıyla uyumlu, yalnız düz metin (açıklama, tırnak işareti, not YOK). Düzeltme metne doğrudan yazılamıyorsa (ör. 'kaynak ekleyin', 'yazardan izin alın') ya da emin değilsen boş bırak.",
+    ),
 });
 
 const RiskResult = z.object({
@@ -67,9 +72,15 @@ function systemPrompt(language: "tr" | "en"): string {
     "Kurallar:",
     "1) Her gözlem için 'excerpt' alanına, ilgili pasajı metinden BİREBİR",
     "   kopyala (3-12 kelime).",
+    "   Pasajı düzelten bir 'rewrite' yazacaksan excerpt, değişecek kısmın",
+    "   TAMAMINI kapsasın (gerekirse bütün cümle, en çok 40 kelime).",
     "2) 'category': defamation, privacy, copyright, claim veya misinfo.",
     `3) 'issue' alanını ${langName} dilinde, bir-iki kısa cümleyle yaz.`,
     `4) 'suggestion' alanına ${langName} dilinde somut bir öneri yaz; yoksa boş bırak.`,
+    `   'rewrite' alanına, mümkünse pasajın (excerpt) yerine BİREBİR konacak`,
+    `   düzeltilmiş ${langName} hâlini yaz: aynı kapsamda, öncesi/sonrasıyla uyumlu,`,
+    "   yalnız düz metin. Yazarın sesini koru; yalnız gereken kadar değiştir.",
+    "   Metne doğrudan yazılamayan öneride (kaynak ekle, izin al vb.) boş bırak.",
     "5) Belirgin bir risk yoksa boş bir 'notes' listesi döndür.",
   ].join("\n");
 }

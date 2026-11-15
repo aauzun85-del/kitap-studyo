@@ -111,6 +111,9 @@ export type Suggestion = {
   explanation: string;
   wordCount?: number;
   severity?: Severity;
+  /** Not kartları için: pasajın yerine konabilecek düzeltilmiş hâli. Varsa
+   *  kart "Uygula" düğmesi gösterir (yoksa yalnız tavsiye). */
+  rewrite?: string;
 };
 
 // Parçalı kontrolde aynı öneri birden çok parçada çıkabilir; tekilleştir.
@@ -118,6 +121,13 @@ export type Suggestion = {
 // cümleyi aynen geri döndürür ("bu yapı zaten doğru" açıklamasıyla). ESKİ=ÖNERİ
 // olan kart kullanıcıya iş yaptırmaz — hiç gösterme (boşluk farkları sayılmaz).
 const normalizeForCompare = (s: string) => s.replace(/\s+/g, " ").trim();
+// Notun "rewrite"ı ancak gerçek bir değişiklikse ve makul uzunluktaysa kullanılır.
+function usableRewrite(excerpt: string, rewrite: string | undefined): string | undefined {
+  const r = (rewrite ?? "").trim();
+  if (!r || normalizeForCompare(r) === normalizeForCompare(excerpt)) return undefined;
+  if (r.length > Math.max(400, excerpt.length * 3)) return undefined;
+  return r;
+}
 function dedupeSuggestions(list: Suggestion[]): Suggestion[] {
   const seen = new Set<string>();
   const out: Suggestion[] = [];
@@ -160,6 +170,8 @@ type ReviewNote = {
   severity?: Severity;
   issue: string;
   suggestion: string;
+  /** Pasajın yerine konacak düzeltilmiş hâli (yoksa boş). */
+  rewrite?: string;
 };
 
 // Riskli içerik route'undan gelen ham gözlem.
@@ -168,6 +180,8 @@ type RiskNote = {
   category: "defamation" | "privacy" | "copyright" | "claim" | "misinfo";
   issue: string;
   suggestion: string;
+  /** Pasajın yerine konacak düzeltilmiş hâli (yoksa boş). */
+  rewrite?: string;
 };
 
 // Türe göre özel kontrol route'undan gelen ham gözlem.
@@ -185,6 +199,8 @@ type GenreNote = {
     | "objectivity";
   issue: string;
   suggestion: string;
+  /** Pasajın yerine konacak düzeltilmiş hâli (yoksa boş). */
+  rewrite?: string;
 };
 
 type Genre = "fiction" | "selfhelp" | "academic";
@@ -1140,7 +1156,11 @@ export default function EditorStudio({
   const diffs = useMemo(
     () =>
       (suggestions ?? []).map((s) =>
-        s.kind === "fix" ? splitDiff(s.original, s.suggestion) : null,
+        s.kind === "fix"
+          ? splitDiff(s.original, s.suggestion)
+          : s.rewrite
+            ? splitDiff(s.original, s.rewrite)
+            : null,
       ),
     [suggestions],
   );
@@ -1424,6 +1444,7 @@ export default function EditorStudio({
           kind: "notice",
           original: n.excerpt,
           suggestion: n.suggestion,
+          rewrite: usableRewrite(n.excerpt, n.rewrite),
           category: n.category,
           explanation: n.issue,
           severity: n.severity,
@@ -1445,6 +1466,7 @@ export default function EditorStudio({
           kind: "notice",
           original: n.excerpt,
           suggestion: n.suggestion,
+          rewrite: usableRewrite(n.excerpt, n.rewrite),
           category: n.category,
           explanation: n.issue,
         })),
@@ -1465,6 +1487,7 @@ export default function EditorStudio({
           kind: "notice",
           original: n.excerpt,
           suggestion: n.suggestion,
+          rewrite: usableRewrite(n.excerpt, n.rewrite),
           category: n.category,
           explanation: n.issue,
         })),
@@ -1585,9 +1608,17 @@ export default function EditorStudio({
     }
   }
 
-  function acceptSuggestion(index: number) {
+  /** Kart önerisini metne uygular. `override`: kullanıcının kartta düzenlediği metin. */
+  function acceptSuggestion(index: number, override?: string) {
     const s = suggestions?.[index];
     if (!s) return;
+    const replacement = override ?? (s.kind === "fix" ? s.suggestion : s.rewrite);
+    if (replacement == null) return;
+    if (replacement === s.original) {
+      // Değişiklik yok: kartı "atlandı" say.
+      rejectSuggestion(index);
+      return;
+    }
     const action: FixAction = { indices: [index], changes: [], docx: [] };
     // Önce birebir, olmazsa tırnak/tire/boşluk farklarına toleranslı ara.
     const exact = raw.indexOf(s.original);
@@ -1602,12 +1633,12 @@ export default function EditorStudio({
       return;
     }
     const from = raw.slice(hit.at, hit.at + hit.len);
-    setRaw(raw.slice(0, hit.at) + s.suggestion + raw.slice(hit.at + hit.len));
-    action.changes.push({ at: hit.at, from, to: s.suggestion });
+    setRaw(raw.slice(0, hit.at) + replacement + raw.slice(hit.at + hit.len));
+    action.changes.push({ at: hit.at, from, to: replacement });
     setDecisions((prev) => ({ ...prev, [index]: "accepted" }));
     // Yüklenen docx'e de işlenebilmesi için kabul edilen metin düzeltmesini sakla.
-    if (s.kind === "fix" && s.suggestion && originalDocx) {
-      const edit = { original: s.original, suggestion: s.suggestion };
+    if (originalDocx) {
+      const edit = { original: from, suggestion: replacement };
       action.docx.push(edit);
       setDocxEdits((prev) => [...prev, edit]);
     }
@@ -1821,9 +1852,12 @@ export default function EditorStudio({
   const [activeMark, setActiveMark] = useState<number | null>(null);
   // Yeni bir inceleme önerileri değiştirince eski seçim geçersiz.
   const [seenSuggestions, setSeenSuggestions] = useState(suggestions);
+  // Kartta düzenlenen öneri metni (Düzenle).
+  const [editing, setEditing] = useState<{ i: number; text: string } | null>(null);
   if (seenSuggestions !== suggestions) {
     setSeenSuggestions(suggestions);
     setActiveMark(null);
+    setEditing(null);
   }
   const [filter, setFilter] = useState<"all" | "yazim" | "uslup" | "diger">("all");
   const [doneOpen, setDoneOpen] = useState(false);
@@ -2038,7 +2072,9 @@ export default function EditorStudio({
   const renderCard = (s: Suggestion, i: number) => {
     const group = groupOf(s.category);
     const active = activeMark === i;
-    const d = s.kind === "fix" ? (diffs[i] ?? splitDiff(s.original, s.suggestion)) : null;
+    const target = s.kind === "fix" ? s.suggestion : s.rewrite;
+    const d = target != null ? (diffs[i] ?? splitDiff(s.original, target)) : null;
+    const isEditing = editing?.i === i;
     const compact = d && d.aMid.length > 0 && d.bMid.length > 0 && d.aMid.length <= 42 && d.bMid.length <= 42;
     const ctx = contexts[i] ?? null;
     return (
@@ -2165,32 +2201,94 @@ export default function EditorStudio({
             );
           })()}
 
-        <div className="mt-3 flex gap-2">
-          {s.kind === "fix" && (
+        {isEditing ? (
+          <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+            <label className="text-xs font-semibold text-muted" htmlFor={`ks-edit-${i}`}>
+              {isTr ? "Metne bu hâliyle girecek:" : "This will go into the text:"}
+            </label>
+            <textarea
+              id={`ks-edit-${i}`}
+              autoFocus
+              value={editing.text}
+              onChange={(e) => setEditing({ i, text: e.target.value })}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  acceptSuggestion(i, editing.text);
+                  setEditing(null);
+                  setActiveMark(null);
+                } else if (e.key === "Escape") setEditing(null);
+              }}
+              rows={Math.min(8, Math.max(2, Math.ceil(editing.text.length / 38)))}
+              className="mt-1 w-full resize-y rounded-lg border border-accent/50 bg-background px-3 py-2 text-[15px] leading-relaxed text-foreground outline-none focus:border-accent"
+            />
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  acceptSuggestion(i, editing.text);
+                  setEditing(null);
+                  setActiveMark(null);
+                }}
+                disabled={!editing.text.trim()}
+                className="rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-white transition enabled:hover:opacity-90 disabled:opacity-40"
+              >
+                {t.acceptCta}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground/80 transition hover:border-accent/50 hover:text-foreground"
+              >
+                {isTr ? "Vazgeç" : "Cancel"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {target != null && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  acceptSuggestion(i);
+                  setActiveMark(null);
+                }}
+                className="rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+              >
+                {t.acceptCta}
+              </button>
+            )}
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                acceptSuggestion(i);
+                setEditing({ i, text: target ?? s.original });
+                focusCard(i);
+              }}
+              title={
+                isTr
+                  ? "Önerilen metni istediğin gibi değiştirip öyle uygula"
+                  : "Change the suggested text, then apply it"
+              }
+              className="rounded-lg border border-accent/40 px-4 py-2 text-sm font-semibold text-accent transition hover:bg-accent-soft"
+            >
+              {isTr ? "Düzenle" : "Edit"}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                rejectSuggestion(i);
                 setActiveMark(null);
               }}
-              className="rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+              className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground/80 transition hover:border-accent/50 hover:text-foreground"
             >
-              {t.acceptCta}
+              {target != null ? t.rejectCta : t.dismissCta}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              rejectSuggestion(i);
-              setActiveMark(null);
-            }}
-            className="rounded-lg border border-border px-5 py-2 text-sm font-semibold text-foreground/80 transition hover:border-accent/50 hover:text-foreground"
-          >
-            {s.kind === "fix" ? t.rejectCta : t.dismissCta}
-          </button>
-        </div>
+          </div>
+        )}
       </li>
     );
   };
@@ -2213,9 +2311,10 @@ export default function EditorStudio({
             {catLabel(s.category)} ·{" "}
             {decision === "accepted" ? t.accepted : s.kind === "notice" ? t.dismissed : t.rejected}
           </div>
-          {decision === "accepted" && s.kind === "fix" ? (
-            <div className="mt-0.5 truncate text-foreground">
-              «{pair ? pair.from : s.original}» → «<span className="font-medium">{pair ? pair.to : s.suggestion}</span>»
+          {decision === "accepted" && action ? (
+            <div className="mt-0.5 line-clamp-2 text-foreground">
+              «{pair ? pair.from : (action.changes[0]?.from ?? s.original)}» → «
+              <span className="font-medium">{pair ? pair.to : (action.changes[0]?.to ?? s.suggestion)}</span>»
               {many ? <span className="text-muted"> · {t.bulkDone.replace("{count}", String(many))}</span> : null}
             </div>
           ) : (

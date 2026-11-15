@@ -51,6 +51,11 @@ const Note = z.object({
     .describe(
       "Somut iyileştirme önerisi; metnin diliyle, kısa. Öneri yoksa boş bırak.",
     ),
+  rewrite: z
+    .string()
+    .describe(
+      "Pasajın (excerpt) yerine BİREBİR konacak düzeltilmiş hâli: excerpt'le aynı kapsamda (aynı yerden başlar, aynı yerde biter), öncesi ve sonrasıyla uyumlu, yalnız düz metin (açıklama, tırnak işareti, not YOK). Düzeltme metne doğrudan yazılamıyorsa (ör. 'kaynak ekleyin', 'yazardan izin alın') ya da emin değilsen boş bırak.",
+    ),
 });
 
 const ReviewResult = z.object({
@@ -81,6 +86,8 @@ function systemPrompt(language: "tr" | "en"): string {
     "Çıktı kuralları:",
     "1) Her gözlem için 'excerpt' alanına, ilgili pasajı metinden BİREBİR",
     "   kopyala (3-12 kelime). Yerini bulmaya yetecek kadar olsun.",
+    "   Pasajı düzelten bir 'rewrite' yazacaksan excerpt, değişecek kısmın",
+    "   TAMAMINI kapsasın (gerekirse bütün cümle, en çok 40 kelime).",
     "2) 'category': gözlemin ait olduğu kural kategorisi (fluency,",
     "   sentence_structure, diction, grammar, dialogue, concision, clarity,",
     "   register, punctuation).",
@@ -89,6 +96,10 @@ function systemPrompt(language: "tr" | "en"): string {
     `5) 'suggestion' alanına ${langName} dilinde somut bir iyileştirme öner;`,
     "   kuralın 'öneri yönü'nü temel al ama bu pasaja göre somutlaştır. Net",
     "   bir önerin yoksa boş bırak.",
+    `   'rewrite' alanına, mümkünse pasajın (excerpt) yerine BİREBİR konacak`,
+    `   düzeltilmiş ${langName} hâlini yaz: aynı kapsamda, öncesi/sonrasıyla uyumlu,`,
+    "   yalnız düz metin. Yazarın sesini koru; yalnız gereken kadar değiştir.",
+    "   Metne doğrudan yazılamayan öneride (kaynak ekle, izin al vb.) boş bırak.",
     "6) Öneriler ZORLAMA değildir; gerekçeli birer ipucu olarak sun.",
     "7) Yalnız okunurluğu veya kaliteyi gerçekten artıracak, önemli noktalara",
     "   değin. Zorlama gözlem üretme.",
