@@ -24,17 +24,43 @@ function pagePos(i: number): { col: 0 | 1; row: number } {
   return { col: (p % 2) as 0 | 1, row: 1 + Math.floor(p / 2) };
 }
 
+// Görünüm: "flow" = tüm açılımlar alt alta kaydırılır (eski görünüm);
+// "spread" = yalnız bir açılım (sol|sağ), alana sığdırılmış; "single" = tek sayfa.
+export type PreviewMode = "flow" | "spread" | "single";
+// Kenar boşluğu kılavuzu: sayfa boyunun/eninin kesri (0..1). inside = cilde bakan.
+export type PageGuides = { top: number; bottom: number; inside: number; outside: number };
+
 export function TypstPreviewCanvas({
   input,
   editingBlock,
   onSelectBlock,
   onError,
+  mode = "flow",
+  zoom = 1,
+  cursor = 0,
+  guides,
+  pageWidthMm,
+  onDocInfo,
+  onViewInfo,
 }: {
   input: TypstBookInput;
   editingBlock: number | null;
   onSelectBlock: (idx: number) => void;
   // Derleme çökerse (ör. çok büyük kitap) üst bileşen "Hızlı" moda düşebilsin.
   onError?: () => void;
+  mode?: PreviewMode;
+  /** 1 = alana sığdır; >1 büyüt (alan kaydırılır). */
+  zoom?: number;
+  /** Sayfalı görünümde gösterilen yer: "spread" → açılım sırası, "single" → sayfa (0-tabanlı). */
+  cursor?: number;
+  /** Verilirse sayfalarda kesikli kenar boşluğu çizgileri çizilir. */
+  guides?: PageGuides | null;
+  /** Gerçek boyut yüzdesi için sayfanın mm eni. */
+  pageWidthMm?: number;
+  /** Derleme bitince: sayfa sayısı + blok konumları (bölüme atlamak için). */
+  onDocInfo?: (info: { pageCount: number; positions: BlockPos[] }) => void;
+  /** Ekrandaki sayfa ölçüsü (gerçek boyuta göre %) ve en çok kaç kat büyütülebilir. */
+  onViewInfo?: (info: { realPercent: number }) => void;
 }) {
   const [svg, setSvg] = useState("");
   const [positions, setPositions] = useState<BlockPos[]>([]);
@@ -43,6 +69,17 @@ export function TypstPreviewCanvas({
   // Scroll kapsayıcısı state ile (callback ref) → IntersectionObserver root'u
   // olarak güvenilir (viewport'a bağımlı değil; ref zamanlaması sorunu yok).
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    if (!scrollEl) return;
+    // Kaydırma çubuğu döngüsü olmasın: ölçüyü kaymayan üst kutudan al.
+    const host = scrollEl.parentElement ?? scrollEl;
+    const measure = () => setBox((b) => (b.w === host.clientWidth && b.h === host.clientHeight ? b : { w: host.clientWidth, h: host.clientHeight }));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [scrollEl]);
 
   useEffect(() => {
     // Bu effect önizleme state'ini Typst girdisiyle SENKRONİZE eder (effect'in
@@ -112,6 +149,16 @@ export function TypstPreviewCanvas({
     return { defsHtml, styleHtml, pages, pageW: vb[2], pageH: vb[3] / n, pageCount: n };
   }, [svg]);
 
+  const onDocInfoRef = useRef(onDocInfo);
+  const onViewInfoRef = useRef(onViewInfo);
+  useEffect(() => {
+    onDocInfoRef.current = onDocInfo;
+    onViewInfoRef.current = onViewInfo;
+  });
+  useEffect(() => {
+    onDocInfoRef.current?.({ pageCount: doc?.pageCount ?? 0, positions });
+  }, [doc, positions]);
+
   // Konumları sayfaya göre grupla.
   const byPage = useMemo(() => {
     const m = new Map<number, BlockPos[]>();
@@ -156,7 +203,10 @@ export function TypstPreviewCanvas({
   }, [doc]);
 
   return (
-    <div ref={setScrollEl} className="relative h-full overflow-auto bg-[var(--surface)] px-6 py-6">
+    <div
+      ref={setScrollEl}
+      className={`relative h-full overflow-auto bg-[var(--surface)] ${mode === "flow" ? "px-6 py-6" : "flex"}`}
+    >
       <div className="pointer-events-none absolute right-3 top-3 z-30">
         {status === "compiling" && (
           <span className="rounded-full bg-foreground/80 px-2 py-0.5 text-[11px] font-medium text-background">derleniyor…</span>
@@ -166,7 +216,52 @@ export function TypstPreviewCanvas({
         )}
       </div>
 
-      {doc ? (
+      {doc && mode !== "flow" ? (
+        (() => {
+          // Sayfalı görünüm: bir açılım ya da tek sayfa, alana SIĞDIRILMIŞ (× zoom).
+          const PAD = 28;
+          const cols = mode === "spread" ? 2 : 1;
+          const aspect = doc.pageW / doc.pageH;
+          const fitW = Math.max(60, Math.min((box.w - PAD * 2) / cols, (box.h - PAD * 2) * aspect));
+          const pageW = Math.round(fitW * Math.max(1, zoom));
+          const rowIdx = mode === "spread" ? Math.min(Math.max(0, cursor), Math.max(0, rows.length - 1)) : 0;
+          const shown: (number | null)[] =
+            mode === "spread" ? (rows[rowIdx] ?? [null, null]) : [Math.min(Math.max(0, cursor), doc.pageCount - 1)];
+          return (
+            <>
+              <svg width="0" height="0" aria-hidden style={{ position: "absolute" }} dangerouslySetInnerHTML={{ __html: doc.defsHtml }} />
+              <RealSize
+                pagePx={pageW}
+                pageWidthMm={pageWidthMm}
+                onViewInfo={onViewInfoRef}
+              />
+              <div className="m-auto flex shrink-0 items-start justify-center" style={{ padding: PAD }}>
+                {shown.map((idx, col) =>
+                  idx == null ? (
+                    <div key={`b${col}`} style={{ width: pageW }} aria-hidden />
+                  ) : (
+                    <PageBox
+                      key={idx}
+                      pageHtml={doc.pages[idx]}
+                      styleHtml={doc.styleHtml}
+                      pageW={doc.pageW}
+                      pageH={doc.pageH}
+                      widthPx={pageW}
+                      blocks={byPage.get(idx + 1) ?? []}
+                      fallbackIdx={pageFallback.get(idx + 1) ?? -1}
+                      scrollRoot={scrollEl}
+                      editingBlock={editingBlock}
+                      onSelectBlock={onSelectBlock}
+                      guides={guides}
+                      recto={(idx + 1) % 2 === 1}
+                    />
+                  ),
+                )}
+              </div>
+            </>
+          );
+        })()
+      ) : doc ? (
         <>
           {/* Paylaşılan glyph tanımları — bir kez (gizli); sayfa svg'leri buna başvurur. */}
           <svg
@@ -176,7 +271,16 @@ export function TypstPreviewCanvas({
             style={{ position: "absolute" }}
             dangerouslySetInnerHTML={{ __html: doc.defsHtml }}
           />
-          <div className="mx-auto flex w-full max-w-[1180px] flex-col" style={{ gap: ROW_GAP_PX }}>
+          <RealSize
+            pagePx={(Math.min(1180, Math.max(0, box.w - 48)) * Math.max(1, zoom)) / 2}
+            pageWidthMm={pageWidthMm}
+            onViewInfo={onViewInfoRef}
+          />
+          {/* Akış: büyütünce sütun gerçekten genişler (kutu yana kaydırılır). */}
+          <div
+            className="mx-auto flex shrink-0 flex-col"
+            style={{ gap: ROW_GAP_PX, width: Math.min(1180, Math.max(0, box.w - 48)) * Math.max(1, zoom) || undefined }}
+          >
             {rows.map((row, ri) => (
               <div key={ri} className="flex items-start justify-center">
                 {[0, 1].map((col) => {
@@ -194,6 +298,8 @@ export function TypstPreviewCanvas({
                       scrollRoot={scrollEl}
                       editingBlock={editingBlock}
                       onSelectBlock={onSelectBlock}
+                      guides={guides}
+                      recto={(idx + 1) % 2 === 1}
                     />
                   );
                 })}
@@ -202,7 +308,7 @@ export function TypstPreviewCanvas({
           </div>
         </>
       ) : (
-        <div className="flex h-full items-center justify-center text-center text-sm text-muted">
+        <div className="flex h-full w-full items-center justify-center text-center text-sm text-muted">
           {input.blocks.length === 0 ? "Metin ekleyin — sayfalar burada belirir." : "Sayfa hazırlanıyor…"}
         </div>
       )}
@@ -222,7 +328,13 @@ function PageBox({
   scrollRoot,
   editingBlock,
   onSelectBlock,
+  widthPx,
+  guides,
+  recto,
 }: {
+  widthPx?: number;
+  guides?: PageGuides | null;
+  recto?: boolean;
   pageHtml: string;
   styleHtml: string;
   pageW: number;
@@ -279,9 +391,23 @@ function PageBox({
   return (
     <div
       ref={ref}
-      className="relative w-1/2 bg-white shadow-[0_1px_10px_rgba(0,0,0,0.18)]"
-      style={{ aspectRatio: `${pageW} / ${pageH}` }}
+      className={`relative bg-white shadow-[0_1px_10px_rgba(0,0,0,0.18)] ${widthPx ? "shrink-0" : "w-1/2"}`}
+      style={{ aspectRatio: `${pageW} / ${pageH}`, ...(widthPx ? { width: widthPx } : {}) }}
     >
+      {guides && (
+        // Kenar boşluğu kılavuzu (yalnız ekranda; baskıya girmez). Sağ sayfada
+        // cilt tarafı solda, sol sayfada sağda.
+        <div
+          aria-hidden
+          className="pointer-events-none absolute border border-dashed border-sky-400/70"
+          style={{
+            top: `${guides.top * 100}%`,
+            bottom: `${guides.bottom * 100}%`,
+            left: `${(recto ? guides.inside : guides.outside) * 100}%`,
+            right: `${(recto ? guides.outside : guides.inside) * 100}%`,
+          }}
+        />
+      )}
       {visible && (
         <div
           className="absolute inset-0 [&_svg]:h-full [&_svg]:w-full"
@@ -312,4 +438,21 @@ function PageBox({
       </div>
     </div>
   );
+}
+
+// Ekrandaki sayfa enini gerçek boyuta oranlayıp üst bileşene bildirir (yalnız değişince).
+function RealSize({
+  pagePx,
+  pageWidthMm,
+  onViewInfo,
+}: {
+  pagePx: number;
+  pageWidthMm?: number;
+  onViewInfo: React.RefObject<((info: { realPercent: number }) => void) | undefined>;
+}) {
+  const pct = pageWidthMm ? Math.round((pagePx / (pageWidthMm * (96 / 25.4))) * 100) : 0;
+  useEffect(() => {
+    if (pct > 0) onViewInfo.current?.({ realPercent: pct });
+  }, [pct, onViewInfo]);
+  return null;
 }

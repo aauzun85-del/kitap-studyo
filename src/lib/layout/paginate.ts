@@ -68,6 +68,12 @@ export type LayoutSettings = {
   //  - "greedy": açgözlü ("saldırgan") — her satıra sığdığı kadar sözcük
   //    yerleştirir; hızlıdır ama dar sütunlarda boşluklar daha düzensiz olur.
   lineBreak: "balanced" | "greedy";
+  // Dul/yetim satır koruması: paragrafın tek satırı sayfa başında/sonunda
+  // kalmasın (vars. açık).
+  widowControl?: boolean;
+  // Optik kenar hizalama: noktalama/tire satır sonunda kenarın biraz dışına
+  // taşar, metin kenarı gözle düz görünür (vars. açık).
+  opticalMargins?: boolean;
 };
 
 export type BookMeta = { title: string; author: string; bio: string; subtitle?: string; publisher?: string };

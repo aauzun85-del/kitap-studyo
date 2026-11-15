@@ -210,7 +210,7 @@ ${HELPERS}
   footer: ${s.showPageNumbers ? "_pageFoot()" : "none"},
   background: ${background},
 )
-#set text(font: ${fontExpr}, size: ${s.bodySizePt}pt, lang: "${lang}", region: "${region}", hyphenate: ${s.hyphenate}, costs: (widow: 100%, orphan: 100%), overhang: true, ligatures: true, discretionary-ligatures: false)
+#set text(font: ${fontExpr}, size: ${s.bodySizePt}pt, lang: "${lang}", region: "${region}", hyphenate: ${s.hyphenate}, costs: (widow: ${s.widowControl === false ? 0 : 100}%, orphan: ${s.widowControl === false ? 0 : 100}%), overhang: ${s.opticalMargins !== false}, ligatures: true, discretionary-ligatures: false)
 #set par(justify: ${justify}, leading: ${leading}, first-line-indent: (amount: ${indent}mm, all: true), spacing: ${leading} + ${paraSpacing}mm, linebreaks: ${linebreaks})
 #set smartquote(enabled: false)
 `;

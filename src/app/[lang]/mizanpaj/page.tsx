@@ -6,10 +6,7 @@ import { getCurrentUser } from "@/lib/supabase/user";
 import { loadInitialProject } from "@/lib/projects/server";
 import { toShellUser } from "@/lib/app/identity";
 import { hasActivePackageById } from "@/lib/credits/server";
-import { getSidebarPref } from "@/lib/app/prefs";
 import { signOutAction } from "@/app/[lang]/auth-actions";
-import AppShell, { type AppShellContext } from "@/components/app/AppShell";
-import WizardBar from "@/components/app/WizardBar";
 import LayoutStudio from "@/components/layout/LayoutStudio";
 
 export default async function LayoutPage({ params, searchParams }: PageProps<"/[lang]/mizanpaj">) {
@@ -20,58 +17,26 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/[
   if (!user) redirect(`/${lang}/giris`);
 
   const dict = getDictionary(lang);
-  const isTr = lang === "tr";
   const sp = await searchParams;
   const supabase = await createClient();
   const initialProject = await loadInitialProject(supabase, sp.project);
-  // Tuval sayfası: kullanıcı açıkça seçmediyse menü DARALTILMIŞ başlar (geniş alan).
-  const collapsed = (await getSidebarPref()) ?? true;
   const canExport = await hasActivePackageById(user.id, user.email);
-
-  const meta = initialProject?.data.meta;
-  const context: AppShellContext = {
-    backHref: `/${lang}/projeler`,
-    backLabel: isTr ? "Kitaplarım" : "My Books",
-    title: meta?.title?.trim() || (isTr ? "Mizanpaj çalışması" : "Layout draft"),
-    meta: meta?.author?.trim() || undefined,
-    moduleLabel: isTr ? "Mizanpaj modülü" : "Layout module",
-    savedLabel: initialProject ? (isTr ? "Otomatik kaydedilir" : "Auto-saved") : undefined,
-  };
-
   // İndirme ekranından "?export=1" ile gelindi → İç sayfa PDF'ini otomatik üret.
   const exportMode = sp.export === "1";
-  const wizard = initialProject?.data.wizard;
-  const wizardBar =
-    initialProject && wizard?.active && !exportMode ? (
-      <WizardBar
-        lang={lang}
-        projectId={initialProject.id}
-        current="layout"
-        wizard={wizard}
-        backHref={`/${lang}/projeler`}
-        backLabel={isTr ? "Kitaplarım" : "My Books"}
-      />
-    ) : undefined;
+  const shellUser = await toShellUser(user);
 
+  // Tam ekran düzenleyici: kendi üst çubuğu var (marka, Kitaplarım, kayıt durumu,
+  // geri al, Baskı denetimi, PDF indir, hesap) → uygulama menüsü/sihirbaz çubuğu yok.
   return (
-    <AppShell
+    <LayoutStudio
+      key={initialProject?.id ?? "anon"}
       lang={lang}
-      user={await toShellUser(user)}
+      dict={dict}
+      initialProject={initialProject}
+      autoExport={exportMode}
+      canExport={canExport}
+      user={shellUser ? { name: shellUser.name, initials: shellUser.initials } : null}
       signOut={signOutAction.bind(null, lang)}
-      active="mizanpaj"
-      context={context}
-      wizardBar={wizardBar}
-      defaultCollapsed={collapsed}
-      fitContent
-    >
-      <LayoutStudio
-        key={initialProject?.id ?? "anon"}
-        lang={lang}
-        dict={dict}
-        initialProject={initialProject}
-        autoExport={exportMode}
-        canExport={canExport}
-      />
-    </AppShell>
+    />
   );
 }

@@ -44,6 +44,8 @@ export type SavedLayoutSettings = {
   hyphenate: boolean;
   dropCap: boolean;
   lineBreak: "balanced" | "greedy";
+  widowControl?: boolean;
+  opticalMargins?: boolean;
   chapterTopRatio: number;
   chapterOrnament: ChapterOrnament;
   showChapterKicker: boolean;
@@ -113,6 +115,8 @@ export function readSavedLayout(slice: unknown): Partial<SavedLayoutSettings> | 
     hyphenate: bool(s.hyphenate),
     dropCap: bool(s.dropCap),
     lineBreak: oneOf(s.lineBreak, ["balanced", "greedy"] as const),
+    widowControl: bool(s.widowControl),
+    opticalMargins: bool(s.opticalMargins),
     chapterTopRatio: num(s.chapterTopRatio, 0, 0.6),
     chapterOrnament: oneOf(s.chapterOrnament, ORNAMENTS),
     showChapterKicker: bool(s.showChapterKicker),

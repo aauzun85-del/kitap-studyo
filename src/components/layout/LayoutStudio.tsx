@@ -1,6 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import Logo from "@/components/Logo";
+import { completeWizardStep } from "@/lib/projects/data";
+import WizardGuide from "@/components/app/WizardGuide";
+import { useEditorSession } from "@/lib/editor/session";
+import { useSaveStatus, formatSavedTime, SAVE_LABELS } from "@/lib/projects/saveStatus";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
@@ -50,9 +57,9 @@ import { blocksToMarkdown } from "@/lib/layout/blocksToMarkdown";
 import type { MediaMap } from "@/lib/layout/mediaTokens";
 import { exportBookPdf } from "@/lib/layout/pdf";
 import { exportBookIdml } from "@/lib/layout/idml";
-import { exportBookPdfTypst, TypstCrashError, type TypstBookInput } from "@/lib/typst";
+import { exportBookPdfTypst, TypstCrashError, type TypstBookInput, type BlockPos } from "@/lib/typst";
 import { preflightPdf, type PreflightReport } from "@/lib/publishing/preflight";
-import { TypstPreviewCanvas } from "@/components/editor/TypstPreviewCanvas";
+import { TypstPreviewCanvas, type PreviewMode } from "@/components/editor/TypstPreviewCanvas";
 import ExportOverlay from "@/components/app/ExportOverlay";
 import {
   COVER_FONTS,
@@ -63,11 +70,8 @@ import {
 } from "@/lib/cover/fonts";
 import {
   TextTIcon,
-  LayoutIcon,
   SlidersIcon,
-  StackIcon,
   CheckCircleIcon,
-  SidebarIcon,
   CaretDownIcon,
   ArrowsOutIcon,
   ArrowUUpLeftIcon,
@@ -127,10 +131,15 @@ export default function LayoutStudio({
   initialProject,
   autoExport,
   canExport,
+  user = null,
+  signOut,
 }: {
   lang: Locale;
   dict: Dictionary;
   initialProject?: { id: string; data: ProjectEnvelope };
+  /** Üst çubuktaki hesap rozeti (tam ekran düzende uygulama menüsü yok). */
+  user?: { name: string; initials: string } | null;
+  signOut?: () => Promise<void>;
   /** İndirme ekranından "?export=1": sayfalama hazır olunca İç sayfa PDF'ini
    *  otomatik indir + üstte durum katmanı göster. */
   autoExport?: boolean;
@@ -266,6 +275,8 @@ export default function LayoutStudio({
   const [dropCap, setDropCap] = useState(saved?.dropCap ?? true);
   // Satır kırma yöntemi — varsayılan "balanced" (Knuth–Plass, profesyonel).
   const [lineBreak, setLineBreak] = useState<"balanced" | "greedy">(saved?.lineBreak ?? "balanced");
+  const [widowControl, setWidowControl] = useState(saved?.widowControl ?? true);
+  const [opticalMargins, setOpticalMargins] = useState(saved?.opticalMargins ?? true);
   // Bölüm açılış stili (tema sistemi).
   // Bölüm başlığı HER ZAMAN sayfanın en üstünden başlar (kullanıcı isteği: bölüm
   // başlarındaki üst boşluk tamamen kaldırıldı) → sabit 0; eski kayıtlar yok sayılır.
@@ -311,6 +322,7 @@ export default function LayoutStudio({
       themeId, fontId, headingFontId, bodySizePt, leadingPt, align, indentMm,
       paragraphSpacingMm, detectHeadings, kerning,
       chapterRight, frontMatter, runningHeads, pageNumbers, hyphenate, dropCap, lineBreak,
+      widowControl, opticalMargins,
       chapterTopRatio, chapterOrnament, showChapterKicker, tocOverrides,
     }),
     [
@@ -318,6 +330,7 @@ export default function LayoutStudio({
       themeId, fontId, headingFontId, bodySizePt, leadingPt, align, indentMm,
       paragraphSpacingMm, detectHeadings, kerning,
       chapterRight, frontMatter, runningHeads, pageNumbers, hyphenate, dropCap, lineBreak,
+      widowControl, opticalMargins,
       chapterTopRatio, chapterOrnament, showChapterKicker, tocOverrides,
     ],
   );
@@ -371,6 +384,8 @@ export default function LayoutStudio({
       lang: lang === "en" ? "en" : "tr",
       dropCap,
       lineBreak,
+      widowControl,
+      opticalMargins,
       chapterTopRatio,
       chapterOrnament,
       showChapterKicker,
@@ -391,6 +406,8 @@ export default function LayoutStudio({
       hyphenate,
       dropCap,
       lineBreak,
+      widowControl,
+      opticalMargins,
       chapterTopRatio,
       chapterOrnament,
       showChapterKicker,
@@ -1130,21 +1147,223 @@ export default function LayoutStudio({
   }, [editingBlockData]);
 
   const navItems: { id: PanelId; label: string; Icon: typeof TextTIcon }[] = [
-    { id: "book", label: t.navBook, Icon: StackIcon },
-    { id: "text", label: t.navText, Icon: TextTIcon },
-    { id: "page", label: t.navPage, Icon: LayoutIcon },
-    { id: "type", label: t.navType, Icon: SlidersIcon },
-    { id: "quality", label: t.navQuality, Icon: CheckCircleIcon },
+    { id: "book", label: lang === "tr" ? "Kitap" : "Book", Icon: BookOpenIcon },
+    { id: "text", label: lang === "tr" ? "Metin" : "Text", Icon: TextTIcon },
+    { id: "page", label: lang === "tr" ? "Sayfa" : "Page", Icon: PageIcon },
+    { id: "type", label: lang === "tr" ? "Yazı" : "Type", Icon: SlidersIcon },
+    { id: "quality", label: lang === "tr" ? "Denetim" : "Check", Icon: CheckCircleIcon },
   ];
 
   const isEmpty = blocks.length === 0 && !title.trim();
 
+  const tr = lang === "tr";
+  const router = useRouter();
+  const docTitle = title.trim() || (tr ? "Mizanpaj çalışması" : "Layout draft");
+  const wizard = seed?.wizard;
+  const wizardActive = !!wizard?.active && !autoExport;
+  const wizardSteps: [string, string, boolean][] = wizard
+    ? [
+        ["editor", tr ? "AI Editör" : "AI Editor", wizard.editorCompleted],
+        ["mizanpaj", tr ? "Mizanpaj" : "Layout", wizard.layoutCompleted],
+        ["kapak", tr ? "Kapak" : "Cover", wizard.coverCompleted],
+      ]
+    : [];
+
+  // Sağ panel başlığı (ikon + ad + kısa açıklama).
+  const PANEL_META: Record<PanelId, { title: string; sub: string; Icon: typeof TextTIcon }> = {
+    book: { title: tr ? "Kitap bilgileri" : "Book details", sub: tr ? "Ad, yazar, alt başlık ve künye." : "Title, author, subtitle and imprint.", Icon: BookOpenIcon },
+    text: { title: tr ? "Metin" : "Text", sub: tr ? "Metni yaz, yapıştır ya da Word'den aktar." : "Type, paste or import from Word.", Icon: TextTIcon },
+    page: { title: tr ? "Sayfa düzeni" : "Page setup", sub: tr ? "Baskı standardı, boyut ve kenar boşlukları." : "Print standard, size and margins.", Icon: PageIcon },
+    type: { title: tr ? "Yazı düzeni" : "Typography", sub: tr ? "Yazı tipi, punto, satır aralığı ve dizgi kuralları." : "Font, size, leading and typesetting rules.", Icon: SlidersIcon },
+    quality: { title: tr ? "Denetim" : "Check", sub: tr ? "Baskıya hazır mı? Eksikler ve öneriler." : "Ready to print? Gaps and tips.", Icon: CheckCircleIcon },
+  };
+  const panelMeta = PANEL_META[panel];
+  const PanelIcon = panelMeta.Icon;
+
+  // ── Önizleme görünümü: tek sayfa / karşılıklı / akış, sayfa gezinme ──
+  const [viewMode, setViewMode] = useState<PreviewMode>("spread");
+  const [cursorPage, setCursorPage] = useState(0); // 0-tabanlı sayfa (tek sayfa)
+  const [viewZoom, setViewZoom] = useState(1);
+  const [realPercent, setRealPercent] = useState(100);
+  const [docPageCount, setDocPageCount] = useState(0);
+  const [docPositions, setDocPositions] = useState<BlockPos[]>([]);
+  const [showGuides, setShowGuides] = useState(true);
+  const [chaptersOpen, setChaptersOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [stepsOpen, setStepsOpen] = useState(false);
+  const [wizardBusy, setWizardBusy] = useState(false);
+  // AI Editör kontrolü arka planda sürüyorsa adım çipinde dönen gösterge.
+  const editorJob = useEditorSession(projectId);
+  // Gerçek kayıt durumu (yazıyor / kaydediliyor / kaydedildi / hata).
+  const saveStatus = useSaveStatus();
+  const finishWizard = async () => {
+    if (!projectId || wizardBusy) return;
+    setWizardBusy(true);
+    try {
+      await completeWizardStep(projectId, "layout");
+    } catch {
+      // kaydedilemese de ilerle
+    }
+    router.push(`/${lang}/kapak?project=${projectId}`);
+  };
+  // Açılım (karşılıklı) sırası: 0 = yalnız 1. sayfa (sağda), r = sayfa 2r ve 2r+1.
+  const rowOfPage = (p: number) => (p <= 0 ? 0 : 1 + Math.floor((p - 1) / 2));
+  const rowCount = docPageCount <= 0 ? 0 : 1 + Math.ceil((docPageCount - 1) / 2);
+  // Kitap kısalınca imleç son sayfayı aşmasın (etiket ve oklar doğru kalsın).
+  const curPage = docPageCount > 0 ? Math.min(cursorPage, docPageCount - 1) : 0;
+  const cursorRow = rowOfPage(curPage);
+  const goToPage = useCallback(
+    (p: number) => {
+      setCursorPage(Math.max(0, Math.min(p, Math.max(0, docPageCount - 1))));
+      setViewMode((m) => (m === "flow" ? "spread" : m));
+    },
+    [docPageCount],
+  );
+  const stepPage = useCallback(
+    (dir: 1 | -1) => {
+      if (viewMode === "spread") {
+        const r = Math.max(0, Math.min(rowCount - 1, cursorRow + dir));
+        setCursorPage(r === 0 ? 0 : 2 * r - 1);
+      } else {
+        setCursorPage(Math.max(0, Math.min(docPageCount - 1, curPage + dir)));
+      }
+    },
+    [viewMode, rowCount, cursorRow, docPageCount, curPage],
+  );
+  const canPrev = viewMode === "spread" ? cursorRow > 0 : curPage > 0;
+  const canNext = viewMode === "spread" ? cursorRow < rowCount - 1 : curPage < docPageCount - 1;
+  const pageLabel =
+    viewMode === "spread"
+      ? cursorRow === 0
+        ? "1"
+        : 2 * cursorRow + 1 <= docPageCount
+          ? `${2 * cursorRow}–${2 * cursorRow + 1}`
+          : `${2 * cursorRow}`
+      : `${curPage + 1}`;
+  const changeViewMode = (m: PreviewMode) => setViewMode(m);
+  const VIEW_ZOOM = [1, 1.25, 1.5, 2, 2.5, 3];
+  const zoomBy = (dir: 1 | -1) => {
+    if (previewEngine === "typst") {
+      const i = VIEW_ZOOM.findIndex((v) => v >= viewZoom - 1e-6);
+      const cur = i === -1 ? VIEW_ZOOM.length - 1 : i;
+      setViewZoom(VIEW_ZOOM[Math.max(0, Math.min(VIEW_ZOOM.length - 1, cur + dir))]);
+    } else {
+      const opts = ZOOM_OPTIONS as readonly number[];
+      const i = opts.findIndex((v) => v >= zoom - 1e-6);
+      const cur = i === -1 ? opts.length - 1 : i;
+      setZoom(opts[Math.max(0, Math.min(opts.length - 1, cur + dir))]);
+    }
+  };
+  const handleDocInfo = useCallback((info: { pageCount: number; positions: BlockPos[] }) => {
+    setDocPageCount(info.pageCount);
+    setDocPositions(info.positions);
+  }, []);
+  const handleViewInfo = useCallback((info: { realPercent: number }) => {
+    setRealPercent(info.realPercent);
+  }, []);
+  // Bölümler: 1. düzey başlıklar ve Typst'in yerleştirdiği sayfaları.
+  const chapterNav = useMemo(() => {
+    const out: { idx: number; title: string; page: number }[] = [];
+    blocks.forEach((b, i) => {
+      if (b.type !== "heading" || b.level !== 1) return;
+      const pos = docPositions.find((p) => p.idx === i);
+      if (pos) out.push({ idx: i, title: b.runs.map((r) => r.text).join("").trim(), page: pos.page });
+    });
+    return out;
+  }, [blocks, docPositions]);
+  // Kenar boşluğu kılavuzu (sayfa kesri). İç kenara cilt payı eklenir.
+  const pageGuides = useMemo(
+    () => ({
+      top: margins.top / size.height,
+      bottom: margins.bottom / size.height,
+      inside: (margins.inside + gutter) / size.width,
+      outside: margins.outside / size.width,
+    }),
+    [margins, gutter, size.width, size.height],
+  );
+  // ← / → ile sayfa çevir (yazı yazarken değil).
+  const stepPageRef = useRef(stepPage);
+  useEffect(() => {
+    stepPageRef.current = stepPage;
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      e.preventDefault();
+      stepPageRef.current(e.key === "ArrowRight" ? 1 : -1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // "Tüm kitaba uygula": paragraf paragraf verilmiş yazı tipi/punto ayarlarını
+  // kaldırır → paneldeki ayar kitabın HER yerinde geçerli olur (geri alınabilir).
+  const applyToWholeBook = useCallback(() => {
+    const isOverride = (b: Block) =>
+      (b.type === "paragraph" || b.type === "heading" || b.type === "blockquote") && (!!b.fontFamily || !!b.sizePt);
+    const count = blocks.filter(isOverride).length;
+    if (count === 0) {
+      flashNote(tr ? "Tüm kitap zaten bu ayarlarla dizili." : "The whole book already uses these settings.");
+      return;
+    }
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        tr
+          ? `${count} paragrafta ayrıca seçilmiş yazı tipi/punto var. Hepsi kaldırılıp bu ayarlar tüm kitaba uygulansın mı? (Geri alınabilir.)`
+          : `${count} paragraphs have their own font/size. Remove them and apply these settings to the whole book? (Can be undone.)`,
+      )
+    )
+      return;
+    markStep(tr ? "Tüm kitaba uygula" : "Apply to whole book");
+    applyLayout(
+      blocks.map((b) =>
+        b.type === "paragraph" || b.type === "heading" || b.type === "blockquote"
+          ? { ...b, fontFamily: undefined, sizePt: undefined }
+          : b,
+      ),
+    );
+  }, [blocks, applyLayout, markStep, flashNote, tr]);
+
+  // İçindekiler başlıklarını elle düzeltme (Yazı → Gelişmiş).
+  const tocEditor = (
+    <div className="mt-4 space-y-3 rounded-xl border border-border bg-surface p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">{t.tocEditHeading}</h3>
+      <p className="text-xs text-muted">{t.tocEditHint}</p>
+      <div className="space-y-2">
+        {chapterTitles.map((orig, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span className="w-5 shrink-0 text-right font-mono text-xs text-muted">{i + 1}</span>
+            <input
+              type="text"
+              value={tocOverrides[i] ?? ""}
+              placeholder={orig || t.tocEntryPlaceholder}
+              onChange={(e) => {
+                const v = e.target.value;
+                setTocOverrides((prev) => {
+                  const next = { ...prev };
+                  if (v.trim() === "") delete next[i];
+                  else next[i] = v;
+                  return next;
+                });
+              }}
+              className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-accent"
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
-    // AppShell fitContent verir → burada YÜKSEKLİK TAHMİN ETME (eski
-    // calc(100dvh-…) üstteki başlık/sihirbaz çubuğunu saymadığı için önizleme
-    // kutusu gereğinden kısa kalıyordu). h-full + min-h-0 ile kalan alan neyse
-    // o doldurulur. Mobilde dikey yığılır → kendi içinde kayar.
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-[1760px] flex-col gap-3 overflow-y-auto px-3 py-3 lg:flex-row lg:overflow-hidden">
+    <div
+      className={`flex w-full flex-col bg-background ${
+        focusMode ? "fixed inset-0 z-[70] h-dvh overflow-hidden" : "h-dvh overflow-y-auto lg:overflow-hidden"
+      }`}
+    >
       {autoExport && (
         <ExportOverlay
           lang={lang}
@@ -1161,548 +1380,847 @@ export default function LayoutStudio({
           reloadLabel={typstCrash ? t.reloadCta : undefined}
         />
       )}
-      <aside
-        className={`w-full shrink-0 lg:w-[360px] lg:min-h-0 lg:overflow-y-auto lg:pr-1 ${
-          sidePanelOpen ? "" : "hidden"
-        }`}
-      >
-        <div className="grid grid-cols-5 gap-1 rounded-xl border border-border bg-surface p-1">
-          {navItems.map(({ id, label, Icon }) => (
-            <button
-              key={id}
-              onClick={() => setPanel(id)}
-              className={`flex flex-col items-center gap-1 rounded-lg px-1 py-2 text-[11px] font-medium transition ${
-                panel === id
-                  ? "bg-accent-soft text-accent"
-                  : "text-muted hover:bg-background hover:text-foreground"
-              }`}
-            >
-              <Icon className="h-5 w-5" />
-              {label}
-            </button>
-          ))}
-        </div>
 
-        <div className="mt-4 rounded-xl border border-border bg-surface p-4">
-          {panel === "book" && (
-            <BookPanel
-              t={t}
-              title={title}
-              setTitle={setTitle}
-              author={author}
-              setAuthor={setAuthor}
-              subtitle={subtitle}
-              setSubtitle={setSubtitle}
-              publisher={publisher}
-              setPublisher={setPublisher}
-              bio={bio}
-              setBio={setBio}
-            />
-          )}
-          {panel === "text" && (
-            <TextPanel
-              t={t}
-              raw={raw}
-              setRaw={(v) => {
-                history.typing(t.stepTyping);
-                setRaw(v);
-              }}
-              stats={stats}
-              onSample={() => {
-                markStep(t.stepSample);
-                setRaw(SAMPLE_TR);
-              }}
-              onClear={() => {
-                markStep(t.stepClear);
-                setRaw("");
-              }}
-              sourceMode={sourceMode}
-              setSourceMode={setSourceMode}
-              docxMode={docxMode}
-              setDocxMode={setDocxMode}
-              importing={importing}
-              importInfo={importInfo}
-              importError={importError}
-              onImport={handleImport}
-              onClearImport={clearImport}
-            />
-          )}
-          {panel === "page" && (
-            <PagePanel
-              t={t}
-              standard={standard}
-              applyStandard={applyStandard}
-              sizeId={sizeId}
-              setSizeId={setSizeId}
-              presetId={presetId}
-              applyPreset={applyPreset}
-              margins={margins}
-              updateMargin={updateMargin}
-              gutterAuto={gutterAuto}
-              setGutterAuto={setGutterAuto}
-              gutterManual={gutterManual}
-              setGutterManual={setGutterManual}
-              gutter={gutter}
-            />
-          )}
-          {panel === "type" && (
-            <ThemePicker t={t} lang={lang} themeId={themeId} onApply={applyTheme} />
-          )}
-          {panel === "type" && (
-            <TypePanel
-              t={t}
-              fontId={fontId}
-              setFontId={setFontId}
-              bodySizePt={bodySizePt}
-              setBodySizePt={setBodySizePt}
-              leadingPt={leadingPt}
-              setLeadingPt={setLeadingPt}
-              align={align}
-              setAlign={setAlign}
-              indentMm={indentMm}
-              setIndentMm={setIndentMm}
-              paragraphSpacingMm={paragraphSpacingMm}
-              setParagraphSpacingMm={setParagraphSpacingMm}
-              headingFontId={headingFontId}
-              setHeadingFontId={setHeadingFontId}
-              detectHeadings={detectHeadings}
-              setDetectHeadings={setDetectHeadings}
-              chapterRight={chapterRight}
-              setChapterRight={setChapterRight}
-              frontMatter={frontMatter}
-              setFrontMatter={setFrontMatter}
-              runningHeads={runningHeads}
-              setRunningHeads={setRunningHeads}
-              pageNumbers={pageNumbers}
-              setPageNumbers={setPageNumbers}
-              hyphenate={hyphenate}
-              setHyphenate={setHyphenate}
-              dropCap={dropCap}
-              setDropCap={setDropCap}
-              lineBreak={lineBreak}
-              setLineBreak={setLineBreak}
-            />
-          )}
-          {panel === "quality" && (
-            <QualityPanel
-              t={t}
-              score={quality.score}
-              checks={quality.checks}
-              errorCount={quality.errorCount}
-              warningCount={quality.warningCount}
-              successCount={quality.successCount}
-            />
-          )}
-          {panel === "type" && frontMatter && chapterTitles.length > 0 && (
-            <div className="mt-4 space-y-3 rounded-xl border border-border bg-surface p-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">{t.tocEditHeading}</h3>
-              <p className="text-xs text-muted">{t.tocEditHint}</p>
-              <div className="space-y-2">
-                {chapterTitles.map((orig, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="w-5 shrink-0 text-right font-mono text-xs text-muted">{i + 1}</span>
-                    <input
-                      type="text"
-                      value={tocOverrides[i] ?? ""}
-                      placeholder={orig || t.tocEntryPlaceholder}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setTocOverrides((prev) => {
-                          const next = { ...prev };
-                          if (v.trim() === "") delete next[i];
-                          else next[i] = v;
-                          return next;
-                        });
-                      }}
-                      className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-accent"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </aside>
-
-      <main
-        className={
-          focusMode
-            ? "fixed inset-0 z-50 flex min-h-0 min-w-0 flex-col overflow-hidden border-0 bg-background"
-            : "flex min-h-[60vh] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background lg:min-h-0"
-        }
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2">
-          <div className="flex items-center gap-2">
-            {!focusMode && (
-              <button
-                onClick={toggleSidePanel}
-                title={sidePanelOpen ? t.hidePanelTip : t.showPanelTip}
-                className={`rounded-lg border p-1.5 transition ${
-                  sidePanelOpen
-                    ? "border-border bg-surface text-muted hover:border-accent hover:text-accent"
-                    : "border-accent bg-accent-soft text-accent"
-                }`}
-              >
-                <SidebarIcon className="h-4 w-4" />
-              </button>
-            )}
-            {/* Odak modu: önizleme tüm pencereyi kaplar (ESC ile çıkılır). */}
-            <button
-              onClick={() => setFocusMode((v) => !v)}
-              title={focusMode ? t.focusExitTip : t.focusTip}
-              className={`rounded-lg border p-1.5 transition ${
-                focusMode
-                  ? "border-accent bg-accent-soft text-accent"
-                  : "border-border bg-surface text-muted hover:border-accent hover:text-accent"
-              }`}
+      {/* ── Üst çubuk ── */}
+      {!focusMode && (
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b border-border bg-surface px-3 sm:gap-3 lg:px-5">
+          <Link href={`/${lang}/projeler`} className="flex shrink-0 items-center gap-2" aria-label="Laycoty">
+            <Logo className="h-9 w-9 text-base" />
+            <span className="hidden text-lg font-bold tracking-tight text-foreground sm:inline">laycoty</span>
+          </Link>
+          <span className="hidden h-7 w-px shrink-0 bg-border md:block" />
+          <Link
+            href={`/${lang}/projeler`}
+            className="hidden shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-foreground/80 transition hover:bg-accent-soft hover:text-foreground md:flex"
+          >
+            <span aria-hidden="true">←</span>
+            <span className="hidden 2xl:inline">{tr ? "Kitaplarım" : "My books"}</span>
+          </Link>
+          <span className="hidden h-7 w-px shrink-0 bg-border md:block" />
+          <span
+            className="hidden h-8 w-8 shrink-0 rounded-lg sm:block"
+            style={{ background: "linear-gradient(135deg, var(--color-accent), #7c3aed)" }}
+            aria-hidden="true"
+          />
+          <span className="min-w-[6rem] truncate text-base font-semibold text-foreground" title={docTitle}>
+            {docTitle}
+          </span>
+          {projectId && (
+            <span
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm ${saveStatus?.state === "error" ? "font-semibold text-red-600" : "text-muted"}`}
+              role="status"
+              title={saveStatus?.state === "saved" && saveStatus.savedAt ? formatSavedTime(saveStatus.savedAt, lang) : undefined}
             >
-              <ArrowsOutIcon className="h-4 w-4" />
-            </button>
-            <span className="hidden font-mono text-xs font-medium uppercase tracking-[0.15em] text-muted xl:inline">
-              {t.previewHeading}
-            </span>
-            <span className="text-sm font-semibold">
-              {t.pageCountLabel} {pages.length} {t.pageWord}
-            </span>
-            {!isEmpty && (
               <span
-                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                  quality.errorCount > 0
-                    ? "bg-red-50 text-red-700"
-                    : quality.warningCount > 0
-                      ? "bg-amber-50 text-amber-700"
-                      : "bg-emerald-50 text-emerald-700"
+                className={`h-2 w-2 rounded-full ${
+                  saveStatus?.state === "error"
+                    ? "bg-red-500"
+                    : saveStatus?.state === "dirty" || saveStatus?.state === "saving"
+                      ? "bg-amber-400"
+                      : "bg-emerald-500"
                 }`}
-              >
-                {t.qualityScoreLabel} {quality.score}
+              />
+              <span className={saveStatus?.state === "error" ? "" : "hidden 2xl:inline"}>
+                {saveStatus ? SAVE_LABELS[lang][saveStatus.state] : tr ? "Kaydedildi" : "Saved"}
               </span>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {historyNote && (
-              <span role="status" className="text-xs font-medium text-accent">
-                {historyNote}
-              </span>
-            )}
-            {/* Geri al / Yinele: boşluk, sayfa atma, paragraf düzeltme, yazı
-                tipi/punto ve metin değişikliklerini adım adım geri alır. */}
-            <div className="flex items-center gap-1">
+            </span>
+          )}
+
+          {wizardActive && wizard && projectId && (
+            <nav className="ml-2 hidden shrink-0 items-center gap-1 2xl:flex" aria-label={tr ? "Adımlar" : "Steps"}>
+              {wizardSteps.map(([seg, label, done], i) => (
+                <Link
+                  key={seg}
+                  href={`/${lang}/${seg}?project=${projectId}`}
+                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition ${
+                    seg === "mizanpaj" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {seg === "editor" && editorJob.running !== null ? (
+                    <span
+                      className="h-5 w-5 animate-spin rounded-full border-2 border-accent/25 border-t-accent"
+                      title={tr ? "AI Editör kontrolü arka planda sürüyor" : "AI Editor check running"}
+                    />
+                  ) : (
+                    <span
+                      className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${
+                        done ? "bg-emerald-600 text-white" : seg === "mizanpaj" ? "bg-accent text-white" : "border border-border"
+                      }`}
+                    >
+                      {done ? "✓" : i + 1}
+                    </span>
+                  )}
+                  {label}
+                </Link>
+              ))}
+            </nav>
+          )}
+          {wizardActive && wizard && projectId && (
+            <div className="relative shrink-0 2xl:hidden">
               <button
-                onClick={handleUndo}
-                disabled={!history.canUndo && editingBlock == null}
-                title={
-                  history.undoLabel
-                    ? t.undoTip.replace("{label}", history.undoLabel)
-                    : editingBlock != null
-                      ? t.undoTipOpen
-                      : t.undoTipEmpty
-                }
-                className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold text-foreground transition enabled:hover:border-accent enabled:hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+                type="button"
+                onClick={() => setStepsOpen((o) => !o)}
+                aria-haspopup="menu"
+                aria-expanded={stepsOpen}
+                className="flex items-center gap-1 whitespace-nowrap rounded-full bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent"
               >
-                <ArrowUUpLeftIcon className="h-3.5 w-3.5" />
-                {t.undoCta}
+                {tr ? "Adım 2/3" : "Step 2/3"} <span aria-hidden="true">▾</span>
               </button>
-              <button
-                onClick={handleRedo}
-                disabled={!history.canRedo}
-                title={
-                  history.redoLabel
-                    ? t.redoTip.replace("{label}", history.redoLabel)
-                    : t.redoTipEmpty
-                }
-                aria-label={t.redoCta}
-                className="rounded-lg border border-border bg-surface p-1.5 text-foreground transition enabled:hover:border-accent enabled:hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ArrowUUpRightIcon className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            {/* İkincil kontroller tek "Görünüm" menüsünde → araç çubuğu tek satır,
-                önizlemeye daha çok dikey alan kalır. */}
-            <div className="relative">
-              <button
-                onClick={() => setViewMenuOpen((v) => !v)}
-                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
-                  viewMenuOpen
-                    ? "border-accent bg-accent-soft text-accent"
-                    : "border-border bg-surface text-foreground hover:border-accent hover:text-accent"
-                }`}
-              >
-                {t.viewMenuLabel}
-                <CaretDownIcon className="h-3 w-3" />
-              </button>
-              {viewMenuOpen && (
+              {stepsOpen && (
                 <>
-                  <div className="fixed inset-0 z-10" onClick={() => setViewMenuOpen(false)} />
-                  <div className="absolute right-0 top-full z-20 mt-1 flex w-72 flex-col gap-3 rounded-xl border border-border bg-surface p-3 shadow-xl">
-                    <div className="flex items-center justify-between gap-2 text-xs text-muted">
-                      {t.engineLabel}
-                      <div
-                        className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5"
-                        title="Typst: gerçek baskı sayfası — ne görürsen onu basar (=PDF). Hızlı: YAKLAŞIK yedek önizleme; satır sonları baskıdan farklı olabilir."
+                  <button type="button" aria-label="×" className="fixed inset-0 z-30 cursor-default" onClick={() => setStepsOpen(false)} />
+                  <div role="menu" className="absolute left-0 z-40 mt-2 w-48 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg">
+                    {wizardSteps.map(([seg, label, done], i) => (
+                      <Link
+                        key={seg}
+                        href={`/${lang}/${seg}?project=${projectId}`}
+                        className="flex items-center gap-2 px-4 py-2.5 text-sm text-foreground/80 hover:bg-accent-soft hover:text-accent"
                       >
-                        <button
-                          onClick={() => pickEngine("typst")}
-                          className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                            previewEngine === "typst" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
-                          }`}
-                        >
-                          Typst
-                        </button>
-                        <button
-                          onClick={() => pickEngine("js")}
-                          className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                            previewEngine === "js" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
-                          }`}
-                        >
-                          Hızlı
-                        </button>
-                      </div>
-                    </div>
-                    <label className="flex items-center justify-between gap-2 text-xs text-muted">
-                      {t.zoomLabel}
-                      <select
-                        value={zoom}
-                        onChange={(e) => setZoom(Number(e.target.value))}
-                        className="rounded-lg border border-border bg-surface px-2 py-1 text-foreground"
-                      >
-                        {ZOOM_OPTIONS.map((z) => (
-                          <option key={z} value={z}>
-                            {Math.round(z * 100)}%
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {standard === "kdy" ? (
-                      <label className="flex items-center gap-1.5 text-xs text-muted" title={t.cropMarksLabel}>
-                        <input
-                          type="checkbox"
-                          checked={cropMarks}
-                          onChange={(e) => setCropMarks(e.target.checked)}
-                          className="h-4 w-4 accent-[var(--accent)]"
-                        />
-                        {t.cropMarksLabel}
-                      </label>
-                    ) : (
-                      <label className="flex items-center gap-1.5 text-xs text-muted" title={t.bleedHint}>
-                        <input
-                          type="checkbox"
-                          checked={bleedOn}
-                          onChange={(e) => setBleedOn(e.target.checked)}
-                          className="h-4 w-4 accent-[var(--accent)]"
-                        />
-                        {t.bleedLabel}
-                      </label>
-                    )}
-                    <label className="flex items-center gap-1.5 text-xs text-muted" title={t.kerningHint}>
-                      <input
-                        type="checkbox"
-                        checked={kerning}
-                        onChange={(e) => setKerning(e.target.checked)}
-                        className="h-4 w-4 accent-[var(--accent)]"
-                      />
-                      {t.kerningLabel}
-                    </label>
-                    {/* InDesign'da düzenlemek isteyen kullanıcılar için IDML çıktısı. */}
-                    <div className="border-t border-border pt-2">
-                      <button
-                        onClick={() => void handleExportIdml()}
-                        disabled={exporting || isEmpty || blocks.length === 0}
-                        title={t.exportIdmlHint}
-                        className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {t.exportIdmlCta}
-                      </button>
-                    </div>
+                        <span className="w-4 text-center text-xs">
+                          {seg === "editor" && editorJob.running !== null ? "…" : done ? "✓" : i + 1}
+                        </span>
+                        {label}
+                        {seg === "editor" && editorJob.running !== null && (
+                          <span className="ml-auto text-xs text-accent">{tr ? "sürüyor" : "running"}</span>
+                        )}
+                      </Link>
+                    ))}
                   </div>
                 </>
               )}
             </div>
-            <button
-              onClick={() => void handlePreflight()}
-              disabled={preflightRunning || blocks.length === 0}
-              title="Üretilen PDF'i baskı kurallarına göre denetle (sayfa boyutu, TrimBox, font gömme…)"
-              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {preflightRunning ? "Denetleniyor…" : "Baskı Denetimi"}
-            </button>
-            {/* PDF indir: görüntülenen motorla AYNI çıktı (Typst varsayılan =
-                gördüğün baskı sayfası). "Hızlı" önizlemedeyse JS motoruyla iner. */}
-            <button
-              onClick={() => void (previewEngine === "typst" ? handleExportPdfTypst() : handleExportPdf())}
-              disabled={exporting || isEmpty || blocks.length === 0}
-              title={
-                standard === "kdy"
-                  ? t.exportHint
-                  : standard === "ingram"
-                    ? t.exportHintIngram
-                    : t.exportHintKdp
-              }
-              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {exporting ? t.exportingLabel : t.exportPdfCta}
-            </button>
+          )}
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={handleUndo}
+            disabled={!history.canUndo && editingBlock == null}
+            title={
+              history.undoLabel
+                ? t.undoTip.replace("{label}", history.undoLabel)
+                : editingBlock != null
+                  ? t.undoTipOpen
+                  : t.undoTipEmpty
+            }
+            aria-label={t.undoCta}
+            className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-lg text-foreground/70 transition hover:bg-accent-soft hover:text-foreground disabled:opacity-30 sm:flex"
+          >
+            <ArrowUUpLeftIcon className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleRedo}
+            disabled={!history.canRedo}
+            title={history.redoLabel ? t.redoTip.replace("{label}", history.redoLabel) : t.redoTipEmpty}
+            aria-label={t.redoCta}
+            className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-lg text-foreground/70 transition hover:bg-accent-soft hover:text-foreground disabled:opacity-30 sm:flex"
+          >
+            <ArrowUUpRightIcon className="h-5 w-5" />
+          </button>
+          <span className="hidden h-7 w-px shrink-0 bg-border sm:block" />
+          <button
+            type="button"
+            onClick={() => void handlePreflight()}
+            disabled={preflightRunning || blocks.length === 0}
+            title={tr ? "Üretilen PDF'i baskı kurallarına göre denetle (sayfa boyutu, kesim kutusu, yazı tipi gömme…)" : "Check the PDF against print rules"}
+            className="hidden shrink-0 whitespace-nowrap rounded-xl border border-accent/50 px-4 py-2.5 text-sm font-semibold text-accent transition hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-50 xl:block"
+          >
+            {preflightRunning ? (tr ? "Denetleniyor…" : "Checking…") : tr ? "Baskı denetimi" : "Print check"}
+          </button>
+          {/* PDF indir ▾ — PDF (gördüğün motorla birebir), IDML ve çıktı ayarları */}
+          <div className="relative shrink-0">
+            <div className="flex overflow-hidden rounded-xl bg-accent text-white shadow-sm">
+              <button
+                type="button"
+                onClick={() => void (previewEngine === "typst" ? handleExportPdfTypst() : handleExportPdf())}
+                disabled={exporting || isEmpty || blocks.length === 0}
+                title={standard === "kdy" ? t.exportHint : standard === "ingram" ? t.exportHintIngram : t.exportHintKdp}
+                className="whitespace-nowrap px-4 py-2.5 text-sm font-semibold transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {exporting ? t.exportingLabel : tr ? "PDF indir" : "Download PDF"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMenuOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={viewMenuOpen}
+                aria-label={tr ? "İndirme seçenekleri" : "Download options"}
+                className="border-l border-white/25 px-2.5 transition hover:bg-white/10"
+              >
+                <CaretDownIcon className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {viewMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setViewMenuOpen(false)} />
+                <div role="menu" className="absolute right-0 top-full z-40 mt-2 flex w-72 flex-col gap-3 rounded-xl border border-border bg-surface p-3 shadow-xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewMenuOpen(false);
+                      void handlePreflight();
+                    }}
+                    disabled={preflightRunning || blocks.length === 0}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-left text-sm font-medium text-foreground transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50 xl:hidden"
+                  >
+                    {tr ? "Baskı denetimi" : "Print check"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewMenuOpen(false);
+                      void handleExportIdml();
+                    }}
+                    disabled={exporting || isEmpty || blocks.length === 0}
+                    title={t.exportIdmlHint}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-left text-sm font-medium text-foreground transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {t.exportIdmlCta}
+                  </button>
+                  <div className="flex items-center justify-between gap-2 text-sm text-muted">
+                    {t.engineLabel}
+                    <div
+                      className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5"
+                      title={tr ? "Typst: gerçek baskı sayfası (ne görürsen o basılır). Hızlı: yaklaşık yedek önizleme." : "Typst: the real print page. Fast: approximate preview."}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => pickEngine("typst")}
+                        className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${previewEngine === "typst" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"}`}
+                      >
+                        Typst
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => pickEngine("js")}
+                        className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${previewEngine === "js" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"}`}
+                      >
+                        {tr ? "Hızlı" : "Fast"}
+                      </button>
+                    </div>
+                  </div>
+                  {standard === "kdy" ? (
+                    <label className="flex items-center gap-2 text-sm text-foreground/80" title={t.cropMarksLabel}>
+                      <input type="checkbox" checked={cropMarks} onChange={(e) => setCropMarks(e.target.checked)} className="h-4 w-4 accent-[var(--accent)]" />
+                      {t.cropMarksLabel}
+                    </label>
+                  ) : (
+                    <label className="flex items-center gap-2 text-sm text-foreground/80" title={t.bleedHint}>
+                      <input type="checkbox" checked={bleedOn} onChange={(e) => setBleedOn(e.target.checked)} className="h-4 w-4 accent-[var(--accent)]" />
+                      {t.bleedLabel}
+                    </label>
+                  )}
+                </div>
+              </>
+            )}
           </div>
-        </div>
-        {exportError && !typstCrash && (
-          <div className="border-b border-border bg-red-50 px-4 py-2 text-xs text-red-700">
-            {t.exportErrorLabel}
+          {wizardActive && projectId && (
+            <button
+              type="button"
+              onClick={() => void finishWizard()}
+              disabled={wizardBusy}
+              title={tr ? "Mizanpajı tamamla ve kapağa geç" : "Finish layout and go to the cover"}
+              className="shrink-0 whitespace-nowrap rounded-xl border border-emerald-600/40 px-3 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
+            >
+              <span className="hidden sm:inline">{tr ? "Tamamla →" : "Finish →"}</span>
+              <span className="sm:hidden">✓</span>
+            </button>
+          )}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setAccountOpen((o) => !o)}
+              aria-haspopup="menu"
+              aria-expanded={accountOpen}
+              title={user?.name}
+              className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white"
+              style={{ background: "linear-gradient(135deg, #d946ef, #9333ea)" }}
+            >
+              {user?.initials ?? "?"}
+            </button>
+            {accountOpen && (
+              <>
+                <button type="button" aria-label="×" className="fixed inset-0 z-30 cursor-default" onClick={() => setAccountOpen(false)} />
+                <div role="menu" className="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg">
+                  {user?.name && <div className="truncate px-4 py-2 text-sm font-semibold text-foreground">{user.name}</div>}
+                  <Link href={`/${lang}/projeler`} className="block px-4 py-2.5 text-sm text-foreground/80 hover:bg-accent-soft hover:text-accent">
+                    {tr ? "Kitaplarım" : "My books"}
+                  </Link>
+                  <Link href={`/${lang}/jetonlar`} className="block px-4 py-2.5 text-sm text-foreground/80 hover:bg-accent-soft hover:text-accent">
+                    {tr ? "Jetonlarım" : "My credits"}
+                  </Link>
+                  {signOut && (
+                    <form action={signOut} className="border-t border-border">
+                      <button type="submit" className="block w-full px-4 py-2.5 text-left text-sm text-foreground/80 hover:bg-accent-soft hover:text-accent">
+                        {tr ? "Çıkış yap" : "Sign out"}
+                      </button>
+                    </form>
+                  )}
+                </div>
+              </>
+            )}
           </div>
+        </header>
+      )}
+
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {/* ── Sol araç şeridi ── */}
+        {!focusMode && (
+          <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-surface px-2 py-2 lg:w-[92px] lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:border-b-0 lg:border-r lg:px-2 lg:py-3">
+            {navItems.map(({ id, label, Icon }) => {
+              const active = panel === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setPanel(id);
+                    if (!sidePanelOpen) toggleSidePanel();
+                  }}
+                  aria-pressed={active}
+                  className={`flex shrink-0 flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-xs font-medium transition lg:w-full [@media(max-height:820px)]:py-2 ${
+                    active ? "bg-accent-soft text-accent" : "text-foreground/70 hover:bg-background hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="h-6 w-6" />
+                  {label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => {
+                setPanel("text");
+                setSourceMode("word");
+                if (!sidePanelOpen) toggleSidePanel();
+              }}
+              className="flex shrink-0 flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-xs font-medium text-foreground/70 transition hover:bg-background hover:text-foreground lg:mt-auto lg:w-full lg:border-t lg:border-border lg:pt-4 [@media(max-height:820px)]:py-2"
+            >
+              <DownloadSimpleIcon className="h-6 w-6" />
+              {tr ? "İçe aktar" : "Import"}
+            </button>
+          </nav>
         )}
-        {typstCrash && (
-          <div className="flex items-start justify-between gap-3 border-b border-border bg-red-50 px-4 py-2 text-xs text-red-700">
-            <div className="min-w-0">
-              <span className="font-semibold">{t.typstCrashTitle}.</span> {t.typstCrashBody}
-              {typstCrash.panic && (
-                <span className="mt-1 block break-words font-mono text-[10px] text-red-600/80">
-                  {t.techNoteLabel} {typstCrash.panic}
-                </span>
+
+        {/* ── Önizleme ── */}
+        <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col p-2 lg:min-h-0 lg:p-3">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-2.5 py-1.5 sm:gap-3 sm:px-3">
+              {previewEngine === "typst" && (
+                <div className="flex rounded-xl border border-border bg-background p-1" role="group" aria-label={tr ? "Görünüm" : "View"}>
+                  {(
+                    [
+                      ["single", tr ? "Tek sayfa" : "Single"],
+                      ["spread", tr ? "Karşılıklı" : "Spread"],
+                      ["flow", tr ? "Akış" : "Flow"],
+                    ] as [PreviewMode, string][]
+                  ).map(([v, label]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => changeViewMode(v)}
+                      aria-pressed={viewMode === v}
+                      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                        viewMode === v ? "bg-accent-soft text-accent" : "text-foreground/70 hover:text-foreground"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex-1" />
+              <span className="whitespace-nowrap text-sm text-muted">
+                {previewEngine === "typst" && docPageCount === 0 ? "…" : (previewEngine === "typst" ? docPageCount : pages.length) || 0}{" "}
+                {tr ? "sayfa" : "pages"}
+              </span>
+              {!isEmpty && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPanel("quality");
+                    if (!sidePanelOpen) toggleSidePanel();
+                  }}
+                  title={t.qualityScoreLabel}
+                  className={`hidden rounded-full px-2 py-0.5 text-xs font-semibold sm:inline ${
+                    quality.errorCount > 0
+                      ? "bg-red-50 text-red-700"
+                      : quality.warningCount > 0
+                        ? "bg-amber-50 text-amber-700"
+                        : "bg-emerald-50 text-emerald-700"
+                  }`}
+                >
+                  {t.qualityScoreLabel} {quality.score}
+                </button>
+              )}
+              {previewEngine === "typst" && (
+                <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/80" title={tr ? "Kenar boşluklarını kesikli çizgiyle göster (baskıya girmez)" : "Show margins as dashed lines (not printed)"}>
+                  <span className="relative inline-flex">
+                    <input type="checkbox" checked={showGuides} onChange={(e) => setShowGuides(e.target.checked)} className="peer sr-only" />
+                    <span className="h-6 w-11 rounded-full bg-foreground/25 transition peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40" />
+                    <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
+                  </span>
+                  {tr ? "Kılavuzlar" : "Guides"}
+                </label>
+              )}
+              <button
+                type="button"
+                onClick={() => setFocusMode((v) => !v)}
+                title={focusMode ? t.focusExitTip : t.focusTip}
+                className={`flex h-10 items-center gap-2 rounded-lg px-2.5 text-sm font-semibold transition ${
+                  focusMode ? "bg-accent text-white hover:opacity-90" : "text-foreground/70 hover:bg-accent-soft hover:text-foreground"
+                }`}
+              >
+                <ArrowsOutIcon className="h-5 w-5" />
+                {focusMode && (tr ? "Büyük görünümü kapat" : "Close big view")}
+              </button>
+            </div>
+            {exportError && !typstCrash && (
+              <div className="border-b border-border bg-red-50 px-4 py-2 text-xs text-red-700">
+                {t.exportErrorLabel}
+              </div>
+            )}
+            {typstCrash && (
+              <div className="flex items-start justify-between gap-3 border-b border-border bg-red-50 px-4 py-2 text-xs text-red-700">
+                <div className="min-w-0">
+                  <span className="font-semibold">{t.typstCrashTitle}.</span> {t.typstCrashBody}
+                  {typstCrash.panic && (
+                    <span className="mt-1 block break-words font-mono text-[10px] text-red-600/80">
+                      {t.techNoteLabel} {typstCrash.panic}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="shrink-0 rounded-md bg-red-600 px-2.5 py-1 font-semibold text-white transition hover:bg-red-700"
+                >
+                  {t.reloadCta}
+                </button>
+              </div>
+            )}
+            {!isEmpty && !imprintNoteHidden && (
+              <div className="flex items-center justify-between gap-3 border-b border-border bg-accent-soft/40 px-4 py-1.5 text-xs text-muted">
+                <span>{standard === "kdy" ? t.imprintNote : t.imprintNoteKdp}</span>
+                <button
+                  onClick={dismissImprintNote}
+                  title="Bu notu gizle"
+                  className="shrink-0 rounded px-1.5 text-sm leading-none text-muted transition hover:text-foreground"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+
+            {historyNote && (
+              <div role="status" className="pointer-events-none absolute left-1/2 top-14 z-30 -translate-x-1/2 rounded-full bg-foreground/85 px-3 py-1 text-xs font-medium text-background shadow">
+                {historyNote}
+              </div>
+            )}
+            <div className={`relative min-h-0 flex-1 ${previewEngine === "typst" || isEmpty ? "overflow-hidden" : "overflow-auto px-4 py-3"}`}>
+              {isEmpty ? (
+                <div className="flex h-full min-h-[300px] items-center justify-center text-center text-sm text-muted">
+                  {t.emptyPreview}
+                </div>
+              ) : previewEngine === "typst" ? (
+                <TypstPreviewCanvas
+                  input={typstInput}
+                  editingBlock={editingBlock}
+                  onSelectBlock={startEditBlock}
+                  onError={handleTypstPreviewError}
+                  mode={viewMode}
+                  zoom={viewZoom}
+                  cursor={viewMode === "spread" ? cursorRow : curPage}
+                  guides={showGuides ? pageGuides : null}
+                  pageWidthMm={size.width}
+                  onDocInfo={handleDocInfo}
+                  onViewInfo={handleViewInfo}
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-6">
+                  {/* Kalıcı uyarı: Hızlı mod YAKLAŞIKTIR — "önizleme = baskı" yalnız
+                      Typst'te geçerli. Kullanıcı bunu bilmeden baskı kararı vermesin. */}
+                  <div className="sticky top-0 z-10 w-full max-w-[720px] rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-center text-xs text-amber-800">
+                    {tr
+                                            ? "Yaklaşık önizleme (Hızlı mod) — satır sonları baskıdan farklı olabilir. PDF her zaman Typst ile üretilir."
+                                            : "Approximate preview (Fast mode) — line breaks may differ from print. The PDF is always made with Typst."}{" "}
+                                          <button type="button" onClick={() => pickEngine("typst")} className="pointer-events-auto font-semibold underline">
+                                            {tr ? "Baskı görünümüne dön" : "Back to print view"}
+                                          </button>
+                  </div>
+                  {(() => {
+                    // Karşılıklı sayfa (facing) düzeni: 1. sayfa tek başına SAĞDA
+                    // (recto); sonra çift(verso=sol) | tek(recto=sağ) ikilileri. Böylece
+                    // iç marjlar cilt boşluğunda karşı karşıya gelir — gerçek açık kitap
+                    // gibi — ve aynalı marjlar doğru tarafta görünür.
+                    const renderPage = (page: Page) => (
+                      <PagePreview
+                        key={page.number}
+                        page={page}
+                        size={size}
+                        margins={margins}
+                        gutter={gutter}
+                        pxPerMm={pxPerMm}
+                        renderDpi={renderDpi}
+                        bodyFamily={bodyFamily}
+                        roleLabel={roleLabelOf(page.role, t)}
+                        editingBlock={editingBlock}
+                        showEditor={page.number === editingFirstPage}
+                        editingRuns={editingRuns}
+                        editorApiRef={editorApiRef}
+                        onStartEdit={startEditBlock}
+                        onCommitFinal={commitBlockFinal}
+                        onCommitDraft={commitBlockDraft}
+                        onEndEdit={() => setEditingBlock(null)}
+                        onSelection={setSelFmt}
+                      />
+                    );
+                    const blank = (key: string) => (
+                      <div key={key} aria-hidden style={{ width: size.width * pxPerMm, height: size.height * pxPerMm }} />
+                    );
+                    // İlk sayfa hariç kalanları (verso,recto) ikililerine ayır.
+                    const pairs: (Page | undefined)[][] = [];
+                    for (let i = 1; i < pages.length; i += 2) pairs.push([pages[i], pages[i + 1]]);
+                    return (
+                      <>
+                        <div className="flex items-start justify-center gap-0">
+                          {blank("blank-0")}
+                          {pages[0] && renderPage(pages[0])}
+                        </div>
+                        {pairs.map(([l, r], idx) => (
+                          <div key={`spread-${idx}`} className="flex items-start justify-center gap-0">
+                            {l ? renderPage(l) : blank(`bl-${idx}`)}
+                            {r ? renderPage(r) : blank(`br-${idx}`)}
+                          </div>
+                        ))}
+                      </>
+                    );
+                  })()}
+                </div>
               )}
             </div>
-            <button
-              onClick={() => window.location.reload()}
-              className="shrink-0 rounded-md bg-red-600 px-2.5 py-1 font-semibold text-white transition hover:bg-red-700"
-            >
-              {t.reloadCta}
-            </button>
-          </div>
-        )}
-        {!isEmpty && !imprintNoteHidden && (
-          <div className="flex items-center justify-between gap-3 border-b border-border bg-accent-soft/40 px-4 py-1.5 text-xs text-muted">
-            <span>{standard === "kdy" ? t.imprintNote : t.imprintNoteKdp}</span>
-            <button
-              onClick={dismissImprintNote}
-              title="Bu notu gizle"
-              className="shrink-0 rounded px-1.5 text-sm leading-none text-muted transition hover:text-foreground"
-            >
-              ✕
-            </button>
-          </div>
-        )}
 
-        <div className="flex-1 overflow-auto px-4 py-3">
-          {isEmpty ? (
-            <div className="flex h-full min-h-[300px] items-center justify-center text-center text-sm text-muted">
-              {t.emptyPreview}
-            </div>
-          ) : previewEngine === "typst" ? (
-            <TypstPreviewCanvas
-              input={typstInput}
-              editingBlock={editingBlock}
-              onSelectBlock={startEditBlock}
-              onError={handleTypstPreviewError}
-            />
-          ) : (
-            <div className="flex flex-col items-center gap-6">
-              {/* Kalıcı uyarı: Hızlı mod YAKLAŞIKTIR — "önizleme = baskı" yalnız
-                  Typst'te geçerli. Kullanıcı bunu bilmeden baskı kararı vermesin. */}
-              <div className="sticky top-0 z-10 w-full max-w-[720px] rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-center text-xs text-amber-800">
-                Yaklaşık önizleme (Hızlı mod) — satır sonları baskıdan farklı olabilir. Baskının birebir görünümü için menüden <b>Typst</b> görünümüne dön; PDF her zaman Typst ile üretilir.
-              </div>
-              {(() => {
-                // Karşılıklı sayfa (facing) düzeni: 1. sayfa tek başına SAĞDA
-                // (recto); sonra çift(verso=sol) | tek(recto=sağ) ikilileri. Böylece
-                // iç marjlar cilt boşluğunda karşı karşıya gelir — gerçek açık kitap
-                // gibi — ve aynalı marjlar doğru tarafta görünür.
-                const renderPage = (page: Page) => (
-                  <PagePreview
-                    key={page.number}
-                    page={page}
-                    size={size}
-                    margins={margins}
-                    gutter={gutter}
-                    pxPerMm={pxPerMm}
-                    renderDpi={renderDpi}
-                    bodyFamily={bodyFamily}
-                    roleLabel={roleLabelOf(page.role, t)}
-                    editingBlock={editingBlock}
-                    showEditor={page.number === editingFirstPage}
-                    editingRuns={editingRuns}
-                    editorApiRef={editorApiRef}
-                    onStartEdit={startEditBlock}
-                    onCommitFinal={commitBlockFinal}
-                    onCommitDraft={commitBlockDraft}
-                    onEndEdit={() => setEditingBlock(null)}
-                    onSelection={setSelFmt}
-                  />
-                );
-                const blank = (key: string) => (
-                  <div key={key} aria-hidden style={{ width: size.width * pxPerMm, height: size.height * pxPerMm }} />
-                );
-                // İlk sayfa hariç kalanları (verso,recto) ikililerine ayır.
-                const pairs: (Page | undefined)[][] = [];
-                for (let i = 1; i < pages.length; i += 2) pairs.push([pages[i], pages[i + 1]]);
-                return (
-                  <>
-                    <div className="flex items-start justify-center gap-0">
-                      {blank("blank-0")}
-                      {pages[0] && renderPage(pages[0])}
-                    </div>
-                    {pairs.map(([l, r], idx) => (
-                      <div key={`spread-${idx}`} className="flex items-start justify-center gap-0">
-                        {l ? renderPage(l) : blank(`bl-${idx}`)}
-                        {r ? renderPage(r) : blank(`br-${idx}`)}
-                      </div>
-                    ))}
-                  </>
-                );
-              })()}
-            </div>
-          )}
-        </div>
-
-        {/* Düzenleme paneli — sayfaya tıklayınca altta açılır. Metin OKUNUR boyutta
-            ve panel kendi içinde kaydırılır → uzun paragraflar da rahat düzenlenir
-            (sayfanın küçültülmüş ölçeğine sıkışmaz). Sayfa yukarıda görünür kalır. */}
-        {editingBlockData && editingLine && (
-          <div className="shrink-0 border-t border-border bg-surface shadow-[0_-6px_24px_rgba(0,0,0,0.07)]">
-            <FormatBar
-              t={t}
-              typeLabel={editingTypeLabel}
-              selBold={selFmt.bold}
-              selItalic={selFmt.italic}
-              fontId={
-                editingBlockData.type === "paragraph" || editingBlockData.type === "heading" || editingBlockData.type === "blockquote"
-                  ? editingBlockData.fontFamily
-                    ? idOfFamily(editingBlockData.fontFamily)
-                    : blockDefaultFontId(editingBlockData, fontId, headingFontId)
-                  : fontId
-              }
-              sizePt={
-                editingBlockData.type === "paragraph" || editingBlockData.type === "heading" || editingBlockData.type === "blockquote"
-                  ? (editingBlockData.sizePt ?? blockDefaultSizePt(editingBlockData, bodySizePt))
-                  : bodySizePt
-              }
-              onFontId={(id) => setBlockFont(familyOf(id))}
-              onSizePt={(pt) => setBlockSize(pt)}
-              onToggleBold={toggleSelBold}
-              onToggleItalic={toggleSelItalic}
-              onSendNextPage={() => editingBlock != null && sendBlockToNextPage(editingBlock)}
-              onAddSpace={() => editingBlock != null && addSpaceAfterBlock(editingBlock)}
-              onPullPrevPage={() => editingBlock != null && pullBlockToPrevPage(editingBlock)}
-              canPullPrev={editingBlock != null && editingBlock > 0 && blocks[editingBlock - 1]?.type === "pagebreak"}
-              onCancel={() => setEditingBlock(null)}
-              onClose={() => editorApiRef.current?.commit()}
-            />
-            <div className="max-h-[42vh] overflow-y-auto px-5 py-4">
-              <div className="mx-auto max-w-[680px] text-[#1a1a1a]">
-                <RichBlockEditor
-                  key={editingBlock}
-                  line={editingLine}
-                  pxPerMm={READ_PXPERMM}
-                  renderDpi={READ_DPI}
-                  initialRuns={editingRuns}
-                  apiRef={editorApiRef}
-                  onCommitFinal={(runs) => editingBlock != null && commitBlockFinal(editingBlock, runs)}
-                  onCommitDraft={(runs) => editingBlock != null && commitBlockDraft(editingBlock, runs)}
-                  onEnd={() => setEditingBlock(null)}
+            {/* Düzenleme paneli — sayfaya tıklayınca altta açılır. Metin OKUNUR boyutta
+                ve panel kendi içinde kaydırılır → uzun paragraflar da rahat düzenlenir
+                (sayfanın küçültülmüş ölçeğine sıkışmaz). Sayfa yukarıda görünür kalır. */}
+            {editingBlockData && editingLine && (
+              <div className="shrink-0 border-t border-border bg-surface shadow-[0_-6px_24px_rgba(0,0,0,0.07)]">
+                <FormatBar
+                  t={t}
+                  typeLabel={editingTypeLabel}
+                  selBold={selFmt.bold}
+                  selItalic={selFmt.italic}
+                  fontId={
+                    editingBlockData.type === "paragraph" || editingBlockData.type === "heading" || editingBlockData.type === "blockquote"
+                      ? editingBlockData.fontFamily
+                        ? idOfFamily(editingBlockData.fontFamily)
+                        : blockDefaultFontId(editingBlockData, fontId, headingFontId)
+                      : fontId
+                  }
+                  sizePt={
+                    editingBlockData.type === "paragraph" || editingBlockData.type === "heading" || editingBlockData.type === "blockquote"
+                      ? (editingBlockData.sizePt ?? blockDefaultSizePt(editingBlockData, bodySizePt))
+                      : bodySizePt
+                  }
+                  onFontId={(id) => setBlockFont(familyOf(id))}
+                  onSizePt={(pt) => setBlockSize(pt)}
+                  onToggleBold={toggleSelBold}
+                  onToggleItalic={toggleSelItalic}
+                  onSendNextPage={() => editingBlock != null && sendBlockToNextPage(editingBlock)}
+                  onAddSpace={() => editingBlock != null && addSpaceAfterBlock(editingBlock)}
+                  onPullPrevPage={() => editingBlock != null && pullBlockToPrevPage(editingBlock)}
+                  canPullPrev={editingBlock != null && editingBlock > 0 && blocks[editingBlock - 1]?.type === "pagebreak"}
                   onCancel={() => setEditingBlock(null)}
-                  onSelection={setSelFmt}
+                  onClose={() => editorApiRef.current?.commit()}
                 />
+                <div className="max-h-[42vh] overflow-y-auto px-5 py-4">
+                  <div className="mx-auto max-w-[680px] text-[#1a1a1a]">
+                    <RichBlockEditor
+                      key={editingBlock}
+                      line={editingLine}
+                      pxPerMm={READ_PXPERMM}
+                      renderDpi={READ_DPI}
+                      initialRuns={editingRuns}
+                      apiRef={editorApiRef}
+                      onCommitFinal={(runs) => editingBlock != null && commitBlockFinal(editingBlock, runs)}
+                      onCommitDraft={(runs) => editingBlock != null && commitBlockDraft(editingBlock, runs)}
+                      onEnd={() => setEditingBlock(null)}
+                      onCancel={() => setEditingBlock(null)}
+                      onSelection={setSelFmt}
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* Alt şerit: ölçü · bölümler · sayfa gezinme · yakınlaştırma */}
+            {!isEmpty && (
+              <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-3 py-2 sm:gap-3">
+                <span className="hidden whitespace-nowrap text-sm text-muted md:inline">
+                  {size.width} × {size.height} mm
+                </span>
+                {previewEngine === "typst" && chapterNav.length > 0 && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setChaptersOpen((o) => !o)}
+                      aria-haspopup="menu"
+                      aria-expanded={chaptersOpen}
+                      className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground/80 transition hover:border-accent/40 hover:text-foreground"
+                    >
+                      <span aria-hidden="true">☰</span>
+                      {tr ? "Bölümler" : "Chapters"}
+                      <CaretDownIcon className="h-3 w-3" />
+                    </button>
+                    {chaptersOpen && (
+                      <>
+                        <div className="fixed inset-0 z-30" onClick={() => setChaptersOpen(false)} />
+                        <div role="menu" className="absolute bottom-full left-0 z-40 mb-2 max-h-[50vh] w-72 overflow-y-auto rounded-xl border border-border bg-surface py-1 shadow-xl">
+                          {chapterNav.map((c, i) => (
+                            <button
+                              key={`${c.idx}-${i}`}
+                              type="button"
+                              onClick={() => {
+                                setChaptersOpen(false);
+                                goToPage(c.page - 1);
+                              }}
+                              className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm text-foreground/80 hover:bg-accent-soft hover:text-accent"
+                            >
+                              <span className="truncate">{c.title || `${tr ? "Bölüm" : "Chapter"} ${i + 1}`}</span>
+                              <span className="shrink-0 text-xs text-muted">{c.page}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+                <div className="flex-1" />
+                {previewEngine === "typst" && viewMode !== "flow" && docPageCount > 0 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => stepPage(-1)}
+                      disabled={!canPrev}
+                      aria-label={tr ? "Önceki" : "Previous"}
+                      title={tr ? "Önceki (←)" : "Previous (←)"}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-lg text-foreground/80 transition hover:bg-accent-soft disabled:opacity-30"
+                    >
+                      ‹
+                    </button>
+                    <span className="min-w-[5.5rem] text-center text-sm font-semibold tabular-nums text-foreground">
+                      {pageLabel} / {docPageCount}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => stepPage(1)}
+                      disabled={!canNext}
+                      aria-label={tr ? "Sonraki" : "Next"}
+                      title={tr ? "Sonraki (→)" : "Next (→)"}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-lg text-foreground/80 transition hover:bg-accent-soft disabled:opacity-30"
+                    >
+                      ›
+                    </button>
+                  </div>
+                )}
+                <div className="flex-1" />
+                <div className="flex items-center gap-0.5 rounded-xl border border-border bg-surface px-1 py-0.5" role="group" aria-label={tr ? "Yakınlaştırma" : "Zoom"}>
+                  <button
+                    type="button"
+                    onClick={() => zoomBy(-1)}
+                    disabled={previewEngine === "typst" ? viewZoom <= VIEW_ZOOM[0] : zoom <= ZOOM_OPTIONS[0]}
+                    aria-label={tr ? "Küçült" : "Zoom out"}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-foreground/80 transition hover:bg-accent-soft disabled:opacity-30"
+                  >
+                    −
+                  </button>
+                  <span className="min-w-[3.5rem] text-center text-sm font-semibold tabular-nums text-foreground" aria-live="polite">
+                    {previewEngine === "typst" ? `${realPercent}%` : `${Math.round(zoom * 100)}%`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => zoomBy(1)}
+                    disabled={previewEngine === "typst" ? viewZoom >= VIEW_ZOOM[VIEW_ZOOM.length - 1] : zoom >= ZOOM_OPTIONS[ZOOM_OPTIONS.length - 1]}
+                    aria-label={tr ? "Büyüt" : "Zoom in"}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-foreground/80 transition hover:bg-accent-soft disabled:opacity-30"
+                  >
+                    +
+                  </button>
+                  <span className="mx-1 h-6 w-px bg-border" />
+                  <button
+                    type="button"
+                    onClick={() => (previewEngine === "typst" ? setViewZoom(1) : setZoom(1))}
+                    title={tr ? "Ekrana sığdır" : "Fit to screen"}
+                    className="flex h-9 items-center gap-2 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-foreground/80 transition hover:bg-accent-soft"
+                  >
+                    <ArrowsOutIcon className="h-4 w-4" />
+                    <span className="hidden sm:inline">{tr ? "Ekrana sığdır" : "Fit to screen"}</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
+        </section>
+
+        {/* ── Sağ panel ── */}
+        {!focusMode && (
+          <aside
+            className={`flex shrink-0 flex-col border-t border-border bg-surface lg:min-h-0 lg:border-l lg:border-t-0 ${
+              sidePanelOpen ? "lg:w-[380px]" : "lg:w-14"
+            }`}
+          >
+            {sidePanelOpen ? (
+              <>
+                <div className="flex shrink-0 items-start gap-3 border-b border-border px-5 py-4">
+                  <button
+                    type="button"
+                    onClick={toggleSidePanel}
+                    title={t.hidePanelTip}
+                    aria-label={t.hidePanelTip}
+                    className="-ml-2 hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border text-foreground/70 transition hover:bg-accent-soft hover:text-foreground lg:flex"
+                  >
+                    ›
+                  </button>
+                  <PanelIcon className="mt-1 h-6 w-6 shrink-0 text-accent" />
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-semibold leading-tight text-foreground">{panelMeta.title}</h2>
+                    <p className="mt-0.5 text-sm text-muted">{panelMeta.sub}</p>
+                  </div>
+                </div>
+                <div key={panel} className="min-h-0 flex-1 overflow-y-auto px-5 py-4 max-lg:max-h-[70vh] [&_h2]:sr-only">
+                  {panel === "book" && (
+                    <BookPanel
+                      t={t}
+                      title={title}
+                      setTitle={setTitle}
+                      author={author}
+                      setAuthor={setAuthor}
+                      subtitle={subtitle}
+                      setSubtitle={setSubtitle}
+                      publisher={publisher}
+                      setPublisher={setPublisher}
+                      bio={bio}
+                      setBio={setBio}
+                    />
+                  )}
+                  {panel === "text" && (
+                    <TextPanel
+                      t={t}
+                      raw={raw}
+                      setRaw={(v) => {
+                        history.typing(t.stepTyping);
+                        setRaw(v);
+                      }}
+                      stats={stats}
+                      onSample={() => {
+                        markStep(t.stepSample);
+                        setRaw(SAMPLE_TR);
+                      }}
+                      onClear={() => {
+                        markStep(t.stepClear);
+                        setRaw("");
+                      }}
+                      sourceMode={sourceMode}
+                      setSourceMode={setSourceMode}
+                      docxMode={docxMode}
+                      setDocxMode={setDocxMode}
+                      importing={importing}
+                      importInfo={importInfo}
+                      importError={importError}
+                      onImport={handleImport}
+                      onClearImport={clearImport}
+                    />
+                  )}
+                  {panel === "page" && (
+                    <PagePanel
+                      t={t}
+                      standard={standard}
+                      applyStandard={applyStandard}
+                      sizeId={sizeId}
+                      setSizeId={setSizeId}
+                      presetId={presetId}
+                      applyPreset={applyPreset}
+                      margins={margins}
+                      updateMargin={updateMargin}
+                      gutterAuto={gutterAuto}
+                      setGutterAuto={setGutterAuto}
+                      gutterManual={gutterManual}
+                      setGutterManual={setGutterManual}
+                      gutter={gutter}
+                    />
+                  )}
+                  {panel === "type" && (
+                    <TypeLayoutPanel
+                      t={t}
+                      lang={lang}
+                      fontId={fontId}
+                      setFontId={setFontId}
+                      bodySizePt={bodySizePt}
+                      setBodySizePt={setBodySizePt}
+                      leadingPt={leadingPt}
+                      setLeadingPt={setLeadingPt}
+                      align={align}
+                      setAlign={setAlign}
+                      indentMm={indentMm}
+                      setIndentMm={setIndentMm}
+                      paragraphSpacingMm={paragraphSpacingMm}
+                      setParagraphSpacingMm={setParagraphSpacingMm}
+                      headingFontId={headingFontId}
+                      setHeadingFontId={setHeadingFontId}
+                      detectHeadings={detectHeadings}
+                      setDetectHeadings={setDetectHeadings}
+                      chapterRight={chapterRight}
+                      setChapterRight={setChapterRight}
+                      frontMatter={frontMatter}
+                      setFrontMatter={setFrontMatter}
+                      runningHeads={runningHeads}
+                      setRunningHeads={setRunningHeads}
+                      pageNumbers={pageNumbers}
+                      setPageNumbers={setPageNumbers}
+                      hyphenate={hyphenate}
+                      setHyphenate={setHyphenate}
+                      dropCap={dropCap}
+                      setDropCap={setDropCap}
+                      lineBreak={lineBreak}
+                      setLineBreak={setLineBreak}
+                      widowControl={widowControl}
+                      setWidowControl={setWidowControl}
+                      opticalMargins={opticalMargins}
+                      setOpticalMargins={setOpticalMargins}
+                      kerning={kerning}
+                      setKerning={setKerning}
+                      themePicker={<ThemePicker t={t} lang={lang} themeId={themeId} onApply={applyTheme} />}
+                      tocEditor={frontMatter && chapterTitles.length > 0 ? tocEditor : null}
+                      onApplyAll={applyToWholeBook}
+                    />
+                  )}
+                  {panel === "quality" && (
+                    <QualityPanel
+                      t={t}
+                      score={quality.score}
+                      checks={quality.checks}
+                      errorCount={quality.errorCount}
+                      warningCount={quality.warningCount}
+                      successCount={quality.successCount}
+                    />
+                  )}
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={toggleSidePanel}
+                title={t.showPanelTip}
+                className="hidden h-full flex-col items-center gap-3 px-2 py-4 text-foreground/70 transition hover:bg-accent-soft hover:text-foreground lg:flex"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-border">‹</span>
+                <PanelIcon className="h-6 w-6 text-accent" />
+              </button>
+            )}
+          </aside>
         )}
-      </main>
+      </div>
+      {wizardActive && projectId && !focusMode && <WizardGuide lang={lang} step="layout" projectId={projectId} />}
     </div>
   );
 }
@@ -2066,27 +2584,6 @@ function NumberRow({
   );
 }
 
-function Toggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="flex items-center gap-2 text-sm">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 accent-[var(--accent)]"
-      />
-      <span className="text-foreground">{label}</span>
-    </label>
-  );
-}
 
 // Typst motorunun GERÇEKTEN yüklediği/render ettiği gövde fontları (3 aile).
 // Diğer aileler Typst'te sessizce Source Serif'e düşerdi → "font değişmiyor"
@@ -2597,8 +3094,85 @@ function ThemePicker({
   );
 }
 
-function TypePanel(props: {
+// ── Basit çizgi ikonlar (Phosphor tarzı) ──
+function BookOpenIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 256 256" className={className} fill="none" stroke="currentColor" strokeWidth={16} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M128 88a32 32 0 0 1 32-32h72v144h-72a32 32 0 0 0-32 32" />
+      <path d="M24 200h72a32 32 0 0 1 32 32V88a32 32 0 0 0-32-32H24Z" />
+    </svg>
+  );
+}
+function PageIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 256 256" className={className} fill="none" stroke="currentColor" strokeWidth={16} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="48" y="32" width="160" height="192" rx="12" />
+      <path d="M88 80h80M88 112h80M88 144h48" />
+    </svg>
+  );
+}
+function DownloadSimpleIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 256 256" className={className} fill="none" stroke="currentColor" strokeWidth={16} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M128 40v128M80 120l48 48 48-48M40 184v24a8 8 0 0 0 8 8h160a8 8 0 0 0 8-8v-24" />
+    </svg>
+  );
+}
+
+// Açılır bölüm (kapalı başlar).
+function PanelAccordion({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <details className="group">
+      <summary className="flex cursor-pointer list-none items-center gap-3 py-3 text-base font-medium text-foreground [&::-webkit-details-marker]:hidden">
+        {icon && <span className="text-foreground/70">{icon}</span>}
+        <span className="flex-1">{title}</span>
+        <CaretDownIcon className="h-4 w-4 text-foreground/60 transition group-open:rotate-180" />
+      </summary>
+      <div className="space-y-3 pb-4 pt-1">{children}</div>
+    </details>
+  );
+}
+
+// Anahtar (açık/kapalı) satırı — sağda kaydırmalı düğme.
+function SwitchRow({ label, checked, onChange, hint }: { label: string; checked: boolean; onChange: (v: boolean) => void; hint?: string }) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-3 py-1.5 text-sm text-foreground" title={hint}>
+      <span>{label}</span>
+      <span className="relative inline-flex shrink-0">
+        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="peer sr-only" />
+        <span className="h-6 w-11 rounded-full bg-foreground/25 transition peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40" />
+        <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
+      </span>
+    </label>
+  );
+}
+
+// Sayı seçici: hazır değerler + (listede yoksa) şimdiki değer.
+function ValueSelect({ value, values, onChange, suffix, format }: { value: number; values: number[]; onChange: (v: number) => void; suffix?: string; format?: (v: number) => string }) {
+  const list = values.includes(value) ? values : [...values, value].sort((a, b) => a - b);
+  const show = (v: number) => (format ? format(v) : `${String(v).replace(".", ",")}${suffix ? ` ${suffix}` : ""}`);
+  return (
+    <select value={String(value)} onChange={(e) => onChange(Number(e.target.value))} className={inputCls}>
+      {list.map((v) => (
+        <option key={v} value={String(v)}>
+          {show(v)}
+        </option>
+      ))}
+    </select>
+  );
+}
+const range = (a: number, b: number, step: number) => {
+  const out: number[] = [];
+  for (let v = a; v <= b + 1e-9; v += step) out.push(Math.round(v * 100) / 100);
+  return out;
+};
+
+// Yazı düzeni paneli (taslaktaki gibi): Gövde / Başlık sekmeleri, dizgi
+// kuralları, açılır "Üstbilgi ve sayfa numarası" ve "Gelişmiş ayarlar",
+// altta "Tüm kitaba uygula".
+function TypeLayoutPanel(props: {
   t: T;
+  lang: Locale;
   fontId: string;
   setFontId: (v: string) => void;
   bodySizePt: number;
@@ -2629,73 +3203,174 @@ function TypePanel(props: {
   setDropCap: (v: boolean) => void;
   lineBreak: "balanced" | "greedy";
   setLineBreak: (v: "balanced" | "greedy") => void;
+  widowControl: boolean;
+  setWidowControl: (v: boolean) => void;
+  opticalMargins: boolean;
+  setOpticalMargins: (v: boolean) => void;
+  kerning: boolean;
+  setKerning: (v: boolean) => void;
+  themePicker: React.ReactNode;
+  tocEditor: React.ReactNode;
+  onApplyAll: () => void;
 }) {
   const { t } = props;
+  const tr = props.lang === "tr";
+  const [tab, setTab] = useState<"body" | "heading">("body");
+  const label = "mb-1.5 block text-sm font-semibold text-foreground";
   return (
-    <div className="space-y-4">
-      <h2 className="text-sm font-semibold">{t.typeHeading}</h2>
-
-      <Field label={t.fontLabel}>
-        <FontSelect value={props.fontId} onChange={props.setFontId} />
-      </Field>
-
-      <div className="grid grid-cols-2 gap-3">
-        <NumberRow label={t.fontSizeLabel} value={props.bodySizePt} step={0.5} min={6} onChange={props.setBodySizePt} suffix={t.unitPt} />
-        <NumberRow label={t.leadingLabel} value={props.leadingPt} step={0.5} min={0} onChange={props.setLeadingPt} suffix={t.unitPt} />
-      </div>
-
-      <Field label={t.alignLabel}>
-        <div className="flex gap-1.5">
-          {(["left", "justify"] as const).map((a) => (
-            <button
-              key={a}
-              onClick={() => props.setAlign(a)}
-              className={`flex-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
-                props.align === a
-                  ? "border-accent bg-accent-soft text-accent"
-                  : "border-border text-foreground hover:border-accent"
-              }`}
-            >
-              {a === "left" ? t.alignLeft : t.alignJustify}
-            </button>
-          ))}
-        </div>
-      </Field>
-
-      <div className="grid grid-cols-2 gap-3">
-        <NumberRow label={t.indentLabel} value={props.indentMm} step={0.5} onChange={props.setIndentMm} suffix={t.unitMm} />
-        <NumberRow label={t.paraSpaceLabel} value={props.paragraphSpacingMm} step={0.5} onChange={props.setParagraphSpacingMm} suffix={t.unitMm} />
-      </div>
-
-      <div className="border-t border-border pt-3 space-y-3">
-        <Field label={t.headingFontLabel}>
-          <FontSelect value={props.headingFontId} onChange={props.setHeadingFontId} />
-        </Field>
-        <Toggle label={t.detectHeadings} checked={props.detectHeadings} onChange={props.setDetectHeadings} />
-        <p className="text-xs text-muted">{t.detectHeadingsHint}</p>
-      </div>
-
-      <div className="border-t border-border pt-3 space-y-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">{t.structureHeading}</h3>
-        <Toggle label={t.frontMatterLabel} checked={props.frontMatter} onChange={props.setFrontMatter} />
-        <Toggle label={t.chapterRightLabel} checked={props.chapterRight} onChange={props.setChapterRight} />
-        <Toggle label={t.runningHeadsLabel} checked={props.runningHeads} onChange={props.setRunningHeads} />
-        <Toggle label={t.pageNumbersLabel} checked={props.pageNumbers} onChange={props.setPageNumbers} />
-        <Toggle label={t.hyphenateLabel} checked={props.hyphenate} onChange={props.setHyphenate} />
-        <Toggle label={t.dropCapLabel} checked={props.dropCap} onChange={props.setDropCap} />
-        <label className="flex items-center justify-between gap-3 py-1 text-sm text-foreground">
-          <span>{t.lineBreakLabel}</span>
-          <select
-            value={props.lineBreak}
-            onChange={(e) => props.setLineBreak(e.target.value as "balanced" | "greedy")}
-            className="h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-accent"
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-background p-1" role="tablist">
+        {(
+          [
+            ["body", tr ? "Gövde" : "Body"],
+            ["heading", tr ? "Başlık" : "Heading"],
+          ] as ["body" | "heading", string][]
+        ).map(([id, name]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+            className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+              tab === id ? "bg-accent-soft text-accent" : "text-foreground/70 hover:text-foreground"
+            }`}
           >
-            <option value="balanced">{t.lineBreakBalanced}</option>
-            <option value="greedy">{t.lineBreakGreedy}</option>
-          </select>
-        </label>
-        <p className="text-xs text-muted">{t.structureHint}</p>
+            {name}
+          </button>
+        ))}
       </div>
+
+      {tab === "body" ? (
+        <div className="space-y-4">
+          <div>
+            <span className={label}>{t.fontLabel}</span>
+            <FontSelect value={props.fontId} onChange={props.setFontId} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <span className={label}>{tr ? "Punto" : "Size"}</span>
+              <ValueSelect value={props.bodySizePt} values={range(8, 14, 0.5)} onChange={props.setBodySizePt} />
+            </div>
+            <div>
+              <span className={label}>{t.leadingLabel}</span>
+              <ValueSelect
+                value={props.leadingPt}
+                values={[0, ...range(10, 20, 0.5)]}
+                onChange={props.setLeadingPt}
+                format={(v) => (v === 0 ? (tr ? "Otomatik" : "Auto") : String(v).replace(".", ","))}
+              />
+            </div>
+          </div>
+          <div>
+            <span className={label}>{tr ? "Metin hizalama" : "Alignment"}</span>
+            <div className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-background p-1">
+              {(["left", "justify"] as const).map((a) => (
+                <button
+                  key={a}
+                  type="button"
+                  onClick={() => props.setAlign(a)}
+                  aria-pressed={props.align === a}
+                  title={a === "left" ? t.alignLeft : t.alignJustify}
+                  className={`flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition ${
+                    props.align === a ? "bg-accent-soft text-accent" : "text-foreground/70 hover:text-foreground"
+                  }`}
+                >
+                  <svg viewBox="0 0 20 14" className="h-4 w-5" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden="true">
+                    {a === "left" ? (
+                      <path d="M1 1h18M1 5h12M1 9h18M1 13h10" />
+                    ) : (
+                      <path d="M1 1h18M1 5h18M1 9h18M1 13h18" />
+                    )}
+                  </svg>
+                  {a === "left" ? t.alignLeft : t.alignJustify}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-foreground">{tr ? "İlk satır girintisi" : "First-line indent"}</span>
+              <div className="w-32">
+                <ValueSelect value={props.indentMm} values={range(0, 10, 0.5)} onChange={props.setIndentMm} suffix="mm" />
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-foreground">{tr ? "Paragraf sonrası" : "Space after paragraph"}</span>
+              <div className="w-32">
+                <ValueSelect value={props.paragraphSpacingMm} values={range(0, 6, 0.5)} onChange={props.setParagraphSpacingMm} suffix="mm" />
+              </div>
+            </div>
+          </div>
+          <div className="border-t border-border pt-4">
+            <h3 className="mb-1 text-base font-semibold text-foreground">{tr ? "Dizgi kuralları" : "Typesetting rules"}</h3>
+            <SwitchRow label={tr ? "Türkçe heceleme" : "Hyphenation"} checked={props.hyphenate} onChange={props.setHyphenate} />
+            <SwitchRow
+              label={tr ? "Dul ve yetim satır koruması" : "Widow & orphan control"}
+              hint={tr ? "Paragrafın tek satırı sayfa başında ya da sonunda yalnız kalmasın." : "Keep single paragraph lines from being stranded at page top/bottom."}
+              checked={props.widowControl}
+              onChange={props.setWidowControl}
+            />
+            <SwitchRow
+              label={tr ? "Optik kenar hizalama" : "Optical margin alignment"}
+              hint={tr ? "Satır sonundaki noktalama kenarın biraz dışına taşar; metin kenarı gözle düz görünür." : "Punctuation hangs slightly outside the margin so the edge looks straight."}
+              checked={props.opticalMargins}
+              onChange={props.setOpticalMargins}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div>
+            <span className={label}>{t.headingFontLabel}</span>
+            <FontSelect value={props.headingFontId} onChange={props.setHeadingFontId} />
+          </div>
+          <SwitchRow label={t.detectHeadings} hint={t.detectHeadingsHint} checked={props.detectHeadings} onChange={props.setDetectHeadings} />
+          <SwitchRow label={t.chapterRightLabel} checked={props.chapterRight} onChange={props.setChapterRight} />
+          <SwitchRow label={t.dropCapLabel} checked={props.dropCap} onChange={props.setDropCap} />
+        </div>
+      )}
+
+      <div className="divide-y divide-border border-t border-border">
+        <PanelAccordion
+          title={tr ? "Hazır temalar" : "Ready-made themes"}
+          icon={<svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden="true"><rect x="2.5" y="3" width="6.5" height="6.5" rx="1.2" /><rect x="11" y="3" width="6.5" height="6.5" rx="1.2" /><rect x="2.5" y="11" width="6.5" height="6.5" rx="1.2" /><rect x="11" y="11" width="6.5" height="6.5" rx="1.2" /></svg>}
+        >
+          {props.themePicker}
+        </PanelAccordion>
+        <PanelAccordion
+          title={tr ? "Üstbilgi ve sayfa numarası" : "Running heads & page numbers"}
+          icon={<svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden="true"><rect x="3" y="2" width="14" height="16" rx="2" /><path d="M6 6h8M6 9h8M6 12h5" /></svg>}
+        >
+          <SwitchRow label={t.runningHeadsLabel} checked={props.runningHeads} onChange={props.setRunningHeads} />
+          <SwitchRow label={t.pageNumbersLabel} checked={props.pageNumbers} onChange={props.setPageNumbers} />
+          <SwitchRow label={t.frontMatterLabel} checked={props.frontMatter} onChange={props.setFrontMatter} />
+        </PanelAccordion>
+        <PanelAccordion title={tr ? "Gelişmiş ayarlar" : "Advanced settings"} icon={<SlidersIcon className="h-5 w-5" />}>
+          <label className="flex items-center justify-between gap-3 text-sm text-foreground">
+            <span>{t.lineBreakLabel}</span>
+            <select
+              value={props.lineBreak}
+              onChange={(e) => props.setLineBreak(e.target.value as "balanced" | "greedy")}
+              className="h-9 rounded-lg border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-accent"
+            >
+              <option value="balanced">{t.lineBreakBalanced}</option>
+              <option value="greedy">{t.lineBreakGreedy}</option>
+            </select>
+          </label>
+          <SwitchRow label={t.kerningLabel} hint={t.kerningHint} checked={props.kerning} onChange={props.setKerning} />
+          {props.tocEditor}
+        </PanelAccordion>
+      </div>
+
+      <button
+        type="button"
+        onClick={props.onApplyAll}
+        title={tr ? "Paragraflara ayrıca verilmiş yazı tipi/punto ayarlarını kaldırır; bu ayarlar kitabın her yerinde geçerli olur." : "Removes per-paragraph font/size overrides so these settings apply everywhere."}
+        className="w-full rounded-xl bg-accent px-4 py-3.5 text-base font-semibold text-white shadow-sm transition hover:opacity-90"
+      >
+        {tr ? "Tüm kitaba uygula" : "Apply to whole book"}
+      </button>
     </div>
   );
 }
