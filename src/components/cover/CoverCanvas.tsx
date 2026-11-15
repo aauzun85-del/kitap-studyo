@@ -185,7 +185,7 @@ const MAX_DISPLAY_WIDTH = 2000;
 const MAX_ZOOM_WIDTH = 6000;
 // Cetvel kalınlıkları ve dış bölüm etiketi satırı (px).
 const RULER_TOP = 24;
-const RULER_LEFT = 32;
+const RULER_LEFT = 40;
 const LABEL_ROW = 22;
 export type ViewFocus = "all" | "front" | "back";
 
@@ -2037,7 +2037,7 @@ function EdgeRuler({
   for (let mm = 0; mm <= lengthMm + 0.001; mm += 5) {
     ticks.push({ mm, size: mm % step === 0 ? 9 : mm % 10 === 0 ? 6 : 3 });
   }
-  const T = h ? 24 : 32;
+  const T = h ? 24 : 40;
   const pos = (mm: number) => Math.round(offset + mm * pxPerMm);
   const endPos = pos(lengthMm);
   return (
