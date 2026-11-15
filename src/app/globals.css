@@ -32,6 +32,115 @@
   src: url("/fonts/Arno-Italic.otf") format("opentype");
 }
 
+/* İç tasarım konseptleri: Crimson Pro, Literata, Inter — YEREL (OFL, public/fonts).
+   Mizanpaj yazı tipi seçicisi ve kapak tuvali bu adları kullanır. (EB Garamond,
+   Cormorant ve Libre Baskerville layout.tsx'teki Google Fonts bağlantısından gelir.) */
+@font-face {
+  font-family: "Crimson Pro";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/CrimsonPro-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/CrimsonPro-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/CrimsonPro-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/CrimsonPro-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/CrimsonPro-BoldItalic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Literata";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Literata-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Literata";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Literata-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Literata";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/Literata-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Literata";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/Literata-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Literata";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/Literata-BoldItalic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Inter-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/Inter-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/Inter-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Inter-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/Inter-BoldItalic.ttf") format("truetype");
+}
+
 /* Source Serif 4 & Vollkorn — YEREL dosyalardan (Google Fonts'tan DEĞİL).
    Neden: PDF dışa-aktarma bu /fonts/*.ttf dosyalarını gömer. Google Fonts'un
    variable sürümü ~%4 daha dar; sayfalama (canvas) onu, PDF ise yerel dosyayı

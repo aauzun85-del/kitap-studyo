@@ -14,7 +14,9 @@ export function escapeTypst(s: string): string {
     .replace(/\\/g, "\\\\") // önce ters bölü
     .replace(/([#[\]*_$`<>@])/g, "\\$1") // satır içi özel karakterler
     .replace(/(^|\n)([=+\-/])/g, "$1\\$2") // yalnız satır başındaki blok karakterleri
-    .replace(/\n+/g, " "); // run içi kaçak satır sonları → boşluk
+    .replace(/\n+/g, " ") // run içi kaçak satır sonları → boşluk
+    // Şiir (LINE_SEP, U+2028): dize sonu → Typst satır kırılması "\ ".
+    .replace(/\u2028+/g, "\\ ");
 }
 
 // Kalın/italik için FONKSİYON formu #strong[...] / #emph[...] kullanılır (markup

@@ -23,11 +23,15 @@ export const COVER_FONTS: CoverFont[] = [
   { id: "baskerville", label: "Libre Baskerville", family: "Libre Baskerville", category: "serif" },
   { id: "sourceserif", label: "Source Serif 4", family: "Source Serif 4", category: "serif" },
   { id: "vollkorn", label: "Vollkorn", family: "Vollkorn", category: "serif" },
+  // İç tasarım konseptleri için (yerel dosyalardan, globals.css @font-face).
+  { id: "crimsonpro", label: "Crimson Pro", family: "Crimson Pro", category: "serif" },
+  { id: "literata", label: "Literata", family: "Literata", category: "serif" },
   // Arno Pro: KDY'nin orijinal gövde fontu (Adobe lisanslı). Font dosyaları
   // depoda değildir; yalnızca yerelde varsa çalışır, yoksa Source Serif'e düşer.
   { id: "arnopro", label: "Arno Pro (kişisel)", family: "Arno Pro", category: "serif" },
   // ── Sans (modern) ──
   { id: "sans", label: "Manrope", family: "Manrope", category: "sans" },
+  { id: "inter", label: "Inter", family: "Inter", category: "sans" },
   { id: "montserrat", label: "Montserrat", family: "Montserrat", category: "sans" },
   { id: "poppins", label: "Poppins", family: "Poppins", category: "sans" },
   { id: "oswald", label: "Oswald", family: "Oswald", category: "sans" },

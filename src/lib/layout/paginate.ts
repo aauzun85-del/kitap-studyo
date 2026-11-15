@@ -60,7 +60,7 @@ export type LayoutSettings = {
   dropCap: boolean; // bölüm başlarında büyük baş harf (drop cap)
   // Bölüm açılış stili (tema sistemi). Boş/eski taslaklarda makul varsayılanlar.
   chapterTopRatio?: number; // başlık sayfanın % kaçından başlar (vars. 0 — üst boşluk yok)
-  chapterOrnament?: "none" | "rule" | "dots"; // başlık altı süs (vars. "none")
+  chapterOrnament?: "none" | "rule" | "dots" | "fleuron"; // başlık altı süs (vars. "none")
   showChapterKicker?: boolean; // "BÖLÜM N" üst etiketi (vars. true)
   // Satır kırma yöntemi (yalnız iki yana yaslı paragraflarda etkili):
   //  - "balanced": Knuth–Plass — tüm paragrafa bakıp boşlukları en dengeli
@@ -74,7 +74,53 @@ export type LayoutSettings = {
   // Optik kenar hizalama: noktalama/tire satır sonunda kenarın biraz dışına
   // taşar, metin kenarı gözle düz görünür (vars. açık).
   opticalMargins?: boolean;
+
+  // ── İç tasarım konsepti (Mizanpaj konsept sayfası; hepsi isteğe bağlı —
+  // boşken çıktı eskisiyle AYNI kalır) ──
+  /** Seçilen konseptin kimliği (src/lib/layout/concepts.ts). */
+  conceptId?: string;
+  /** Bölüm açılış biçimi (vars. "centered" = bugünkü ortalı başlık). */
+  chapterStyle?: ChapterStyle;
+  /** Ana başlıklar yeni sayfadan başlasın mı (vars. true; şiirde false olabilir). */
+  chapterNewPage?: boolean;
+  /** Bölüm başlığı boyut çarpanı (vars. 1). */
+  chapterTitleScale?: number;
+  /** Bölümün ilk paragrafının ilk kelimeleri büyük harf, küçük punto. */
+  firstWordsCaps?: boolean;
+  /** "* * *" gibi sahne ayracı satırlarının görünümü (vars. "stars"). */
+  sceneBreak?: SceneBreak;
+  /** Koşu başlığı (üst bilgi) biçimi (vars. "italic"). */
+  runningHeadStyle?: "italic" | "caps";
+  /** Sayfa numarasının yeri (vars. "outer" = dış kenar). */
+  folioPosition?: "outer" | "center";
+  /** Ara başlık biçimi (vars. "center"). */
+  subheadStyle?: "center" | "left" | "left-caps";
+  /** Alıntı (> satırları) biçimi (vars. "indent" = girintili italik). */
+  quoteStyle?: "indent" | "box" | "bar";
+  /** Şiir: paragraf içindeki satır sonları korunur (dizeler birleşmez). */
+  keepLineBreaks?: boolean;
+  /** Gövdenin soldan içeri alınması (mm; deneysel şiir düzeni). */
+  bodyInsetMm?: number;
 };
+
+/** Bölüm açılış biçimleri (Typst _chapter). */
+export type ChapterStyle =
+  | "centered" // ortalı kalın başlık (bugünkü)
+  | "spaced-caps" // ortalı, aralıklı BÜYÜK HARF, ince
+  | "ornament" // üstte süs (❦), ortalı italik başlık
+  | "left-rule" // sola yaslı başlık + altında tam çizgi
+  | "minimal-left" // sola yaslı, iri ve ince başlık
+  | "numeral-left" // iri bölüm numarası + sola yaslı başlık
+  | "numeral-center" // iri bölüm numarası + ortalı başlık
+  | "boxed" // kutu içinde numara + sola yaslı başlık (çalışma kitabı)
+  | "poem-left" // şiir başlığı: küçük, sola yaslı, akış içinde
+  | "poem-center"; // şiir başlığı: küçük, ortalı italik
+
+/** Sahne ayracı görünümleri. */
+export type SceneBreak = "stars" | "asterism" | "fleuron" | "rule" | "space";
+
+/** Şiirde satır sonu: run metninde bu karakter Typst'te satır kırılmasıdır. */
+export const LINE_SEP = "\u2028";
 
 export type BookMeta = { title: string; author: string; bio: string; subtitle?: string; publisher?: string };
 
@@ -311,8 +357,28 @@ function normalizeParagraphBreaks(raw: string): string {
   );
 }
 
+// Şiir metni: hiç boş satır yoksa (her satır ayrı yapıştırılmış) her satır ayrı
+// paragraf kalır (eski davranış); boş satır VARSA kıtalar boş satırla ayrılmıştır
+// → tek satır sonları dize sonudur, paragrafa yükseltilmez.
+function normalizeVerseBreaks(raw: string): string {
+  const text = raw.replace(/\r\n?/g, "\n");
+  if (HAS_MEDIA_TOKEN.test(text)) return text;
+  if (!/\n\s*\n/.test(text)) return text.replace(/\n+/g, "\n\n");
+  return text;
+}
+
 // Ham markdown metni bloklara ayırır (manuel giriş yolu).
-export function parseBlocks(raw: string, detectHeadings: boolean, media?: MediaMap): Block[] {
+export function parseBlocks(
+  raw: string,
+  detectHeadings: boolean,
+  media?: MediaMap,
+  opts?: { keepLineBreaks?: boolean },
+): Block[] {
+  // Şiir: paragraf (kıta) içindeki satırlar BİRLEŞTİRİLMEZ, satır sonu korunur
+  // (LINE_SEP); boş satırla ayrılmamış metinde de "cümle sonu + büyük harf"
+  // satırlarını yeni paragrafa yükseltme yapılmaz (dizeler kıtadan kopmasın).
+  const keepLines = !!opts?.keepLineBreaks;
+  const J = keepLines ? LINE_SEP : " ";
   // Bozuk kaynak onarımı: noktalamadan sonra boşluksuz birleşmiş kelimeleri ayır.
   // Bu boşluksuz birleşmeler tek DEV/BÖLÜNEMEZ parça oluşturup yaslamada (Knuth-
   // Plass) çılgın boşluklara yol açıyordu. lookbehind/lookahead → harfler tüketilmez,
@@ -329,7 +395,7 @@ export function parseBlocks(raw: string, detectHeadings: boolean, media?: MediaM
       .replace(new RegExp(`(?<=\\p{Ll})(:)(?=[\\p{Lu}${OQ}])`, "gu"), "$1 ")
       // , ; iki harf arası. Ondalık "3,5" korunur.
       .replace(new RegExp(`(?<=\\p{L})([,;])(?=[\\p{L}${OQ}])`, "gu"), "$1 ");
-  const chunks = normalizeParagraphBreaks(raw).split(/\n{2,}/);
+  const chunks = (keepLines ? normalizeVerseBreaks(raw) : normalizeParagraphBreaks(raw)).split(/\n{2,}/);
   const blocks: Block[] = [];
   // "[[stil:…]]" ön satırları: chunk'ın ürettiği İLK bloğa uygulanacak biçim.
   // Uygulama, indeksler oynamadan (restructureHeadings'ten ÖNCE) yapılır.
@@ -373,7 +439,7 @@ export function parseBlocks(raw: string, detectHeadings: boolean, media?: MediaM
     const first = rawLines[0];
 
     if (first.startsWith(">")) {
-      const text = rawLines.map((l) => l.replace(/^>\s?/, "")).join(" ");
+      const text = rawLines.map((l) => l.replace(/^>\s?/, "")).join(J);
       blocks.push({ type: "blockquote", runs: inlineRuns(text) });
       continue;
     }
@@ -382,7 +448,7 @@ export function parseBlocks(raw: string, detectHeadings: boolean, media?: MediaM
       const lvl = headingLevel(first);
       if (lvl) {
         blocks.push({ type: "heading", level: lvl, runs: inlineRuns(first.replace(/^#{1,4}\s*/, "").trim()) });
-        const rest = rawLines.slice(1).join(" ");
+        const rest = rawLines.slice(1).join(J);
         if (rest) blocks.push({ type: "paragraph", runs: inlineRuns(rest) });
         continue;
       }
@@ -404,7 +470,7 @@ export function parseBlocks(raw: string, detectHeadings: boolean, media?: MediaM
           const lvl = looksLikeSubsection(headingText) ? 2 : 1;
           blocks.push({ type: "heading", level: lvl, runs: inlineRuns(headingText) });
         }
-        const rest = rawLines.slice(i).join(" ");
+        const rest = rawLines.slice(i).join(J);
         if (rest) blocks.push({ type: "paragraph", runs: inlineRuns(rest) });
         continue;
       }
@@ -418,7 +484,7 @@ export function parseBlocks(raw: string, detectHeadings: boolean, media?: MediaM
       }
     }
 
-    blocks.push({ type: "paragraph", runs: inlineRuns(rawLines.join(" ")) });
+    blocks.push({ type: "paragraph", runs: inlineRuns(rawLines.join(J)) });
   }
 
   // Stil işaretlerini bloklara uygula (font id → aile adı). restructureHeadings

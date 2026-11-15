@@ -11,6 +11,7 @@
 import type { Margins } from "./page";
 import type { PrintStandard } from "./standards";
 import type { ChapterOrnament } from "./themes";
+import type { ChapterStyle, SceneBreak } from "./paginate";
 
 export const LAYOUT_SETTINGS_VERSION = 1;
 
@@ -50,10 +51,38 @@ export type SavedLayoutSettings = {
   chapterOrnament: ChapterOrnament;
   showChapterKicker: boolean;
   tocOverrides: Record<number, string>;
+  // İç tasarım konsepti (Mizanpaj konsept sayfası). conceptId boşsa üye henüz
+  // konsept seçmedi → ilk girişte konsept ekranı açılır; "skip" = "kendim
+  // ayarlayacağım" (bir daha kendiliğinden açılmaz).
+  conceptId?: string;
+  chapterStyle?: ChapterStyle;
+  chapterNewPage?: boolean;
+  chapterTitleScale?: number;
+  firstWordsCaps?: boolean;
+  sceneBreak?: SceneBreak;
+  runningHeadStyle?: "italic" | "caps";
+  folioPosition?: "outer" | "center";
+  subheadStyle?: "center" | "left" | "left-caps";
+  quoteStyle?: "indent" | "box" | "bar";
+  keepLineBreaks?: boolean;
+  bodyInsetMm?: number;
 };
 
 const STANDARDS: PrintStandard[] = ["kdy", "akademi", "kdp", "ingram", "bnpress", "lulu", "serbest"];
-const ORNAMENTS: ChapterOrnament[] = ["none", "rule", "dots"];
+const ORNAMENTS: ChapterOrnament[] = ["none", "rule", "dots", "fleuron"];
+const CHAPTER_STYLES: ChapterStyle[] = [
+  "centered",
+  "spaced-caps",
+  "ornament",
+  "left-rule",
+  "minimal-left",
+  "numeral-left",
+  "numeral-center",
+  "boxed",
+  "poem-left",
+  "poem-center",
+];
+const SCENE_BREAKS: SceneBreak[] = ["stars", "asterism", "fleuron", "rule", "space"];
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 const num = (x: unknown, min: number, max: number) =>
@@ -121,6 +150,18 @@ export function readSavedLayout(slice: unknown): Partial<SavedLayoutSettings> | 
     chapterOrnament: oneOf(s.chapterOrnament, ORNAMENTS),
     showChapterKicker: bool(s.showChapterKicker),
     tocOverrides: tocOverrides(s.tocOverrides),
+    conceptId: str(s.conceptId),
+    chapterStyle: oneOf(s.chapterStyle, CHAPTER_STYLES),
+    chapterNewPage: bool(s.chapterNewPage),
+    chapterTitleScale: num(s.chapterTitleScale, 0.5, 2),
+    firstWordsCaps: bool(s.firstWordsCaps),
+    sceneBreak: oneOf(s.sceneBreak, SCENE_BREAKS),
+    runningHeadStyle: oneOf(s.runningHeadStyle, ["italic", "caps"] as const),
+    folioPosition: oneOf(s.folioPosition, ["outer", "center"] as const),
+    subheadStyle: oneOf(s.subheadStyle, ["center", "left", "left-caps"] as const),
+    quoteStyle: oneOf(s.quoteStyle, ["indent", "box", "bar"] as const),
+    keepLineBreaks: bool(s.keepLineBreaks),
+    bodyInsetMm: num(s.bodyInsetMm, 0, 40),
   };
   return out;
 }

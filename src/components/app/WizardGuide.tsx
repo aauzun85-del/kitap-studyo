@@ -34,6 +34,7 @@ const GUIDE: Record<Step, { tr: { title: string; lines: string[] }; en: { title:
     tr: {
       title: "2. Adım · Mizanpaj",
       lines: [
+        "Önce iç tasarım konsepti açılır: kitabının türüne göre 3 sayfa düzeni, senin metninle gösterilir. Birini seç ya da 'Şimdilik geç' de; soldaki 'Konsept' düğmesiyle istediğin zaman değiştirebilirsin.",
         "Metnin otomatik olarak baskıya hazır iç sayfalara döküldü; sayfaları gezerek kontrol et.",
         "Sayfada bir paragrafa tıkla: altta düzenleme çubuğu açılır — metni değiştirebilir, seçili kelimeyi kalın/italik yapabilir, paragrafın yazı tipini ve puntosunu ayarlayabilirsin.",
         "Aynı çubuktaki 'Sonraki sayfaya' ve 'Boşluk ekle' ile paragrafı sayfa içinde istediğin yere yerleştirebilirsin.",
@@ -45,6 +46,7 @@ const GUIDE: Record<Step, { tr: { title: string; lines: string[] }; en: { title:
     en: {
       title: "Step 2 · Layout",
       lines: [
+        "First the interior design concept opens: three page designs for your genre, shown with your own text. Pick one or skip; change it any time with the 'Concept' button on the left.",
         "Your text was automatically flowed into print-ready interior pages; browse and review them.",
         "Click a paragraph on the page: an editing bar opens below — edit the text, make selected words bold/italic, and set the paragraph's font and size.",
         "Use 'Next page' and 'Add space' in the same bar to place the paragraph exactly where you want.",

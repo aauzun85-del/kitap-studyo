@@ -50,11 +50,13 @@ export function blocksToMarkdown(blocks: Block[]): { markdown: string; media: Me
         parts.push(fmtPrefix(b) + "#".repeat(lvl) + " " + runsToMarkdown(b.runs));
         break;
       }
+      // Şiir dize sonları (LINE_SEP, U+2028) metne GERÇEK satır sonu olarak
+      // döner: kayıtta görünmez karakter kalmaz; okuma kipini keepLineBreaks seçer.
       case "paragraph":
-        parts.push(fmtPrefix(b) + runsToMarkdown(b.runs));
+        parts.push(fmtPrefix(b) + runsToMarkdown(b.runs).replace(/\u2028/g, "\n"));
         break;
       case "blockquote":
-        parts.push(fmtPrefix(b) + "> " + runsToMarkdown(b.runs));
+        parts.push(fmtPrefix(b) + "> " + runsToMarkdown(b.runs).replace(/\u2028/g, "\n> "));
         break;
       case "blank":
         parts.push("");

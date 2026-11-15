@@ -6,12 +6,13 @@
 // İLK DİLİM kapsamı: sayfa/marj/font/yaslama/paragraf/başlık. Bölüm-sağ-sayfa,
 // kicker, süs, drop-cap, ön sayfa, içindekiler, koşu başlığı SONRAKİ adımlarda.
 
-import type { Block, BookMeta, LayoutSettings } from "@/lib/layout/paginate";
+import type { Block, BookMeta, LayoutSettings, Run } from "@/lib/layout/paginate";
 import type { BookSize, Margins } from "@/lib/layout/page";
 import { smartQuoteBlocks, prepareMeta } from "@/lib/layout/prepare";
 import { KDY_RULES } from "@/lib/layout/kdy";
 import { runsToMarkup, escapeTypst } from "./escape";
-import { buildPreamble, typstStr } from "./template";
+import { buildPreamble, typstStr, upperTr } from "./template";
+import { typstFontExpr } from "./fonts";
 
 export type TypstBookInput = {
   meta: BookMeta; // HAM — serializer cleanMeta+smartQuote uygular
@@ -27,17 +28,117 @@ export type TypstBookInput = {
 
 // Bölüm açılışı (level-1 ana başlık): sağ-sayfa + üst boşluk + "BÖLÜM N" kicker +
 // başlık (gerçek #heading → içindekiler/koşu başlığı görür) + süs.
-function chapterOpen(b: Extract<Block, { type: "heading" }>, marker: string, s: LayoutSettings, contentHeightMm: number): string {
+function chapterOpen(
+  b: Extract<Block, { type: "heading" }>,
+  marker: string,
+  s: LayoutSettings,
+  contentHeightMm: number,
+  num: number | null,
+): string {
   const right = s.chapterStartsOnRightPage;
   // Bölüm başında üst boşluk yok (kullanıcı isteği): başlık sayfanın en üstünden.
   const topMm = ((s.chapterTopRatio ?? 0) * contentHeightMm).toFixed(2);
   const orn = s.chapterOrnament ?? "none";
   const showKick = s.showChapterKicker ?? true;
-  const kick = showKick && b.kicker ? `kicker: ${typstStr(b.kicker)}, ` : "";
+  // Kicker BÜYÜK HARFE JS'te çevrilir (Türkçe i/İ doğru olsun).
+  const kick = showKick && b.kicker ? `kicker: ${typstStr(upperTr(b.kicker, s.lang))}, ` : "";
+  const numArg = num != null ? `num: "${num}", ` : "";
+  // Bölüm adının Türkçe BÜYÜK HARF hâli (JS'te): "aralıklı büyük harf" başlık
+  // biçimi ve "büyük harf" koşu başlığı bunu gösterir. Başlığın kendisi (içindekiler)
+  // özgün yazımıyla kalır.
+  const chup =
+    s.runningHeadStyle === "caps" || s.chapterStyle === "spaced-caps"
+      ? ` #metadata(${typstStr(upperTr(b.runs.map((r) => r.text).join(""), s.lang))}) <chup>`
+      : "";
+  const runs = b.runs;
   // marker (blok jetonu) sayfa kırılışından SONRA, başlığın yanında → konumu bölüm
   // sayfasını verir (kırılıştan önce olsa önceki sayfayı gösterirdi).
-  const title = `${marker} #heading(level: 1, outlined: true)[${runsToMarkup(b.runs)}]`;
-  return `#_chapter(${kick}ornament: "${orn}", right: ${right}, top: ${topMm}mm)[${title}]`;
+  const title = `${marker}${chup} #heading(level: 1, outlined: true)[${runsToMarkup(runs)}]`;
+  return `#_chapter(${kick}${numArg}ornament: "${orn}", right: ${right}, top: ${topMm}mm)[${title}]`;
+}
+
+/** Run metinlerini kitabın diline göre büyük harfe çevirir (biçim korunur). */
+function upperRuns(runs: Run[], lang?: "tr" | "en"): Run[] {
+  return runs.map((r) => ({ ...r, text: upperTr(r.text, lang) }));
+}
+
+// Numara almayan bölümler (ön söz, giriş, sonsöz…): "iri numara" biçiminde boş kalır.
+// Türkçe küçük harfe indirilmiş metinde, sözcük sınırıyla aranır ("GİRİŞ" eşleşir,
+// "Girişimcilik" eşleşmez).
+const UNNUMBERED =
+  /^(önsöz|ön söz|giriş|sunuş|takdim|sonsöz|son söz|sonuç|epilog|prolog|teşekkür|kaynakça|kaynaklar|dizin|ek|ekler|notlar|sözlük|preface|foreword|introduction|epilogue|afterword|acknowledgements?|bibliography|references|index|notes|appendix)(?!\p{L})/u;
+
+// Kicker'daki bölüm numarası ("BÖLÜM 3", "BÖLÜM XII", "Üçüncü Bölüm") → sayı.
+const ORDINALS: Record<string, number> = {
+  birinci: 1, ikinci: 2, üçüncü: 3, dördüncü: 4, beşinci: 5, altıncı: 6, yedinci: 7, sekizinci: 8, dokuzuncu: 9,
+  onuncu: 10, yirminci: 20, otuzuncu: 30, kırkıncı: 40, ellinci: 50,
+};
+const TENS: Record<string, number> = { on: 10, yirmi: 20, otuz: 30, kırk: 40, elli: 50 };
+function romanToInt(r: string): number | null {
+  const v: Record<string, number> = { i: 1, v: 5, x: 10, l: 50, c: 100, d: 500, m: 1000 };
+  let n = 0;
+  const s = r.toLowerCase();
+  for (let i = 0; i < s.length; i++) {
+    const a = v[s[i]];
+    const b = v[s[i + 1]] ?? 0;
+    if (!a) return null;
+    n += a < b ? -a : a;
+  }
+  return n > 0 && n < 400 ? n : null;
+}
+function kickerNumber(kicker: string | undefined): number | null {
+  if (!kicker) return null;
+  const t = kicker.toLocaleLowerCase("tr");
+  const d = /\d+/.exec(t);
+  if (d) return Number(d[0]);
+  const r = /(?:^|\s)([ivxlcdm]+)(?:\s|$|[.:])/.exec(t);
+  if (r) {
+    const n = romanToInt(r[1]);
+    if (n) return n;
+  }
+  const words = t.split(/\s+/);
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (ORDINALS[w] != null) {
+      const prev = i > 0 ? TENS[words[i - 1]] : undefined;
+      return (prev && ORDINALS[w] < 10 ? prev : 0) + ORDINALS[w];
+    }
+  }
+  return null;
+}
+
+// Sahne ayracı satırı: "* * *", "***", "#", "~", "•••", "⁂", "❦", "---" …
+// (prepare.ts "---"yi "—"ya çevirir → tek tire de ayraçtır.)
+const SCENE_BREAK = /^\s*(?:(?:\*\s*){1,3}|#{1,3}|~{1,3}|•(?:\s*•){0,2}|⁂|❦|§|[—–]|[-–—](?:\s*[-–—]){2,})\s*$/u;
+
+/** Bölümün ilk paragrafı: ilk kelimeler (en çok 4, ilk virgül/noktaya kadar)
+ *  büyük harf + küçük punto. Satır içi kalın/italik korunur. */
+function leadCapsPara(runs: Run[], lang?: "tr" | "en"): string {
+  const plain = runs.map((r) => r.text).join("");
+  // Baştaki kelimeleri say: 4 kelime ya da ilk noktalama.
+  const m = /^\s*(\S+(?:\s+\S+){0,3})/u.exec(plain);
+  if (!m) return runsToMarkup(runs);
+  let leadLen = m[0].length;
+  const punct = m[0].search(/[,.;:!?…]/u);
+  if (punct > 0) leadLen = punct + 1;
+  // Run'ları baş / kalan olarak böl.
+  const lead: Run[] = [];
+  const rest: Run[] = [];
+  let used = 0;
+  for (const r of runs) {
+    if (used >= leadLen) {
+      rest.push(r);
+      continue;
+    }
+    const take = Math.min(r.text.length, leadLen - used);
+    if (take > 0) lead.push({ ...r, text: upperTr(r.text.slice(0, take), lang) });
+    if (take < r.text.length) rest.push({ ...r, text: r.text.slice(take) });
+    used += r.text.length;
+  }
+  // "]" sonrası "(" ";" "." Typst'te çağrı/alan sanılır → kaçır (runsToMarkup'taki tuzak).
+  let restMarkup = runsToMarkup(rest);
+  if (/^[(;.]/.test(restMarkup)) restMarkup = "\\" + restMarkup;
+  return `#_lead[${runsToMarkup(lead)}]${restMarkup}`;
 }
 
 // Bölümün İLK paragrafı: drop-cap. İlk grafem büyük baş harf; kalanı düz metin
@@ -63,16 +164,31 @@ function fmtWrap(
   return `#[#set text(${sets.join(", ")}); ${inner}]`;
 }
 
-function blockToTypst(b: Block, contentWidthMm: number): string {
+function blockToTypst(b: Block, contentWidthMm: number, s?: LayoutSettings): string {
+  // Deneysel şiir düzeni: gövde soldan içeri alınır.
+  const inset = (inner: string) =>
+    s?.bodyInsetMm && s.bodyInsetMm > 0 ? `#pad(left: ${s.bodyInsetMm.toFixed(1)}mm)[${inner}]` : inner;
   switch (b.type) {
-    case "heading":
+    case "heading": {
+      // "Sola, büyük harf" ara başlık biçimi: metin JS'te büyük harfe çevrilir.
+      const runs = s?.subheadStyle === "left-caps" ? upperRuns(b.runs, s.lang) : b.runs;
+      // Blok-bazlı yazı tipi (biçim çubuğu) başlığın kendi yazı tipi kuralını
+      // geçmeli: ara başlığa argüman, başlığa yerel "show heading" kuralı.
+      const fontArg = b.fontFamily ? `font: ${typstFontExpr(b.fontFamily)}, ` : "";
+      const sizeOnly = { ...b, fontFamily: undefined };
       // Ara başlık (subhead): küçük ortalı; içindekilere girmez.
-      if (b.subhead) return fmtWrap(b, `#_subhead[${runsToMarkup(b.runs)}]`);
-      return fmtWrap(b, `#heading(level: ${b.level})[${runsToMarkup(b.runs)}]`);
-    case "paragraph":
-      return fmtWrap(b, runsToMarkup(b.runs));
+      if (b.subhead) return fmtWrap(sizeOnly, `#_subhead(${fontArg}[${runsToMarkup(runs)}])`);
+      const h = `#heading(level: ${b.level})[${runsToMarkup(runs)}]`;
+      return fmtWrap(sizeOnly, b.fontFamily ? `#[#show heading: set text(font: ${typstFontExpr(b.fontFamily)}); ${h}]` : h);
+    }
+    case "paragraph": {
+      // Sahne ayracı satırı → konseptin işareti, ortalı.
+      const plain = b.runs.map((r) => r.text).join("");
+      if (SCENE_BREAK.test(plain)) return "#_scene()";
+      return fmtWrap(b, inset(runsToMarkup(b.runs)));
+    }
     case "blockquote":
-      return fmtWrap(b, `#block(inset: (x: ${KDY_RULES.blockquoteIndentMm}mm))[#emph[${runsToMarkup(b.runs)}]]`);
+      return fmtWrap(b, inset(`#_quote(${KDY_RULES.blockquoteIndentMm}mm)[${runsToMarkup(b.runs)}]`));
     case "blank":
       return "#v(0.8em)";
     case "pagebreak":
@@ -129,8 +245,11 @@ export function bookToTypst(input: TypstBookInput): string {
     if (meta.title || meta.author) {
       // Boş alt başlık/yayınevi → Typst `none` (o blok çizilmez).
       const sub = meta.subtitle?.trim() ? `[${escapeTypst(meta.subtitle)}]` : "none";
-      const pub = meta.publisher?.trim() ? `[${escapeTypst(meta.publisher)}]` : "none";
-      out.push(`#_titlepage([${escapeTypst(meta.title)}], ${sub}, [${escapeTypst(meta.author)}], ${pub})`);
+      // Yazar/yayınevi BÜYÜK HARF (JS'te, Türkçe kuralıyla).
+      const pubU = meta.publisher?.trim() ? `[${escapeTypst(upperTr(meta.publisher, input.settings.lang))}]` : "none";
+      out.push(
+        `#_titlepage([${escapeTypst(meta.title)}], ${sub}, [${escapeTypst(upperTr(meta.author, input.settings.lang))}], ${pubU})`,
+      );
     }
     const bioParas = meta.bio
       .split(/\n{2,}/)
@@ -154,14 +273,25 @@ export function bookToTypst(input: TypstBookInput): string {
     b.type === "heading" || b.type === "paragraph" || b.type === "blockquote" || b.type === "image" || b.type === "table";
 
   let pendingDropCap = false;
+  // Bölümün ilk paragrafı: ilk kelimeler büyük harf (drop-cap yoksa).
+  let pendingLead = false;
+  // Bölüm numarası ("iri numara" biçimleri): ön söz/giriş gibi bölümler sayılmaz.
+  let chapterNo = 0;
   // TİPOGRAFİ kural 6: ardışık akış-içi başlıklar arasında tam önce-boşluğu
   // (_hb) değil dar boşluk (_ht) kullanılır — önceki bloğu serializer bilir.
   let prevInlineHeading = false;
   blocks.forEach((b, i) => {
     const mk = taggable(b) ? tag(i) + "\n" : "";
     if (b.type === "heading" && b.level === 1 && !b.subhead) {
-      out.push(chapterOpen(b, tag(i), input.settings, contentHeightMm));
+      const plain = b.runs.map((r) => r.text).join("").trim();
+      // Yazarın numarası (kicker) öncelikli; yoksa sayaç. Ön söz/giriş numarasız.
+      const fromKicker = kickerNumber(b.kicker);
+      let num: number | null;
+      if (fromKicker != null) num = chapterNo = fromKicker;
+      else num = UNNUMBERED.test(plain.toLocaleLowerCase("tr")) ? null : ++chapterNo;
+      out.push(chapterOpen(b, tag(i), input.settings, contentHeightMm, num));
       pendingDropCap = input.settings.dropCap;
+      pendingLead = !input.settings.dropCap && !!input.settings.firstWordsCaps;
       prevInlineHeading = false;
       return;
     }
@@ -171,18 +301,27 @@ export function bookToTypst(input: TypstBookInput): string {
       prevInlineHeading = false;
       return;
     }
-    if (b.type !== "blank") pendingDropCap = false;
+    if (b.type === "paragraph" && pendingLead && !b.fontFamily && b.sizePt == null) {
+      out.push(mk + leadCapsPara(b.runs, input.settings.lang));
+      pendingLead = false;
+      prevInlineHeading = false;
+      return;
+    }
+    if (b.type !== "blank") {
+      pendingDropCap = false;
+      pendingLead = false;
+    }
     if (b.type === "heading") {
       // Akış-içi başlık (L2+/ara başlık). _hpre = çapa + alt-bölge kararı +
       // önce-boşluk (kural 1/3/6/7; ardışıkta dar boşluk). Konum işareti (mk)
       // _hpre'den SONRA → sayfa kırılırsa tıkla-düzenle bandı doğru sayfayı
       // görür. Başlığın show kuralı: sticky blok + sonra-boşluk (kural 2/5).
-      out.push(`#_hpre(${prevInlineHeading})\n` + mk + blockToTypst(b, contentWidthMm));
+      out.push(`#_hpre(${prevInlineHeading})\n` + mk + blockToTypst(b, contentWidthMm, input.settings));
       prevInlineHeading = true;
       return;
     }
     if (b.type !== "blank" && b.type !== "spacer") prevInlineHeading = false;
-    out.push(mk + blockToTypst(b, contentWidthMm));
+    out.push(mk + blockToTypst(b, contentWidthMm, input.settings));
   });
   const body = out.filter((s) => s.length > 0).join("\n\n");
 

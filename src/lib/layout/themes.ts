@@ -4,7 +4,7 @@
 // BAĞIMSIZDIR: marjlara dokunmaz (baskı uyumu korunur), yalnız "his"i belirler.
 // İstenirse seçildikten sonra her ayar elle ince ayarlanabilir.
 
-export type ChapterOrnament = "none" | "rule" | "dots";
+export type ChapterOrnament = "none" | "rule" | "dots" | "fleuron";
 
 // Paragraf sonrası boşluk VARSAYILANI (~1 satır). Kullanıcı isteği: "her
 // paragraftan sonra varsayılan olarak bir boşluk". Tüm temalar bunu kullanır

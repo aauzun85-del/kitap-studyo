@@ -51,20 +51,87 @@ const HELPERS = String.raw`#set heading(numbering: none)
 //  • block(sticky, breakable: false): başlık sayfa sonunda tek kalamaz, takip
 //    eden bloğa yapışır (kural 2/5); Typst'in dul/yetim maliyeti ilk satırın
 //    yalnız kalmasını zaten engeller (kural 4). below: _ha = sonra 1 satır.
-#show heading.where(level: 1): it => { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(center, text(size: 20pt, weight: 700, it.body)) }
-#show heading.where(level: 2): it => block(sticky: true, breakable: false, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(center, text(size: 16pt, weight: 700, it.body)) })
-#show heading.where(level: 3): it => block(sticky: true, breakable: false, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); text(size: 14pt, weight: 700, it.body) })
-#show heading.where(level: 4): it => block(sticky: true, breakable: false, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); text(size: 12pt, weight: 700, it.body) })
-#let _subhead(body) = block(sticky: true, breakable: false, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(center, text(size: 11pt, weight: 700, body)) })
-#let _chapter(kicker: none, ornament: "none", right: true, top: 30mm, body) = {
-  if right { pagebreak(to: "odd", weak: true) } else { pagebreak(weak: true) }
-  v(top)
-  if kicker != none { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(center, text(size: 11pt, weight: 700, tracking: 0.12em)[#upper(kicker)]); v(0.5em) }
-  body
-  if ornament == "rule" { v(0.4em); align(center, line(length: 14%, stroke: 0.6pt + black)) }
-  if ornament == "dots" { v(0.3em); align(center, text(size: 13pt)[• • •]) }
-  v(14mm)
+// İÇ TASARIM KONSEPTİ: _cfg (önsözde) bölüm/ara başlık/alıntı/üst bilgi/sayfa
+// numarası/sahne ayracı biçimini; _hf başlık yazı tipini taşır. Varsayılanlar
+// bugünkü görünümün aynısıdır. BÜYÜK HARF dönüşümleri JS'te Türkçe kuralıyla
+// yapılır (Typst upper() "i"yi "I" yapar, "İ" değil).
+#let _poem = _cfg.chapter == "poem-left" or _cfg.chapter == "poem-center"
+#let _chleft = _cfg.chapter in ("left-rule", "minimal-left", "numeral-left", "boxed", "poem-left")
+#let _subal = if _cfg.sub == "center" { center } else { left }
+#let _subsize = if _cfg.sub == "left-caps" { 10.5pt } else if _cfg.sub == "left" { 14.5pt } else { 16pt }
+// Başlıkların yazı tipi: TEK show-set kuralı (biçim çubuğundaki blok-bazlı yazı
+// tipi, başlığın yanında yerel bir "show heading" kuralıyla bunu geçer).
+#show heading: set text(font: _hf)
+#show heading.where(level: 1): it => {
+  set par(first-line-indent: 0pt, justify: false)
+  set text(hyphenate: false)
+  let st = _cfg.chapter
+  let k = _cfg.scale
+  // Aralıklı büyük harf: görünen başlık, JS'te Türkçe kuralıyla büyük harfe
+  // çevrilmiş <chup> kaydından okunur (içindekiler özgün yazımı gösterir).
+  if st == "spaced-caps" { context { let ups = query(selector(<chup>).before(here())); align(center, text(size: 15pt * k, weight: 400, tracking: 0.18em, if ups.len() > 0 { ups.last().value } else { it.body })) } }
+  else if st == "ornament" { align(center, text(size: 19pt * k, weight: 400, style: "italic", it.body)) }
+  else if st == "left-rule" { align(left, text(size: 20pt * k, weight: 700, it.body)); v(0.5em, weak: false); line(length: 100%, stroke: 0.6pt) }
+  else if st == "minimal-left" { align(left, text(size: 26pt * k, weight: 400, it.body)) }
+  else if st == "numeral-left" or st == "boxed" { align(left, text(size: 21pt * k, weight: 700, it.body)) }
+  else if st == "numeral-center" { align(center, text(size: 19pt * k, weight: 600, it.body)) }
+  else if st == "poem-left" { align(left, text(size: 12.5pt * k, weight: 600, it.body)) }
+  else if st == "poem-center" { align(center, text(size: 13pt * k, weight: 400, style: "italic", it.body)) }
+  else { align(center, text(size: 20pt * k, weight: 700, it.body)) }
 }
+#show heading.where(level: 2): it => block(sticky: true, breakable: false, width: 100%, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); align(_subal, text(size: _subsize, weight: 700, tracking: if _cfg.sub == "left-caps" { 0.1em } else { 0pt }, it.body)) })
+#show heading.where(level: 3): it => block(sticky: true, breakable: false, width: 100%, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); text(size: 14pt, weight: 700, it.body) })
+#show heading.where(level: 4): it => block(sticky: true, breakable: false, width: 100%, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); text(size: 12pt, weight: 700, it.body) })
+#let _subhead(font: _hf, body) = block(sticky: true, breakable: false, width: 100%, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false, font: font); align(_subal, text(size: 11pt, weight: 700, tracking: if _cfg.sub == "left-caps" { 0.1em } else { 0pt }, body)) })
+#let _orn = ("EB Garamond", "Cormorant Garamond", "Source Serif 4")
+#let _chapter(kicker: none, ornament: "none", right: true, top: 30mm, num: none, body) = {
+  let st = _cfg.chapter
+  if _cfg.newpage { if right { pagebreak(to: "odd", weak: true) } else { pagebreak(weak: true) } } else { v(2.2em, weak: true) }
+  v(top)
+  let al = if _chleft { left } else { center }
+  let head = {
+    set par(first-line-indent: 0pt, justify: false)
+    set text(hyphenate: false)
+    if st == "numeral-left" and num != none { align(left, text(font: _hf, size: 60pt * _cfg.scale, weight: 400, fill: luma(115), num)); v(0.05em) }
+    else if st == "numeral-center" and num != none { align(center, text(font: _hf, size: 54pt * _cfg.scale, weight: 400, num)); v(0.15em) }
+    else if st == "boxed" and num != none { box(fill: black, inset: (x: 0.6em, y: 0.4em), radius: 2.5pt, text(font: _hf, size: 18pt, weight: 700, fill: white, num)); v(0.8em) }
+    else if st == "ornament" { align(center, text(font: _orn, size: 26pt, fill: luma(70))[❦]); v(0.35em) }
+    else if kicker != none and not _poem {
+      // Varsayılan (ortalı) biçim bugünkü kicker'ın aynısı; konseptler daha ince.
+      if st == "centered" { align(center, text(font: _hf, size: 11pt, weight: 700, tracking: 0.12em, kicker)); v(0.5em) }
+      else { align(al, text(font: _hf, size: 9.5pt, weight: if st == "spaced-caps" { 400 } else { 700 }, tracking: 0.16em, kicker)); v(0.6em) }
+    }
+    body
+    if ornament == "rule" { v(0.4em); align(al, line(length: 14%, stroke: 0.6pt + black)) }
+    if ornament == "dots" { v(0.3em); align(center, text(size: 13pt)[• • •]) }
+    if ornament == "fleuron" { v(0.35em); align(center, text(font: _orn, size: 15pt, fill: luma(60))[❦]) }
+  }
+  // Akış içindeki başlık (şiir) sayfa sonunda yalnız kalmasın: ilk satırlarla birlikte.
+  if _cfg.newpage { head } else { block(sticky: true, breakable: false, width: 100%, head) }
+  v(if _poem { 1.1em } else { 14mm })
+}
+// Sahne ayracı ("* * *" satırı): konseptin seçtiği işaretle ortalı.
+#let _scene() = {
+  let sc = _cfg.scene
+  if sc == "space" { v(1.8em, weak: true) } else {
+    block(above: 1.2em, below: 1.2em, width: 100%, align(center, {
+      set par(first-line-indent: 0pt, justify: false)
+      if sc == "asterism" { text(font: ("Literata", "Cormorant Garamond", "Inter", "Source Serif 4"), size: 1.15em)[⁂] }
+      else if sc == "fleuron" { text(font: _orn, size: 1.2em, fill: luma(60))[❦] }
+      else if sc == "rule" { line(length: 16%, stroke: 0.5pt) }
+      else [\* #h(0.7em) \* #h(0.7em) \*]
+    }))
+  }
+}
+// Alıntı (> satırları): girintili italik (bugünkü) / gri kutu / sol çizgi.
+#let _quote(indent, body) = {
+  let q = _cfg.quote
+  if q == "box" { block(width: 100%, fill: luma(242), inset: (x: 0.95em, y: 0.8em), radius: 2pt, { set par(first-line-indent: 0pt); body }) }
+  else if q == "bar" { block(inset: (left: 0.95em, y: 0.1em), stroke: (left: 1.6pt + luma(95)), { set par(first-line-indent: 0pt); body }) }
+  else { block(inset: (x: indent), emph(body)) }
+}
+// Bölümün ilk kelimeleri: büyük harf (JS'te), küçük punto + aralık.
+#let _lead(body) = text(size: 0.82em, tracking: 0.07em, body)
 #let _dropcap(cap, rest, lines: 2, gap: 0.25em) = layout(bounds => context {
   if rest.trim() == "" { text(size: 1.8em, weight: 700)[#cap] } else {
     let W = bounds.width
@@ -91,22 +158,27 @@ const HELPERS = String.raw`#set heading(numbering: none)
 })
 #set outline.entry(fill: repeat(gap: 2.5pt)[.])
 // Koşu başlığı/sayfa no'yu ön sayfada VE bölüm açılış sayfasında gizle.
+// (Bölümler akış içindeyse — şiir — yalnız ön sayfada gizlenir.)
 #let _suppress() = {
   let p = here().page()
   let bs = query(heading.where(level: 1)).filter(h => h.location().page() <= p)
-  bs.len() == 0 or bs.any(h => h.location().page() == p)
+  bs.len() == 0 or (_cfg.newpage and bs.any(h => h.location().page() == p))
 }
 #let _runHead(bookTitle) = context if not _suppress() {
-  set text(size: 9pt, style: "italic")
+  let caps = _cfg.rh == "caps"
+  set text(size: if caps { 7.5pt } else { 9pt }, style: if caps { "normal" } else { "italic" }, tracking: if caps { 0.15em } else { 0pt })
   if calc.odd(here().page()) {
     let bs = query(heading.where(level: 1)).filter(h => h.location().page() <= here().page())
-    if bs.len() > 0 { align(right, bs.last().body) }
+    if bs.len() > 0 {
+      let ups = if caps { query(<chup>).filter(m => m.location().page() <= here().page()) } else { () }
+      align(right, if ups.len() > 0 { ups.last().value } else { bs.last().body })
+    }
   } else { align(left, bookTitle) }
 }
-#let _pageFoot() = context if not _suppress() {
+#let _pageFoot() = context if not _suppress() or (_cfg.foliopen and query(heading.where(level: 1)).filter(h => h.location().page() <= here().page()).len() > 0) {
   set text(size: 9pt)
   let n = counter(page).display()
-  if calc.odd(here().page()) { align(right, n) } else { align(left, n) }
+  if _cfg.folio == "center" { align(center, n) } else if calc.odd(here().page()) { align(right, n) } else { align(left, n) }
 }
 #let _titlepage(title, subtitle, author, publisher) = page(header: none, footer: none)[
   #set par(first-line-indent: 0pt, justify: false, leading: 0.4em)
@@ -114,16 +186,16 @@ const HELPERS = String.raw`#set heading(numbering: none)
   // fr-tabanlı dikey ritim: başlık üst-üçte bir, yazar alta yakın, bol boşluk.
   // Alt başlık (varsa) başlığın hemen altında; yayınevi sayfanın en altında.
   #v(1.4fr)
-  #align(center, text(size: 30pt, weight: 700, title))
+  #align(center, text(font: _hf, size: 30pt, weight: 700, title))
   #if subtitle != none [
     #v(5mm)
-    #align(center, text(size: 15pt, weight: 400, style: "italic", subtitle))
+    #align(center, text(font: _hf, size: 15pt, weight: 400, style: "italic", subtitle))
   ]
   #v(2.4fr)
-  #align(center, text(size: 12pt, weight: 600, tracking: 0.18em)[#upper(author)])
+  #align(center, text(font: _hf, size: 12pt, weight: 600, tracking: 0.18em, author))
   #v(1fr)
   #if publisher != none [
-    #align(center, text(size: 10pt, weight: 500, tracking: 0.14em)[#upper(publisher)])
+    #align(center, text(font: _hf, size: 10pt, weight: 500, tracking: 0.14em, publisher))
     #v(0.3fr)
   ]
 ]
@@ -135,7 +207,7 @@ const HELPERS = String.raw`#set heading(numbering: none)
 ]
 #let _toc(title) = page(header: none, footer: none)[
   #set par(first-line-indent: 0pt)
-  #align(center, text(size: 11pt, weight: 600, title))
+  #align(center, text(font: _hf, size: 11pt, weight: 600, title))
   #v(0.9em)
   #outline(title: none, target: heading.where(level: 1))
 ]
@@ -156,6 +228,12 @@ export function buildPreamble(input: TypstBookInput): string {
   const mOut = (to + m.outside).toFixed(3);
 
   const fontExpr = typstFontExpr(s.bodyFontFamily);
+  // Başlık yazı tipi (bölüm/ara başlık, kapak sayfası). Boşsa gövdeninki.
+  const headFontExpr = typstFontExpr(s.headingFontFamily || s.bodyFontFamily);
+  const cfg = `#let _hf = ${headFontExpr}
+#let _cfg = (chapter: "${s.chapterStyle ?? "centered"}", scale: ${(s.chapterTitleScale ?? 1).toFixed(2)}, newpage: ${s.chapterNewPage !== false}, sub: "${s.subheadStyle ?? "center"}", quote: "${s.quoteStyle ?? "indent"}", rh: "${s.runningHeadStyle ?? "italic"}", folio: "${s.folioPosition ?? "outer"}", scene: "${s.sceneBreak ?? "stars"}", foliopen: ${!!s.keepLineBreaks})`;
+  // Koşu başlığında kitap adı: "caps" biçiminde Türkçe kuralıyla büyük harf.
+  const headTitle = s.runningHeadStyle === "caps" ? upperTr(meta.title, s.lang) : meta.title;
   // Tireleme/dil işleme kitabın diline göre (EN kitap → İngilizce desenler).
   const lang = s.lang === "en" ? "en" : "tr";
   const region = s.lang === "en" ? "US" : "TR";
@@ -198,6 +276,7 @@ export function buildPreamble(input: TypstBookInput): string {
 
   return `// otomatik üretilen — Block[] → Typst (mizanpaj motoru)
 ${typoRules}
+${cfg}
 ${HELPERS}
 #set document(title: ${typstStr(meta.title)}, author: ${typstStr(meta.author)})
 #set page(
@@ -206,7 +285,7 @@ ${HELPERS}
   margin: (top: ${mTop}mm, bottom: ${mBot}mm, inside: ${mIn}mm, outside: ${mOut}mm),
   binding: left,
   numbering: none,
-  header: ${s.showRunningHeads ? `_runHead(${typstStr(meta.title)})` : "none"},
+  header: ${s.showRunningHeads ? `_runHead(${typstStr(headTitle)})` : "none"},
   footer: ${s.showPageNumbers ? "_pageFoot()" : "none"},
   background: ${background},
 )
@@ -214,6 +293,11 @@ ${HELPERS}
 #set par(justify: ${justify}, leading: ${leading}, first-line-indent: (amount: ${indent}mm, all: true), spacing: ${leading} + ${paraSpacing}mm, linebreaks: ${linebreaks})
 #set smartquote(enabled: false)
 `;
+}
+
+/** Kitabın diline göre BÜYÜK HARF (Türkçe: i → İ, ı → I). */
+export function upperTr(s: string, lang?: "tr" | "en"): string {
+  return s.toLocaleUpperCase(lang === "en" ? "en" : "tr");
 }
 
 // Typst string literali (çift tırnaklı; yalnız \ ve " kaçırılır — içerik kaçışı DEĞİL).

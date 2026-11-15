@@ -43,7 +43,12 @@ import {
   type Line,
   type Run,
   type ParaAlign,
+  type ChapterStyle,
+  type SceneBreak,
 } from "@/lib/layout/paginate";
+import { conceptLayoutSettings, type InteriorConcept, type ConceptSizeAdjust } from "@/lib/layout/concepts";
+import InteriorConceptPicker from "@/components/layout/InteriorConceptPicker";
+import { TYPST_FAMILY_IDS } from "@/lib/typst/fonts";
 import {
   LAYOUT_THEMES,
   getTheme,
@@ -76,6 +81,7 @@ import {
   ArrowsOutIcon,
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
+  PaletteIcon,
 } from "@/components/PhosphorIcons";
 import { useLayoutHistory } from "@/lib/layout/useLayoutHistory";
 
@@ -296,6 +302,20 @@ export default function LayoutStudio({
   const [themeId, setThemeId] = useState(saved?.themeId ?? "");
   // İçindekiler başlık geçersiz kılmaları (bölüm sırasına göre). Boş = otomatik.
   const [tocOverrides, setTocOverrides] = useState<Record<number, string>>(saved?.tocOverrides ?? {});
+  // İç tasarım konsepti (konsept ekranı). Boş = henüz seçilmedi; "skip" = üye
+  // "kendim ayarlayacağım" dedi. Diğer alanlar konseptin bölüm/sayfa biçimleri.
+  const [conceptId, setConceptId] = useState(saved?.conceptId ?? "");
+  const [chapterStyle, setChapterStyle] = useState<ChapterStyle>(saved?.chapterStyle ?? "centered");
+  const [chapterNewPage, setChapterNewPage] = useState(saved?.chapterNewPage ?? true);
+  const [chapterTitleScale, setChapterTitleScale] = useState(saved?.chapterTitleScale ?? 1);
+  const [firstWordsCaps, setFirstWordsCaps] = useState(saved?.firstWordsCaps ?? false);
+  const [sceneBreak, setSceneBreak] = useState<SceneBreak>(saved?.sceneBreak ?? "stars");
+  const [runningHeadStyle, setRunningHeadStyle] = useState<"italic" | "caps">(saved?.runningHeadStyle ?? "italic");
+  const [folioPosition, setFolioPosition] = useState<"outer" | "center">(saved?.folioPosition ?? "outer");
+  const [subheadStyle, setSubheadStyle] = useState<"center" | "left" | "left-caps">(saved?.subheadStyle ?? "center");
+  const [quoteStyle, setQuoteStyle] = useState<"indent" | "box" | "bar">(saved?.quoteStyle ?? "indent");
+  const [keepLineBreaks, setKeepLineBreaks] = useState(saved?.keepLineBreaks ?? false);
+  const [bodyInsetMm, setBodyInsetMm] = useState(saved?.bodyInsetMm ?? 0);
 
   const [fontsReady, setFontsReady] = useState(false);
   const measureRef = useRef<HTMLCanvasElement | null>(null);
@@ -333,6 +353,8 @@ export default function LayoutStudio({
       chapterRight, frontMatter, runningHeads, pageNumbers, hyphenate, dropCap, lineBreak,
       widowControl, opticalMargins,
       chapterTopRatio, chapterOrnament, showChapterKicker, tocOverrides,
+      conceptId, chapterStyle, chapterNewPage, chapterTitleScale, firstWordsCaps, sceneBreak,
+      runningHeadStyle, folioPosition, subheadStyle, quoteStyle, keepLineBreaks, bodyInsetMm,
     }),
     [
       standard, bleedOn, sizeId, margins, presetId, gutterAuto, gutterManual, cropMarks,
@@ -341,6 +363,8 @@ export default function LayoutStudio({
       chapterRight, frontMatter, runningHeads, pageNumbers, hyphenate, dropCap, lineBreak,
       widowControl, opticalMargins,
       chapterTopRatio, chapterOrnament, showChapterKicker, tocOverrides,
+      conceptId, chapterStyle, chapterNewPage, chapterTitleScale, firstWordsCaps, sceneBreak,
+      runningHeadStyle, folioPosition, subheadStyle, quoteStyle, keepLineBreaks, bodyInsetMm,
     ],
   );
   useModuleSync(projectId, "layout", layoutSlice, !!autoExport);
@@ -398,6 +422,18 @@ export default function LayoutStudio({
       chapterTopRatio,
       chapterOrnament,
       showChapterKicker,
+      conceptId: conceptId && conceptId !== "skip" ? conceptId : undefined,
+      chapterStyle,
+      chapterNewPage,
+      chapterTitleScale,
+      firstWordsCaps,
+      sceneBreak,
+      runningHeadStyle,
+      folioPosition,
+      subheadStyle,
+      quoteStyle,
+      keepLineBreaks,
+      bodyInsetMm,
     }),
     [
       fontId,
@@ -420,6 +456,18 @@ export default function LayoutStudio({
       chapterTopRatio,
       chapterOrnament,
       showChapterKicker,
+      conceptId,
+      chapterStyle,
+      chapterNewPage,
+      chapterTitleScale,
+      firstWordsCaps,
+      sceneBreak,
+      runningHeadStyle,
+      folioPosition,
+      subheadStyle,
+      quoteStyle,
+      keepLineBreaks,
+      bodyInsetMm,
       lang,
     ],
   );
@@ -440,6 +488,53 @@ export default function LayoutStudio({
     setDropCap(theme.dropCap);
     setChapterOrnament(theme.chapterOrnament);
     setShowChapterKicker(theme.showChapterKicker);
+    // Hazır tema konseptin özel biçimlerini bugünkü varsayılanlara döndürür.
+    // Konsept artık geçerli değil (ama ekran yeniden kendiliğinden açılmasın).
+    setConceptId((prev) => (prev ? "skip" : prev));
+    setChapterStyle("centered");
+    setChapterNewPage(true);
+    setChapterTitleScale(1);
+    setFirstWordsCaps(false);
+    setSceneBreak("stars");
+    setRunningHeadStyle("italic");
+    setFolioPosition("outer");
+    setSubheadStyle("center");
+    setQuoteStyle("indent");
+    setKeepLineBreaks(false);
+    setBodyInsetMm(0);
+  }, []);
+
+  // İç tasarım konsepti uygula: tipografi + bölüm/sayfa biçimleri paketçe.
+  // Marjlara ve boyuta DOKUNMAZ (baskı profili korunur).
+  const applyConcept = useCallback((k: InteriorConcept, adjust: ConceptSizeAdjust) => {
+    const c = conceptLayoutSettings(k, familyOf, adjust);
+    setConceptId(k.id);
+    setThemeId("");
+    setFontId(k.bodyFontId);
+    setHeadingFontId(k.headingFontId);
+    setBodySizePt(c.bodySizePt);
+    setLeadingPt(c.leadingPt);
+    setAlign(c.align);
+    setIndentMm(c.firstLineIndentMm);
+    setParagraphSpacingMm(c.paragraphSpacingMm);
+    setHyphenate(c.hyphenate);
+    setLineBreak(c.lineBreak);
+    setDropCap(c.dropCap);
+    setChapterOrnament(c.chapterOrnament);
+    setShowChapterKicker(c.showChapterKicker);
+    setRunningHeads(c.showRunningHeads);
+    setPageNumbers(c.showPageNumbers);
+    setChapterStyle(c.chapterStyle);
+    setChapterNewPage(c.chapterNewPage);
+    setChapterTitleScale(c.chapterTitleScale);
+    setFirstWordsCaps(c.firstWordsCaps);
+    setSceneBreak(c.sceneBreak);
+    setRunningHeadStyle(c.runningHeadStyle);
+    setFolioPosition(c.folioPosition);
+    setSubheadStyle(c.subheadStyle);
+    setQuoteStyle(c.quoteStyle);
+    setKeepLineBreaks(c.keepLineBreaks);
+    setBodyInsetMm(c.bodyInsetMm);
   }, []);
 
   // Tür → tema: sihirbazda seçilen kitap türü bir temaya eşleşiyorsa mizanpaj
@@ -466,8 +561,8 @@ export default function LayoutStudio({
     () =>
       sourceMode === "word" && importedBlocks
         ? importedBlocks
-        : parseBlocks(raw, detectHeadings, importMedia),
-    [sourceMode, importedBlocks, raw, detectHeadings, importMedia],
+        : parseBlocks(raw, detectHeadings, importMedia, { keepLineBreaks }),
+    [sourceMode, importedBlocks, raw, detectHeadings, importMedia, keepLineBreaks],
   );
 
   // Canvasta düzenlenen blok indeksi (null = düzenleme yok).
@@ -1165,6 +1260,26 @@ export default function LayoutStudio({
 
   const isEmpty = blocks.length === 0 && !title.trim();
 
+  // İç tasarım konsepti ekranı: kitapta metin varsa ve üye henüz konsept
+  // seçmediyse (ya da "şimdilik geç" demediyse) Mizanpaj'a girişte açılır.
+  // İndirme/denetim/önizleme kısa yollarında açılmaz.
+  const [conceptOpen, setConceptOpen] = useState(
+    () =>
+      !!projectId &&
+      !autoExport &&
+      !autoPreflight &&
+      !startFocus &&
+      !saved?.conceptId &&
+      (seed?.manuscript.text ?? "").trim().length > 0,
+  );
+  const conceptBlocksFor = useCallback(
+    (keep: boolean) =>
+      sourceMode === "word" && importedBlocks
+        ? importedBlocks
+        : parseBlocks(raw, detectHeadings, importMedia, { keepLineBreaks: keep }),
+    [sourceMode, importedBlocks, raw, detectHeadings, importMedia],
+  );
+
   const tr = lang === "tr";
   const router = useRouter();
   const docTitle = title.trim() || (tr ? "Mizanpaj çalışması" : "Layout draft");
@@ -1387,6 +1502,26 @@ export default function LayoutStudio({
         focusMode ? "fixed inset-0 z-[70] h-dvh overflow-hidden" : "h-dvh overflow-y-auto lg:overflow-hidden"
       }`}
     >
+      {conceptOpen && (
+        <InteriorConceptPicker
+          lang={lang}
+          genre={seed?.meta.genre}
+          baseInput={typstInput}
+          blocksFor={conceptBlocksFor}
+          familyOf={familyOf}
+          currentConceptId={conceptId && conceptId !== "skip" ? conceptId : undefined}
+          firstTime={!conceptId}
+          onApply={(k, adj) => {
+            applyConcept(k, adj);
+            setConceptOpen(false);
+          }}
+          onSkip={() => {
+            setConceptId("skip");
+            setConceptOpen(false);
+          }}
+          onClose={() => setConceptOpen(false)}
+        />
+      )}
       {autoExport && (
         <ExportOverlay
           lang={lang}
@@ -1693,6 +1828,15 @@ export default function LayoutStudio({
         {/* ── Sol araç şeridi ── */}
         {!focusMode && (
           <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-surface px-2 py-2 lg:w-[92px] lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:border-b-0 lg:border-r lg:px-2 lg:py-3">
+            <button
+              type="button"
+              onClick={() => setConceptOpen(true)}
+              title={tr ? "İç tasarım konsepti: kitabın türüne göre hazır sayfa düzenleri" : "Interior design concept: ready-made page designs for your genre"}
+              className="flex shrink-0 flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-xs font-medium text-foreground/70 transition hover:bg-background hover:text-foreground lg:w-full lg:border-b lg:border-border lg:pb-4 [@media(max-height:820px)]:py-2"
+            >
+              <PaletteIcon className="h-6 w-6 text-accent" />
+              {tr ? "Konsept" : "Concept"}
+            </button>
             {navItems.map(({ id, label, Icon }) => {
               const active = panel === id;
               return (
@@ -1847,6 +1991,12 @@ export default function LayoutStudio({
               {isEmpty ? (
                 <div className="flex h-full min-h-[300px] items-center justify-center text-center text-sm text-muted">
                   {t.emptyPreview}
+                </div>
+              ) : previewEngine === "typst" && conceptOpen ? (
+                // Konsept ekranı açıkken tüm kitabı derleme: tek Typst işçisi önce
+                // konsept önizlemelerini hazırlasın (büyük kitapta saniyeler sürerdi).
+                <div className="flex h-full items-center justify-center p-6 text-sm text-muted">
+                  {tr ? "Konsept seçiliyor…" : "Choosing a concept…"}
                 </div>
               ) : previewEngine === "typst" ? (
                 <TypstPreviewCanvas
@@ -2614,7 +2764,8 @@ function NumberRow({
 // Typst motorunun GERÇEKTEN yüklediği/render ettiği gövde fontları (3 aile).
 // Diğer aileler Typst'te sessizce Source Serif'e düşerdi → "font değişmiyor"
 // görünürdü. Bu yüzden gövde/başlık seçicileri yalnız bunları sunar.
-const TYPST_FONTS = COVER_FONTS.filter((f) => ["sourceserif", "vollkorn", "arnopro"].includes(f.id));
+// Typst'in gerçekten yüklediği aileler (src/lib/typst/fonts.ts).
+const TYPST_FONTS = COVER_FONTS.filter((f) => (TYPST_FAMILY_IDS as readonly string[]).includes(f.id));
 
 function FontSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (

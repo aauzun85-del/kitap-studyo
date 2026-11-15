@@ -102,6 +102,22 @@ function fontFile(family: string, weight: number, italic: boolean): string {
     if (bold || semi) return italic ? "Vollkorn-BoldItalic.ttf" : "Vollkorn-Bold.ttf";
     return italic ? "Vollkorn-Italic.ttf" : "Vollkorn-Regular.ttf";
   }
+  // İç tasarım konseptlerinin aileleri (public/fonts, OFL).
+  const fam: [RegExp, string, { semi: boolean; boldItalic: boolean; italic: boolean }][] = [
+    [/eb\s*garamond/i, "EBGaramond", { semi: true, boldItalic: true, italic: true }],
+    [/cormorant/i, "CormorantGaramond", { semi: true, boldItalic: true, italic: true }],
+    [/baskerville/i, "LibreBaskerville", { semi: false, boldItalic: false, italic: true }],
+    [/crimson/i, "CrimsonPro", { semi: true, boldItalic: true, italic: true }],
+    [/literata/i, "Literata", { semi: true, boldItalic: true, italic: true }],
+    [/inter\b/i, "Inter", { semi: true, boldItalic: true, italic: true }],
+  ];
+  for (const [re, base, has] of fam) {
+    if (!re.test(family)) continue;
+    if (bold) return `${base}-${italic && has.boldItalic ? "BoldItalic" : "Bold"}.ttf`;
+    if (semi && has.semi && !italic) return `${base}-SemiBold.ttf`;
+    if (italic && has.italic) return `${base}-Italic.ttf`;
+    return `${base}-Regular.ttf`;
+  }
   if (bold) return italic ? "SourceSerif4-BoldItalic.ttf" : "SourceSerif4-Bold.ttf";
   if (semi) return "SourceSerif4-SemiBold.ttf";
   return italic ? "SourceSerif4-Italic.ttf" : "SourceSerif4-Regular.ttf";
