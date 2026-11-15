@@ -51,6 +51,7 @@ import {
   AlignCenterIcon,
   AlignRightIcon,
   FolderIcon,
+  ArrowsOutIcon,
 } from "@/components/PhosphorIcons";
 import {
   AI_STYLES,
@@ -161,6 +162,14 @@ type AiGenOpts = {
 // Tarayıcı tarafı SON ÇARE zaman aşımları. Sunucu 120 sn içinde kendi temiz
 // hatasını döndürür; bunlar ancak bağlantı tamamen koparsa devreye girer.
 const CLIENT_AI_TIMEOUT_MS = 135_000;
+// Tuval ekran büyütme basamakları (1 = ekrana sığdır). Yalnız görünüm; baskı
+// çıktısı mm ölçüsünden üretilir, etkilenmez.
+const ZOOM_STEPS = [1, 1.25, 1.5, 2, 2.5, 3];
+function zoomStep(z: number, dir: 1 | -1): number {
+  const i = ZOOM_STEPS.findIndex((v) => v >= z - 1e-6);
+  const cur = i === -1 ? ZOOM_STEPS.length - 1 : i;
+  return ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, cur + dir))];
+}
 const WIZARD_PROMPT_TIMEOUT_MS = 45_000;
 // Sihirbazın otomatik kapak akışı iki ücretli uç çağırır: kitap asistanı
 // (cover-prompt) + FLUX görseli (cover-art). Onay kartındaki bedel buradan gelir.
@@ -372,6 +381,49 @@ export default function CoverStudio({
   const [layerIds, setLayerIds] = useState<string[]>([]); // ön→arka, tuvalden gelir
   const [dragRow, setDragRow] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Tuval görünümü: büyütme ve "büyük görünüm" (paneller gizli, tam ekran).
+  const [zoom, setZoom] = useState(1);
+  const [bigView, setBigView] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const toggleBigView = async () => {
+    const el = rootRef.current;
+    if (!bigView) {
+      setBigView(true);
+      // Tarayıcı izin verirse gerçek tam ekran (üst menüler de gizlenir).
+      try {
+        if (el && !document.fullscreenElement && el.requestFullscreen) await el.requestFullscreen();
+      } catch {
+        // tam ekran desteklenmiyor → yalnız paneller gizli kalır
+      }
+    } else {
+      setBigView(false);
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+      } catch {
+        // önemli değil
+      }
+    }
+  };
+  // Esc ile tam ekrandan çıkılınca paneller geri gelsin.
+  useEffect(() => {
+    const onFs = () => {
+      if (!document.fullscreenElement) setBigView(false);
+    };
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+  // Tam ekran yoksa (tarayıcı izin vermedi) Esc yine büyük görünümden çıkarsın.
+  useEffect(() => {
+    if (!bigView) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || document.fullscreenElement) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      setBigView(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [bigView]);
   const [selectedAngle, setSelectedAngle] = useState(0);
   // Yapısal metinlerin (başlık/yazar/altbaşlık/sırt) öğe bazlı stilleri +
   // seçili metnin tuvalden bildirilen canlı stili (panel varsayılanları için).
@@ -2296,8 +2348,761 @@ export default function CoverStudio({
     { id: "layers", label: t.navLayers, Icon: StackIcon },
   ];
 
+  // Seçili nesnenin ayarları. Eskiden tuvalin sağında HEP 300px yer kaplayan
+  // ayrı bir paneldi (çoğu zaman boş) → tuval küçük kalıyordu. Artık soldaki
+  // ayar panelinin YERİNE açılır (aynı genişlik → seçimde tuval kaymaz);
+  // büyük görünümde tuvalin sol üstünde yüzer.
+  const inspectorNode = selectedId ? (
+            <section className="space-y-4 rounded-xl border border-accent/40 bg-surface p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-foreground">
+                  {selectedName(selectedId, t, objects)}
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(null)}
+                  title={t.inspectorClose}
+                  aria-label={t.inspectorClose}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-accent-soft hover:text-accent"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* ── Serbest metin ── */}
+              {selectedObj && selectedObj.type === "text" && (
+                <div className="space-y-3">
+                  <Field label={t.objTextLabel}>
+                    <textarea
+                      value={selectedObj.text ?? ""}
+                      onChange={(e) =>
+                        updateObject(selectedObj.id, { text: e.target.value })
+                      }
+                      placeholder={t.objTextDefault}
+                      rows={3}
+                      className={`${inputClass} resize-y leading-snug`}
+                    />
+                    <p className="mt-1 text-[11px] text-muted">
+                      {t.objTextMultilineHint}
+                    </p>
+                  </Field>
+                  <Field label={t.objFont}>
+                    <select
+                      value={selectedObj.fontId ?? DEFAULT_COVER_FONT}
+                      onChange={(e) =>
+                        updateObject(selectedObj.id, { fontId: e.target.value })
+                      }
+                      aria-label={t.objFont}
+                      className={inputClass}
+                      style={{
+                        fontFamily: COVER_FONTS.find(
+                          (f) => f.id === (selectedObj.fontId ?? DEFAULT_COVER_FONT),
+                        )?.family,
+                      }}
+                    >
+                      {FONT_CATEGORY_ORDER.map((cat) => (
+                        <optgroup key={cat} label={fontCatLabel(cat, t)}>
+                          {COVER_FONTS.filter((f) => f.category === cat).map((f) => (
+                            <option
+                              key={f.id}
+                              value={f.id}
+                              style={{ fontFamily: f.family }}
+                            >
+                              {f.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label={t.objSize}>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          bumpFontSize(selectedObj.id, -0.5, selectedObj.fontSizeMm)
+                        }
+                        title={t.objSizeDown}
+                        aria-label={t.objSizeDown}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-lg font-semibold text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
+                      >
+                        −
+                      </button>
+                      <input
+                        type="number"
+                        min={3}
+                        max={40}
+                        step={0.5}
+                        value={selectedObj.fontSizeMm ?? 8}
+                        onChange={(e) =>
+                          updateObject(selectedObj.id, {
+                            fontSizeMm: parseFloat(e.target.value) || 8,
+                          })
+                        }
+                        className={`${inputClass} w-20 text-center`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          bumpFontSize(selectedObj.id, 0.5, selectedObj.fontSizeMm)
+                        }
+                        title={t.objSizeUp}
+                        aria-label={t.objSizeUp}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-lg font-semibold text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </Field>
+                  <Field label={t.objColor}>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={selectedObj.fill}
+                        onChange={(e) =>
+                          updateObject(selectedObj.id, {
+                            fill: e.target.value,
+                            autoColor: false, // elle renk → otomatik kontrastı kapat
+                          })
+                        }
+                        aria-label={t.objColor}
+                        className="h-10 w-14 shrink-0 cursor-pointer rounded-lg border border-border bg-transparent p-1"
+                      />
+                      <HexInput
+                        value={selectedObj.fill}
+                        onCommit={(hex) =>
+                          updateObject(selectedObj.id, {
+                            fill: hex,
+                            autoColor: false,
+                          })
+                        }
+                      />
+                    </div>
+                    {/* Kapak görseli varken metin rengi okunurluk için otomatik
+                        yönetilebilir; kullanıcı elle seçince geri dönüş sunulur. */}
+                    {coverImage &&
+                      (selectedObj.autoColor === false ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateObject(selectedObj.id, { autoColor: true })
+                          }
+                          className="mt-1.5 text-xs font-medium text-accent transition hover:opacity-80"
+                        >
+                          {t.textAutoColorRevert}
+                        </button>
+                      ) : (
+                        <p className="mt-1.5 text-[11px] text-muted">
+                          {t.textAutoColorNote}
+                        </p>
+                      ))}
+                  </Field>
+
+                  {/* Arkasına okuma paneli (scrim) — parlak/bölünmüş zeminde
+                      garanti okunurluk; metne göre boyutlanır. */}
+                  <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={!!selectedObj.panel}
+                      onChange={(e) =>
+                        updateObject(selectedObj.id, { panel: e.target.checked })
+                      }
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-accent"
+                    />
+                    <span>
+                      {t.textPanelLabel}
+                      <span className="mt-0.5 block text-[11px] text-muted">
+                        {t.textPanelHint}
+                      </span>
+                    </span>
+                  </label>
+
+                  {/* İkincil: hizalama + satır aralığı */}
+                  <div className="space-y-3 border-t border-border pt-3">
+                    <Field label={t.objAlign}>
+                      <div className="flex gap-1.5">
+                        {(
+                          [
+                            ["left", t.objAlignLeft, AlignLeftIcon],
+                            ["center", t.objAlignCenter, AlignCenterIcon],
+                            ["right", t.objAlignRight, AlignRightIcon],
+                          ] as const
+                        ).map(([val, label, Icon]) => {
+                          const active = (selectedObj.align ?? "center") === val;
+                          return (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => updateObject(selectedObj.id, { align: val })}
+                              title={label}
+                              aria-label={label}
+                              aria-pressed={active}
+                              className={`flex h-9 flex-1 items-center justify-center rounded-lg border transition ${
+                                active
+                                  ? "border-accent bg-accent/10 text-accent"
+                                  : "border-border bg-surface text-foreground/70 hover:border-accent/40 hover:text-foreground"
+                              }`}
+                            >
+                              <Icon className="h-4 w-4" />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </Field>
+                    <Field label={t.objLineSpacing}>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            bumpLineSpacing(
+                              selectedObj.id,
+                              -0.05,
+                              selectedObj.lineHeightMul,
+                            )
+                          }
+                          title={t.objLineSpacingDown}
+                          aria-label={t.objLineSpacingDown}
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-lg font-semibold text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
+                        >
+                          −
+                        </button>
+                        <input
+                          type="number"
+                          min={0.8}
+                          max={2.5}
+                          step={0.05}
+                          value={selectedObj.lineHeightMul ?? 1.16}
+                          onChange={(e) =>
+                            updateObject(selectedObj.id, {
+                              lineHeightMul: clampLineSpacing(parseFloat(e.target.value)),
+                            })
+                          }
+                          aria-label={t.objLineSpacing}
+                          className={`${inputClass} w-20 text-center`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            bumpLineSpacing(
+                              selectedObj.id,
+                              0.05,
+                              selectedObj.lineHeightMul,
+                            )
+                          }
+                          title={t.objLineSpacingUp}
+                          aria-label={t.objLineSpacingUp}
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-lg font-semibold text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </Field>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Hazır yazı (başlık/yazar/alt başlık/sırt) ── */}
+              {isStructText && (
+                <div className="space-y-3">
+                  {/* Metin — sırt hariç doğrudan buradan düzenlenebilir. */}
+                  {selectedId === "spineText" ? (
+                    <p className="rounded-lg border border-dashed border-border px-3 py-2 text-[11px] text-muted">
+                      {t.spineAutoNote}
+                    </p>
+                  ) : (
+                    <Field label={t.objTextLabel}>
+                      <textarea
+                        value={structTextValue}
+                        onChange={(e) => setStructText(e.target.value)}
+                        rows={selectedId === "title" ? 2 : 1}
+                        placeholder={
+                          selectedId === "title"
+                            ? t.titlePlaceholder
+                            : selectedId === "author"
+                              ? t.authorPlaceholder
+                              : t.subtitlePlaceholder
+                        }
+                        className={`${inputClass} resize-y leading-snug`}
+                      />
+                    </Field>
+                  )}
+                  <p className="text-xs text-muted">{t.structTextHint}</p>
+                  <Field label={t.objFont}>
+                    <select
+                      value={structFontId}
+                      onChange={(e) =>
+                        updateTextStyle(selectedId, { fontId: e.target.value })
+                      }
+                      aria-label={t.objFont}
+                      className={inputClass}
+                      style={{
+                        fontFamily: COVER_FONTS.find((f) => f.id === structFontId)
+                          ?.family,
+                      }}
+                    >
+                      {FONT_CATEGORY_ORDER.map((cat) => (
+                        <optgroup key={cat} label={fontCatLabel(cat, t)}>
+                          {COVER_FONTS.filter((f) => f.category === cat).map((f) => (
+                            <option
+                              key={f.id}
+                              value={f.id}
+                              style={{ fontFamily: f.family }}
+                            >
+                              {f.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label={t.objSize}>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateTextStyle(selectedId, {
+                            fontSizeMm: Math.max(3, structSizeMm - 0.5),
+                          })
+                        }
+                        title={t.objSizeDown}
+                        aria-label={t.objSizeDown}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-lg font-semibold text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
+                      >
+                        −
+                      </button>
+                      <input
+                        type="number"
+                        min={3}
+                        max={60}
+                        step={0.5}
+                        value={structSizeMm}
+                        onChange={(e) =>
+                          updateTextStyle(selectedId, {
+                            fontSizeMm: parseFloat(e.target.value) || structSizeMm,
+                          })
+                        }
+                        className={`${inputClass} w-20 text-center`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateTextStyle(selectedId, {
+                            fontSizeMm: Math.min(60, structSizeMm + 0.5),
+                          })
+                        }
+                        title={t.objSizeUp}
+                        aria-label={t.objSizeUp}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-lg font-semibold text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </Field>
+                  <Field label={t.objColor}>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={structColor}
+                        onChange={(e) =>
+                          updateTextStyle(selectedId, { color: e.target.value })
+                        }
+                        aria-label={t.objColor}
+                        className="h-10 w-14 shrink-0 cursor-pointer rounded-lg border border-border bg-transparent p-1"
+                      />
+                      <HexInput
+                        value={structColor}
+                        onCommit={(hex) => updateTextStyle(selectedId, { color: hex })}
+                      />
+                    </div>
+                  </Field>
+                  {structHasOverride && (
+                    <button
+                      type="button"
+                      onClick={() => resetTextStyle(selectedId)}
+                      className={ghostBtn}
+                    >
+                      {t.structTextReset}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* ── Şekil rengi (kutu/daire/çizgi) ── */}
+              {selectedObj &&
+                selectedObj.type !== "text" &&
+                selectedObj.type !== "image" && (
+                  <Field label={t.objColor}>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={selectedObj.fill}
+                        onChange={(e) =>
+                          updateObject(selectedObj.id, { fill: e.target.value })
+                        }
+                        aria-label={t.objColor}
+                        className="h-10 w-14 shrink-0 cursor-pointer rounded-lg border border-border bg-transparent p-1"
+                      />
+                      <HexInput
+                        value={selectedObj.fill}
+                        onCommit={(hex) => updateObject(selectedObj.id, { fill: hex })}
+                      />
+                    </div>
+                  </Field>
+                )}
+
+              {/* ── Şekil stili: dolu/çerçeve · çerçeve kalınlığı · köşe · saydamlık ── */}
+              {selectedObj &&
+                (selectedObj.type === "rect" ||
+                  selectedObj.type === "circle" ||
+                  selectedObj.type === "triangle" ||
+                  selectedObj.type === "star" ||
+                  selectedObj.type === "diamond") && (
+                  <div className="space-y-3 border-t border-border pt-3">
+                    <Field label={t.shapeStyleLabel} hint={t.shapeStyleHint}>
+                      <div className="grid grid-cols-2 gap-2">
+                        <SegButton
+                          active={(selectedObj.shapeStyle ?? "fill") === "fill"}
+                          onClick={() =>
+                            updateObject(selectedObj.id, { shapeStyle: "fill" })
+                          }
+                        >
+                          {t.shapeStyleFill}
+                        </SegButton>
+                        <SegButton
+                          active={selectedObj.shapeStyle === "outline"}
+                          onClick={() =>
+                            updateObject(selectedObj.id, { shapeStyle: "outline" })
+                          }
+                        >
+                          {t.shapeStyleOutline}
+                        </SegButton>
+                      </div>
+                    </Field>
+                    {selectedObj.shapeStyle === "outline" && (
+                      <Field
+                        label={`${t.strokeWidthLabel} — ${(
+                          selectedObj.strokeWidthMm ?? 0.8
+                        ).toFixed(1)} mm`}
+                      >
+                        <input
+                          type="range"
+                          min={2}
+                          max={40}
+                          value={Math.round((selectedObj.strokeWidthMm ?? 0.8) * 10)}
+                          onChange={(e) =>
+                            updateObject(selectedObj.id, {
+                              strokeWidthMm: Number(e.target.value) / 10,
+                            })
+                          }
+                          className="w-full accent-accent"
+                        />
+                      </Field>
+                    )}
+                    {selectedObj.type === "rect" && (
+                      <Field
+                        label={`${t.cornerRadiusLabel} — ${(
+                          selectedObj.cornerRadiusMm ?? 0
+                        ).toFixed(1)} mm`}
+                      >
+                        <input
+                          type="range"
+                          min={0}
+                          max={120}
+                          value={Math.round((selectedObj.cornerRadiusMm ?? 0) * 10)}
+                          onChange={(e) =>
+                            updateObject(selectedObj.id, {
+                              cornerRadiusMm: Number(e.target.value) / 10,
+                            })
+                          }
+                          className="w-full accent-accent"
+                        />
+                      </Field>
+                    )}
+                    <Field
+                      label={`${t.opacityShapeLabel} — %${Math.round(
+                        (selectedObj.opacity ?? 1) * 100,
+                      )}`}
+                    >
+                      <input
+                        type="range"
+                        min={20}
+                        max={100}
+                        value={Math.round((selectedObj.opacity ?? 1) * 100)}
+                        onChange={(e) =>
+                          updateObject(selectedObj.id, {
+                            opacity: Number(e.target.value) / 100,
+                          })
+                        }
+                        className="w-full accent-accent"
+                      />
+                    </Field>
+                  </div>
+                )}
+
+              {/* ── Çizgi / ayraç: kalınlık · saydamlık ── */}
+              {selectedObj &&
+                (selectedObj.type === "line" ||
+                  selectedObj.type === "divider") && (
+                <div className="space-y-3 border-t border-border pt-3">
+                  <Field
+                    label={`${t.strokeWidthLabel} — ${(
+                      selectedObj.strokeWidthMm ?? 0.6
+                    ).toFixed(1)} mm`}
+                  >
+                    <input
+                      type="range"
+                      min={2}
+                      max={40}
+                      value={Math.round((selectedObj.strokeWidthMm ?? 0.6) * 10)}
+                      onChange={(e) =>
+                        updateObject(selectedObj.id, {
+                          strokeWidthMm: Number(e.target.value) / 10,
+                        })
+                      }
+                      className="w-full accent-accent"
+                    />
+                  </Field>
+                  <Field
+                    label={`${t.opacityShapeLabel} — %${Math.round(
+                      (selectedObj.opacity ?? 1) * 100,
+                    )}`}
+                  >
+                    <input
+                      type="range"
+                      min={20}
+                      max={100}
+                      value={Math.round((selectedObj.opacity ?? 1) * 100)}
+                      onChange={(e) =>
+                        updateObject(selectedObj.id, {
+                          opacity: Number(e.target.value) / 100,
+                        })
+                      }
+                      className="w-full accent-accent"
+                    />
+                  </Field>
+                </div>
+              )}
+
+              {/* ── Konum (serbest metin) — mm cinsinden X/Y + ortala ──
+                  Boyut alanları bilinçli olarak yok: metnin boyutu yazı boyutuyla
+                  yönetilir; ölçekle büyütmek harfleri bozar. */}
+              {selectedObj && selectedObj.type === "text" && selectedGeoLive && (
+                <div className="space-y-3 border-t border-border pt-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label={t.geoX}>
+                      <NumInput value={selectedGeoLive.leftMm} onCommit={setGeoX} />
+                    </Field>
+                    <Field label={t.geoY}>
+                      <NumInput value={selectedGeoLive.topMm} onCommit={setGeoY} />
+                    </Field>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={centerSelected}
+                    className={`${ghostBtn} text-xs`}
+                  >
+                    {t.geoCenter}
+                  </button>
+                </div>
+              )}
+
+              {/* ── Boyut & konum (şekil + AI öğe/görsel) ── */}
+              {selectedObj && selectedObj.type !== "text" && selectedGeoLive && (
+                <div className="space-y-3 border-t border-border pt-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label={t.geoWidth}>
+                      <NumInput
+                        value={selectedGeoLive.widthMm}
+                        min={0.5}
+                        onCommit={setGeoWidth}
+                      />
+                    </Field>
+                    <Field label={t.geoHeight}>
+                      <NumInput
+                        value={selectedGeoLive.heightMm}
+                        min={0.5}
+                        onCommit={setGeoHeight}
+                      />
+                    </Field>
+                    <Field label={t.geoX}>
+                      <NumInput value={selectedGeoLive.leftMm} onCommit={setGeoX} />
+                    </Field>
+                    <Field label={t.geoY}>
+                      <NumInput value={selectedGeoLive.topMm} onCommit={setGeoY} />
+                    </Field>
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={lockAspect}
+                      onChange={(e) => setLockAspect(e.target.checked)}
+                      className="h-4 w-4 accent-accent"
+                    />
+                    {t.geoLockAspect}
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={fitToSafeArea}
+                      className={`${ghostBtn} text-xs`}
+                    >
+                      {t.geoFitSafe}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={fillFrontCover}
+                      className={`${ghostBtn} text-xs`}
+                    >
+                      {t.geoFillFront}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={fitFullHeight}
+                      className={`${ghostBtn} text-xs`}
+                    >
+                      {t.geoFullHeight}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={centerSelected}
+                      className={`${ghostBtn} text-xs`}
+                    >
+                      {t.geoCenter}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Ortak: hizala (tuvalde) · döndür · dizim · çoğalt · sil ── */}
+              <div className="space-y-3 border-t border-border pt-3">
+                <Field label={t.alignLabel}>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleAlign("left")}
+                      className={`${ghostBtn} flex-1 text-xs`}
+                    >
+                      {t.alignLeft}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAlign("center")}
+                      className={`${ghostBtn} flex-1 text-xs`}
+                    >
+                      {t.alignCenter}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAlign("right")}
+                      className={`${ghostBtn} flex-1 text-xs`}
+                    >
+                      {t.alignRight}
+                    </button>
+                  </div>
+                </Field>
+                <Field label={t.rotateLabel}>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={0}
+                      max={359}
+                      value={selectedAngle}
+                      onChange={(e) => handleSetAngle(Number(e.target.value))}
+                      className="min-w-0 flex-1 accent-accent"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      max={359}
+                      value={selectedAngle}
+                      onChange={(e) => handleSetAngle(Number(e.target.value) || 0)}
+                      className={`${inputClass} w-16`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSetAngle(0)}
+                      disabled={selectedAngle === 0}
+                      className={`${ghostBtn} px-2 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50`}
+                    >
+                      0°
+                    </button>
+                  </div>
+                </Field>
+                <Field label={t.zOrderLabel}>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={sendToBack}
+                      disabled={!canSendBackward}
+                      title={t.zSendToBack}
+                      className={`${ghostBtn} flex-1 disabled:cursor-not-allowed disabled:opacity-40`}
+                    >
+                      ⤓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={sendBackward}
+                      disabled={!canSendBackward}
+                      title={t.zSendBackward}
+                      className={`${ghostBtn} flex-1 disabled:cursor-not-allowed disabled:opacity-40`}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={bringForward}
+                      disabled={!canBringForward}
+                      title={t.zBringForward}
+                      className={`${ghostBtn} flex-1 disabled:cursor-not-allowed disabled:opacity-40`}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={bringToFront}
+                      disabled={!canBringForward}
+                      title={t.zBringToFront}
+                      className={`${ghostBtn} flex-1 disabled:cursor-not-allowed disabled:opacity-40`}
+                    >
+                      ⤒
+                    </button>
+                  </div>
+                </Field>
+                <div className="flex gap-2">
+                  {selectedId.startsWith("obj-") && (
+                    <button
+                      type="button"
+                      onClick={() => duplicateObject(selectedId)}
+                      title={t.objDuplicateHint}
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground/80 transition hover:border-accent/40 hover:text-foreground"
+                    >
+                      <CopyIcon className="h-4 w-4" />
+                      {t.objDuplicate}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleDeleteSelected}
+                    title={t.deleteSelectedHint}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-accent/40 px-3 py-2 text-sm font-medium text-accent transition hover:bg-accent-soft"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                    {t.objDelete}
+                  </button>
+                </div>
+              </div>
+            </section>
+  ) : null;
+
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col overflow-hidden px-4 pb-2 pt-2">
+    <div
+      ref={rootRef}
+      // Büyük görünüm: tarayıcı tam ekranı vermese bile sayfayı (üst menüler
+      // dahil) kaplar → tuval her durumda en büyük boyuta çıkar.
+      className={`mx-auto flex w-full flex-col overflow-hidden px-4 pb-2 pt-2 ${
+        bigView ? "fixed inset-0 z-[70] h-dvh max-w-none bg-background" : "h-full max-w-[1600px]"
+      }`}
+    >
       {autoExport && (
         <ExportOverlay
           lang={lang}
@@ -2323,7 +3128,9 @@ export default function CoverStudio({
 
       <div className="mt-2 flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
         {/* Canva tarzı sol ikon şeridi */}
-        <nav className="flex shrink-0 gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
+        <nav
+          className={`flex shrink-0 gap-1 overflow-x-auto lg:flex-col lg:overflow-visible ${bigView ? "hidden" : ""}`}
+        >
           {panels.map(({ id, label, Icon }) => {
             const active = activePanel === id;
             return (
@@ -2370,7 +3177,11 @@ export default function CoverStudio({
         {/* Seçili grubun ayar paneli — her zaman görünür kalır ki seçim
             yapılınca tuval yatayda kaymasın (fabric'in kaymayı sürükleme
             sanmasını önler). */}
-        <aside className="w-full shrink-0 lg:h-full lg:w-[300px] lg:overflow-y-auto lg:pr-1">
+        <aside
+          className={`w-full shrink-0 lg:h-full lg:w-[300px] lg:overflow-y-auto lg:pr-1 ${bigView ? "hidden" : ""}`}
+        >
+          {!bigView && inspectorNode}
+          <div className={selectedId ? "hidden" : "contents"}>
           {/* AI Kapak */}
           {activePanel === "ai" && (
           <section className="space-y-4">
@@ -3591,28 +4402,78 @@ export default function CoverStudio({
             </p>
           </section>
           )}
+          </div>
         </aside>
 
         {/* Tuval alanı */}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-          {/* Üst bar: toplam boyut + kılavuz + PDF indir */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="rounded-full bg-accent-soft px-3 py-1 font-mono text-xs font-medium text-accent">
-              {t.totalSizeLabel}: {formatMm(spread.totalWidth)} × {formatMm(spread.totalHeight)}
+          {/* Üst bar: TEK satır (tuvale en çok yükseklik kalsın) — ölçü + görünüm + kılavuz + indir */}
+          <div className="flex flex-wrap items-center justify-between gap-2 lg:flex-nowrap">
+            <span
+              title={t.totalSizeLabel}
+              className="shrink-0 whitespace-nowrap rounded-full bg-accent-soft px-3 py-1 font-mono text-xs font-medium text-accent"
+            >
+              {formatMm(spread.totalWidth)} × {formatMm(spread.totalHeight)}
             </span>
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-xs text-muted">
+            <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
+              <span className="hidden whitespace-nowrap font-mono text-xs text-muted 2xl:inline">
                 {draftStatus === "saving" ? t.draftSaving : t.draftSaved}
               </span>
+              {/* Görünüm: yakınlaştır / sığdır / büyük görünüm (yalnız ekran; baskıyı etkilemez) */}
+              <div className="flex items-center rounded-full border border-border bg-surface" role="group" aria-label={lang === "tr" ? "Görünüm" : "View"}>
+                <button
+                  type="button"
+                  onClick={() => setZoom((z) => zoomStep(z, -1))}
+                  disabled={zoom <= ZOOM_STEPS[0]}
+                  title={lang === "tr" ? "Küçült" : "Zoom out"}
+                  aria-label={lang === "tr" ? "Küçült" : "Zoom out"}
+                  className="flex h-9 w-9 items-center justify-center rounded-l-full text-lg font-semibold text-foreground/80 transition hover:bg-accent-soft hover:text-accent disabled:opacity-35"
+                >
+                  −
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZoom(1)}
+                  title={lang === "tr" ? "Ekrana sığdır" : "Fit to screen"}
+                  className="h-9 min-w-[3.5rem] px-1 font-mono text-xs font-semibold tabular-nums text-foreground/80 transition hover:bg-accent-soft hover:text-accent"
+                >
+                  {zoom === 1 ? (lang === "tr" ? "Sığdır" : "Fit") : `${Math.round(zoom * 100)}%`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZoom((z) => zoomStep(z, 1))}
+                  disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+                  title={lang === "tr" ? "Büyüt" : "Zoom in"}
+                  aria-label={lang === "tr" ? "Büyüt" : "Zoom in"}
+                  className="flex h-9 w-9 items-center justify-center rounded-r-full text-lg font-semibold text-foreground/80 transition hover:bg-accent-soft hover:text-accent disabled:opacity-35"
+                >
+                  +
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => void toggleBigView()}
+                aria-pressed={bigView}
+                className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                  bigView
+                    ? "border-accent bg-accent text-white hover:opacity-90"
+                    : "border-border bg-surface text-foreground/80 hover:border-accent/40 hover:text-foreground"
+                }`}
+              >
+                <ArrowsOutIcon className="h-4 w-4" />
+                {bigView
+                  ? lang === "tr" ? "Paneller" : "Panels"
+                  : lang === "tr" ? "Büyük görünüm" : "Big view"}
+              </button>
               <button
                 type="button"
                 onClick={startNewDesign}
-                className="rounded-full border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
+                className="whitespace-nowrap rounded-full border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
               >
                 {t.draftNew}
               </button>
               <span className="hidden h-5 w-px bg-border sm:block" />
-              <label className="flex items-center gap-2 text-sm text-foreground/80">
+              <label className="flex items-center gap-2 whitespace-nowrap text-sm text-foreground/80" title={t.bleedNote}>
                 <input
                   type="checkbox"
                   checked={showGuides}
@@ -3833,762 +4694,17 @@ export default function CoverStudio({
               onAngleChange={setSelectedAngle}
               onLayersChange={handleLayersChange}
               onReady={handleCanvasReady}
+              zoom={zoom}
             />
+            {bigView && inspectorNode && (
+              <div className="absolute left-3 top-3 z-30 max-h-[calc(100%-24px)] w-[300px] overflow-y-auto rounded-xl shadow-xl">
+                {inspectorNode}
+              </div>
+            )}
           </div>
 
-          <p className="shrink-0 text-xs text-muted">{t.bleedNote}</p>
         </section>
 
-        {/* Sağ "Seçim" paneli — her zaman 300px yer kaplar (boşken ipucu
-            gösterir). Hep var olması, seçim yapılınca tuvalin yatayda
-            kaymamasını sağlar → fabric kaymayı sürükleme sanmaz. */}
-        <aside className="w-full shrink-0 lg:h-full lg:w-[300px] lg:overflow-y-auto lg:pr-1">
-          {selectedId ? (
-            <section className="space-y-4 rounded-xl border border-accent/40 bg-surface p-4">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-foreground">
-                  {selectedName(selectedId, t, objects)}
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(null)}
-                  title={t.inspectorClose}
-                  aria-label={t.inspectorClose}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-accent-soft hover:text-accent"
-                >
-                  ×
-                </button>
-              </div>
-
-              {/* ── Serbest metin ── */}
-              {selectedObj && selectedObj.type === "text" && (
-                <div className="space-y-3">
-                  <Field label={t.objTextLabel}>
-                    <textarea
-                      value={selectedObj.text ?? ""}
-                      onChange={(e) =>
-                        updateObject(selectedObj.id, { text: e.target.value })
-                      }
-                      placeholder={t.objTextDefault}
-                      rows={3}
-                      className={`${inputClass} resize-y leading-snug`}
-                    />
-                    <p className="mt-1 text-[11px] text-muted">
-                      {t.objTextMultilineHint}
-                    </p>
-                  </Field>
-                  <Field label={t.objFont}>
-                    <select
-                      value={selectedObj.fontId ?? DEFAULT_COVER_FONT}
-                      onChange={(e) =>
-                        updateObject(selectedObj.id, { fontId: e.target.value })
-                      }
-                      aria-label={t.objFont}
-                      className={inputClass}
-                      style={{
-                        fontFamily: COVER_FONTS.find(
-                          (f) => f.id === (selectedObj.fontId ?? DEFAULT_COVER_FONT),
-                        )?.family,
-                      }}
-                    >
-                      {FONT_CATEGORY_ORDER.map((cat) => (
-                        <optgroup key={cat} label={fontCatLabel(cat, t)}>
-                          {COVER_FONTS.filter((f) => f.category === cat).map((f) => (
-                            <option
-                              key={f.id}
-                              value={f.id}
-                              style={{ fontFamily: f.family }}
-                            >
-                              {f.label}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label={t.objSize}>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          bumpFontSize(selectedObj.id, -0.5, selectedObj.fontSizeMm)
-                        }
-                        title={t.objSizeDown}
-                        aria-label={t.objSizeDown}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-lg font-semibold text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
-                      >
-                        −
-                      </button>
-                      <input
-                        type="number"
-                        min={3}
-                        max={40}
-                        step={0.5}
-                        value={selectedObj.fontSizeMm ?? 8}
-                        onChange={(e) =>
-                          updateObject(selectedObj.id, {
-                            fontSizeMm: parseFloat(e.target.value) || 8,
-                          })
-                        }
-                        className={`${inputClass} w-20 text-center`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          bumpFontSize(selectedObj.id, 0.5, selectedObj.fontSizeMm)
-                        }
-                        title={t.objSizeUp}
-                        aria-label={t.objSizeUp}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-lg font-semibold text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </Field>
-                  <Field label={t.objColor}>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={selectedObj.fill}
-                        onChange={(e) =>
-                          updateObject(selectedObj.id, {
-                            fill: e.target.value,
-                            autoColor: false, // elle renk → otomatik kontrastı kapat
-                          })
-                        }
-                        aria-label={t.objColor}
-                        className="h-10 w-14 shrink-0 cursor-pointer rounded-lg border border-border bg-transparent p-1"
-                      />
-                      <HexInput
-                        value={selectedObj.fill}
-                        onCommit={(hex) =>
-                          updateObject(selectedObj.id, {
-                            fill: hex,
-                            autoColor: false,
-                          })
-                        }
-                      />
-                    </div>
-                    {/* Kapak görseli varken metin rengi okunurluk için otomatik
-                        yönetilebilir; kullanıcı elle seçince geri dönüş sunulur. */}
-                    {coverImage &&
-                      (selectedObj.autoColor === false ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateObject(selectedObj.id, { autoColor: true })
-                          }
-                          className="mt-1.5 text-xs font-medium text-accent transition hover:opacity-80"
-                        >
-                          {t.textAutoColorRevert}
-                        </button>
-                      ) : (
-                        <p className="mt-1.5 text-[11px] text-muted">
-                          {t.textAutoColorNote}
-                        </p>
-                      ))}
-                  </Field>
-
-                  {/* Arkasına okuma paneli (scrim) — parlak/bölünmüş zeminde
-                      garanti okunurluk; metne göre boyutlanır. */}
-                  <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-foreground">
-                    <input
-                      type="checkbox"
-                      checked={!!selectedObj.panel}
-                      onChange={(e) =>
-                        updateObject(selectedObj.id, { panel: e.target.checked })
-                      }
-                      className="mt-0.5 h-4 w-4 shrink-0 accent-accent"
-                    />
-                    <span>
-                      {t.textPanelLabel}
-                      <span className="mt-0.5 block text-[11px] text-muted">
-                        {t.textPanelHint}
-                      </span>
-                    </span>
-                  </label>
-
-                  {/* İkincil: hizalama + satır aralığı */}
-                  <div className="space-y-3 border-t border-border pt-3">
-                    <Field label={t.objAlign}>
-                      <div className="flex gap-1.5">
-                        {(
-                          [
-                            ["left", t.objAlignLeft, AlignLeftIcon],
-                            ["center", t.objAlignCenter, AlignCenterIcon],
-                            ["right", t.objAlignRight, AlignRightIcon],
-                          ] as const
-                        ).map(([val, label, Icon]) => {
-                          const active = (selectedObj.align ?? "center") === val;
-                          return (
-                            <button
-                              key={val}
-                              type="button"
-                              onClick={() => updateObject(selectedObj.id, { align: val })}
-                              title={label}
-                              aria-label={label}
-                              aria-pressed={active}
-                              className={`flex h-9 flex-1 items-center justify-center rounded-lg border transition ${
-                                active
-                                  ? "border-accent bg-accent/10 text-accent"
-                                  : "border-border bg-surface text-foreground/70 hover:border-accent/40 hover:text-foreground"
-                              }`}
-                            >
-                              <Icon className="h-4 w-4" />
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </Field>
-                    <Field label={t.objLineSpacing}>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            bumpLineSpacing(
-                              selectedObj.id,
-                              -0.05,
-                              selectedObj.lineHeightMul,
-                            )
-                          }
-                          title={t.objLineSpacingDown}
-                          aria-label={t.objLineSpacingDown}
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-lg font-semibold text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
-                        >
-                          −
-                        </button>
-                        <input
-                          type="number"
-                          min={0.8}
-                          max={2.5}
-                          step={0.05}
-                          value={selectedObj.lineHeightMul ?? 1.16}
-                          onChange={(e) =>
-                            updateObject(selectedObj.id, {
-                              lineHeightMul: clampLineSpacing(parseFloat(e.target.value)),
-                            })
-                          }
-                          aria-label={t.objLineSpacing}
-                          className={`${inputClass} w-20 text-center`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            bumpLineSpacing(
-                              selectedObj.id,
-                              0.05,
-                              selectedObj.lineHeightMul,
-                            )
-                          }
-                          title={t.objLineSpacingUp}
-                          aria-label={t.objLineSpacingUp}
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-lg font-semibold text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </Field>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Hazır yazı (başlık/yazar/alt başlık/sırt) ── */}
-              {isStructText && (
-                <div className="space-y-3">
-                  {/* Metin — sırt hariç doğrudan buradan düzenlenebilir. */}
-                  {selectedId === "spineText" ? (
-                    <p className="rounded-lg border border-dashed border-border px-3 py-2 text-[11px] text-muted">
-                      {t.spineAutoNote}
-                    </p>
-                  ) : (
-                    <Field label={t.objTextLabel}>
-                      <textarea
-                        value={structTextValue}
-                        onChange={(e) => setStructText(e.target.value)}
-                        rows={selectedId === "title" ? 2 : 1}
-                        placeholder={
-                          selectedId === "title"
-                            ? t.titlePlaceholder
-                            : selectedId === "author"
-                              ? t.authorPlaceholder
-                              : t.subtitlePlaceholder
-                        }
-                        className={`${inputClass} resize-y leading-snug`}
-                      />
-                    </Field>
-                  )}
-                  <p className="text-xs text-muted">{t.structTextHint}</p>
-                  <Field label={t.objFont}>
-                    <select
-                      value={structFontId}
-                      onChange={(e) =>
-                        updateTextStyle(selectedId, { fontId: e.target.value })
-                      }
-                      aria-label={t.objFont}
-                      className={inputClass}
-                      style={{
-                        fontFamily: COVER_FONTS.find((f) => f.id === structFontId)
-                          ?.family,
-                      }}
-                    >
-                      {FONT_CATEGORY_ORDER.map((cat) => (
-                        <optgroup key={cat} label={fontCatLabel(cat, t)}>
-                          {COVER_FONTS.filter((f) => f.category === cat).map((f) => (
-                            <option
-                              key={f.id}
-                              value={f.id}
-                              style={{ fontFamily: f.family }}
-                            >
-                              {f.label}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label={t.objSize}>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateTextStyle(selectedId, {
-                            fontSizeMm: Math.max(3, structSizeMm - 0.5),
-                          })
-                        }
-                        title={t.objSizeDown}
-                        aria-label={t.objSizeDown}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-lg font-semibold text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
-                      >
-                        −
-                      </button>
-                      <input
-                        type="number"
-                        min={3}
-                        max={60}
-                        step={0.5}
-                        value={structSizeMm}
-                        onChange={(e) =>
-                          updateTextStyle(selectedId, {
-                            fontSizeMm: parseFloat(e.target.value) || structSizeMm,
-                          })
-                        }
-                        className={`${inputClass} w-20 text-center`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateTextStyle(selectedId, {
-                            fontSizeMm: Math.min(60, structSizeMm + 0.5),
-                          })
-                        }
-                        title={t.objSizeUp}
-                        aria-label={t.objSizeUp}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-lg font-semibold text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </Field>
-                  <Field label={t.objColor}>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={structColor}
-                        onChange={(e) =>
-                          updateTextStyle(selectedId, { color: e.target.value })
-                        }
-                        aria-label={t.objColor}
-                        className="h-10 w-14 shrink-0 cursor-pointer rounded-lg border border-border bg-transparent p-1"
-                      />
-                      <HexInput
-                        value={structColor}
-                        onCommit={(hex) => updateTextStyle(selectedId, { color: hex })}
-                      />
-                    </div>
-                  </Field>
-                  {structHasOverride && (
-                    <button
-                      type="button"
-                      onClick={() => resetTextStyle(selectedId)}
-                      className={ghostBtn}
-                    >
-                      {t.structTextReset}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* ── Şekil rengi (kutu/daire/çizgi) ── */}
-              {selectedObj &&
-                selectedObj.type !== "text" &&
-                selectedObj.type !== "image" && (
-                  <Field label={t.objColor}>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={selectedObj.fill}
-                        onChange={(e) =>
-                          updateObject(selectedObj.id, { fill: e.target.value })
-                        }
-                        aria-label={t.objColor}
-                        className="h-10 w-14 shrink-0 cursor-pointer rounded-lg border border-border bg-transparent p-1"
-                      />
-                      <HexInput
-                        value={selectedObj.fill}
-                        onCommit={(hex) => updateObject(selectedObj.id, { fill: hex })}
-                      />
-                    </div>
-                  </Field>
-                )}
-
-              {/* ── Şekil stili: dolu/çerçeve · çerçeve kalınlığı · köşe · saydamlık ── */}
-              {selectedObj &&
-                (selectedObj.type === "rect" ||
-                  selectedObj.type === "circle" ||
-                  selectedObj.type === "triangle" ||
-                  selectedObj.type === "star" ||
-                  selectedObj.type === "diamond") && (
-                  <div className="space-y-3 border-t border-border pt-3">
-                    <Field label={t.shapeStyleLabel} hint={t.shapeStyleHint}>
-                      <div className="grid grid-cols-2 gap-2">
-                        <SegButton
-                          active={(selectedObj.shapeStyle ?? "fill") === "fill"}
-                          onClick={() =>
-                            updateObject(selectedObj.id, { shapeStyle: "fill" })
-                          }
-                        >
-                          {t.shapeStyleFill}
-                        </SegButton>
-                        <SegButton
-                          active={selectedObj.shapeStyle === "outline"}
-                          onClick={() =>
-                            updateObject(selectedObj.id, { shapeStyle: "outline" })
-                          }
-                        >
-                          {t.shapeStyleOutline}
-                        </SegButton>
-                      </div>
-                    </Field>
-                    {selectedObj.shapeStyle === "outline" && (
-                      <Field
-                        label={`${t.strokeWidthLabel} — ${(
-                          selectedObj.strokeWidthMm ?? 0.8
-                        ).toFixed(1)} mm`}
-                      >
-                        <input
-                          type="range"
-                          min={2}
-                          max={40}
-                          value={Math.round((selectedObj.strokeWidthMm ?? 0.8) * 10)}
-                          onChange={(e) =>
-                            updateObject(selectedObj.id, {
-                              strokeWidthMm: Number(e.target.value) / 10,
-                            })
-                          }
-                          className="w-full accent-accent"
-                        />
-                      </Field>
-                    )}
-                    {selectedObj.type === "rect" && (
-                      <Field
-                        label={`${t.cornerRadiusLabel} — ${(
-                          selectedObj.cornerRadiusMm ?? 0
-                        ).toFixed(1)} mm`}
-                      >
-                        <input
-                          type="range"
-                          min={0}
-                          max={120}
-                          value={Math.round((selectedObj.cornerRadiusMm ?? 0) * 10)}
-                          onChange={(e) =>
-                            updateObject(selectedObj.id, {
-                              cornerRadiusMm: Number(e.target.value) / 10,
-                            })
-                          }
-                          className="w-full accent-accent"
-                        />
-                      </Field>
-                    )}
-                    <Field
-                      label={`${t.opacityShapeLabel} — %${Math.round(
-                        (selectedObj.opacity ?? 1) * 100,
-                      )}`}
-                    >
-                      <input
-                        type="range"
-                        min={20}
-                        max={100}
-                        value={Math.round((selectedObj.opacity ?? 1) * 100)}
-                        onChange={(e) =>
-                          updateObject(selectedObj.id, {
-                            opacity: Number(e.target.value) / 100,
-                          })
-                        }
-                        className="w-full accent-accent"
-                      />
-                    </Field>
-                  </div>
-                )}
-
-              {/* ── Çizgi / ayraç: kalınlık · saydamlık ── */}
-              {selectedObj &&
-                (selectedObj.type === "line" ||
-                  selectedObj.type === "divider") && (
-                <div className="space-y-3 border-t border-border pt-3">
-                  <Field
-                    label={`${t.strokeWidthLabel} — ${(
-                      selectedObj.strokeWidthMm ?? 0.6
-                    ).toFixed(1)} mm`}
-                  >
-                    <input
-                      type="range"
-                      min={2}
-                      max={40}
-                      value={Math.round((selectedObj.strokeWidthMm ?? 0.6) * 10)}
-                      onChange={(e) =>
-                        updateObject(selectedObj.id, {
-                          strokeWidthMm: Number(e.target.value) / 10,
-                        })
-                      }
-                      className="w-full accent-accent"
-                    />
-                  </Field>
-                  <Field
-                    label={`${t.opacityShapeLabel} — %${Math.round(
-                      (selectedObj.opacity ?? 1) * 100,
-                    )}`}
-                  >
-                    <input
-                      type="range"
-                      min={20}
-                      max={100}
-                      value={Math.round((selectedObj.opacity ?? 1) * 100)}
-                      onChange={(e) =>
-                        updateObject(selectedObj.id, {
-                          opacity: Number(e.target.value) / 100,
-                        })
-                      }
-                      className="w-full accent-accent"
-                    />
-                  </Field>
-                </div>
-              )}
-
-              {/* ── Konum (serbest metin) — mm cinsinden X/Y + ortala ──
-                  Boyut alanları bilinçli olarak yok: metnin boyutu yazı boyutuyla
-                  yönetilir; ölçekle büyütmek harfleri bozar. */}
-              {selectedObj && selectedObj.type === "text" && selectedGeoLive && (
-                <div className="space-y-3 border-t border-border pt-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Field label={t.geoX}>
-                      <NumInput value={selectedGeoLive.leftMm} onCommit={setGeoX} />
-                    </Field>
-                    <Field label={t.geoY}>
-                      <NumInput value={selectedGeoLive.topMm} onCommit={setGeoY} />
-                    </Field>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={centerSelected}
-                    className={`${ghostBtn} text-xs`}
-                  >
-                    {t.geoCenter}
-                  </button>
-                </div>
-              )}
-
-              {/* ── Boyut & konum (şekil + AI öğe/görsel) ── */}
-              {selectedObj && selectedObj.type !== "text" && selectedGeoLive && (
-                <div className="space-y-3 border-t border-border pt-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Field label={t.geoWidth}>
-                      <NumInput
-                        value={selectedGeoLive.widthMm}
-                        min={0.5}
-                        onCommit={setGeoWidth}
-                      />
-                    </Field>
-                    <Field label={t.geoHeight}>
-                      <NumInput
-                        value={selectedGeoLive.heightMm}
-                        min={0.5}
-                        onCommit={setGeoHeight}
-                      />
-                    </Field>
-                    <Field label={t.geoX}>
-                      <NumInput value={selectedGeoLive.leftMm} onCommit={setGeoX} />
-                    </Field>
-                    <Field label={t.geoY}>
-                      <NumInput value={selectedGeoLive.topMm} onCommit={setGeoY} />
-                    </Field>
-                  </div>
-                  <label className="flex cursor-pointer items-center gap-2 text-xs text-foreground">
-                    <input
-                      type="checkbox"
-                      checked={lockAspect}
-                      onChange={(e) => setLockAspect(e.target.checked)}
-                      className="h-4 w-4 accent-accent"
-                    />
-                    {t.geoLockAspect}
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={fitToSafeArea}
-                      className={`${ghostBtn} text-xs`}
-                    >
-                      {t.geoFitSafe}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={fillFrontCover}
-                      className={`${ghostBtn} text-xs`}
-                    >
-                      {t.geoFillFront}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={fitFullHeight}
-                      className={`${ghostBtn} text-xs`}
-                    >
-                      {t.geoFullHeight}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={centerSelected}
-                      className={`${ghostBtn} text-xs`}
-                    >
-                      {t.geoCenter}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Ortak: hizala (tuvalde) · döndür · dizim · çoğalt · sil ── */}
-              <div className="space-y-3 border-t border-border pt-3">
-                <Field label={t.alignLabel}>
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleAlign("left")}
-                      className={`${ghostBtn} flex-1 text-xs`}
-                    >
-                      {t.alignLeft}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleAlign("center")}
-                      className={`${ghostBtn} flex-1 text-xs`}
-                    >
-                      {t.alignCenter}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleAlign("right")}
-                      className={`${ghostBtn} flex-1 text-xs`}
-                    >
-                      {t.alignRight}
-                    </button>
-                  </div>
-                </Field>
-                <Field label={t.rotateLabel}>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range"
-                      min={0}
-                      max={359}
-                      value={selectedAngle}
-                      onChange={(e) => handleSetAngle(Number(e.target.value))}
-                      className="min-w-0 flex-1 accent-accent"
-                    />
-                    <input
-                      type="number"
-                      min={0}
-                      max={359}
-                      value={selectedAngle}
-                      onChange={(e) => handleSetAngle(Number(e.target.value) || 0)}
-                      className={`${inputClass} w-16`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleSetAngle(0)}
-                      disabled={selectedAngle === 0}
-                      className={`${ghostBtn} px-2 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50`}
-                    >
-                      0°
-                    </button>
-                  </div>
-                </Field>
-                <Field label={t.zOrderLabel}>
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={sendToBack}
-                      disabled={!canSendBackward}
-                      title={t.zSendToBack}
-                      className={`${ghostBtn} flex-1 disabled:cursor-not-allowed disabled:opacity-40`}
-                    >
-                      ⤓
-                    </button>
-                    <button
-                      type="button"
-                      onClick={sendBackward}
-                      disabled={!canSendBackward}
-                      title={t.zSendBackward}
-                      className={`${ghostBtn} flex-1 disabled:cursor-not-allowed disabled:opacity-40`}
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      onClick={bringForward}
-                      disabled={!canBringForward}
-                      title={t.zBringForward}
-                      className={`${ghostBtn} flex-1 disabled:cursor-not-allowed disabled:opacity-40`}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      onClick={bringToFront}
-                      disabled={!canBringForward}
-                      title={t.zBringToFront}
-                      className={`${ghostBtn} flex-1 disabled:cursor-not-allowed disabled:opacity-40`}
-                    >
-                      ⤒
-                    </button>
-                  </div>
-                </Field>
-                <div className="flex gap-2">
-                  {selectedId.startsWith("obj-") && (
-                    <button
-                      type="button"
-                      onClick={() => duplicateObject(selectedId)}
-                      title={t.objDuplicateHint}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground/80 transition hover:border-accent/40 hover:text-foreground"
-                    >
-                      <CopyIcon className="h-4 w-4" />
-                      {t.objDuplicate}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleDeleteSelected}
-                    title={t.deleteSelectedHint}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-accent/40 px-3 py-2 text-sm font-medium text-accent transition hover:bg-accent-soft"
-                  >
-                    <TrashIcon className="h-4 w-4" />
-                    {t.objDelete}
-                  </button>
-                </div>
-              </div>
-            </section>
-          ) : (
-            /* Boşken bordürsüz/kutusuz sade ipucu → Canva gibi nefes alanı;
-               yer (300px) yine sabit kalır, seçimde tuval kaymaz. */
-            <p className="px-1 pt-2 text-xs text-muted/70">{t.inspectorEmptyHint}</p>
-          )}
-        </aside>
       </div>
 
       {editOpen && coverImage && (

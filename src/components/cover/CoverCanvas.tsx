@@ -177,7 +177,10 @@ const GUIDE_CROP_HALO = "rgba(255,255,255,0.9)";
 const GUIDE_FOLD = "rgba(232,97,43,0.7)";
 const GUIDE_LABEL = "rgba(40,38,34,0.55)";
 
-const MAX_DISPLAY_WIDTH = 1200;
+// Sığdırılmış görünümün üst sınırı (çok geniş ekranda bile tuval keskin kalsın).
+const MAX_DISPLAY_WIDTH = 2000;
+// Yakınlaştırmada tuvalin ekrandaki en büyük genişliği (piksel).
+const MAX_ZOOM_WIDTH = 6000;
 
 export type CoverCanvasHandle = {
   /** Baskı için tuvali verilen DPI'da PNG dataURL olarak verir (ekran yardımcıları hariç). */
@@ -231,6 +234,9 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   // Tuval (zemin + görsel + logolar + metin) tam çizildiğinde çağrılır — async
   // görsel yüklemeleri dahil. Otomatik PDF/PNG çıktısı için "hazır" sinyali.
   onReady?: () => void;
+  /** Ekran büyütmesi: 1 = kutuya sığdır; >1 = büyüt (kutu kaydırılır). Baskı
+   *  çıktısını etkilemez (çıktı mm ölçüsünden ve DPI'dan hesaplanır). */
+  zoom?: number;
 }>(function CoverCanvas({
   spread,
   labels,
@@ -257,6 +263,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   onAngleChange,
   onLayersChange,
   onReady,
+  zoom = 1,
 }, ref) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasElRef = useRef<HTMLCanvasElement>(null);
@@ -500,7 +507,8 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       // Kapak yatay olduğundan çoğu ekranda yükseklik belirleyici olur → taşmaz.
       const aspect = spread.totalWidth / spread.totalHeight;
       const heightCap = containerH > 0 ? containerH * aspect : Infinity;
-      const targetW = Math.min(containerW, heightCap, MAX_DISPLAY_WIDTH);
+      const fitW = Math.min(containerW, heightCap, MAX_DISPLAY_WIDTH);
+      const targetW = zoom > 1 ? Math.min(fitW * zoom, MAX_ZOOM_WIDTH) : fitW;
       const displayDpi = (targetW / spread.totalWidth) * 25.4;
       displayDpiRef.current = displayDpi;
       const pxW = Math.round(targetW);
@@ -1743,7 +1751,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       // kalmasın → bir sonraki seçim olayları yine parent'a yansıyabilsin.
       rebuildingRef.current = false;
     };
-  }, [spread, labels, lang, templateId, titlePos, authorPos, colors, content, showGuides, images, objects, positions, layers, hidden, locked, autoContrast, textStyles, containerW, containerH, fontsReady]);
+  }, [spread, labels, lang, templateId, titlePos, authorPos, colors, content, showGuides, images, objects, positions, layers, hidden, locked, autoContrast, textStyles, containerW, containerH, fontsReady, zoom]);
 
   useEffect(() => {
     return () => {
@@ -1787,10 +1795,17 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   return (
     <div
       ref={wrapperRef}
-      className="flex h-full min-h-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-[#efe9de] p-4"
-      style={{ touchAction: "none" }}
+      // Sığdırılmışken kaydırma çubuğu yok (yuvarlama titremesi olmasın);
+      // büyütülünce kutu kaydırılır, tuval ortada kalır (m-auto: taşınca da
+      // sol/üst kenar erişilebilir).
+      className={`flex h-full min-h-0 rounded-xl border border-border bg-[#efe9de] p-2 ${
+        zoom > 1 ? "overflow-auto" : "items-center justify-center overflow-hidden"
+      }`}
+      style={{ touchAction: zoom > 1 ? "pan-x pan-y" : "none" }}
     >
-      <canvas ref={canvasElRef} className="block" />
+      <div className={zoom > 1 ? "m-auto shrink-0" : undefined}>
+        <canvas ref={canvasElRef} className="block" />
+      </div>
     </div>
   );
 });

@@ -7,7 +7,6 @@ import { loadInitialProject } from "@/lib/projects/server";
 import { toShellUser } from "@/lib/app/identity";
 import { getBalanceById, hasActivePackageById } from "@/lib/credits/server";
 import { isAdminEmail } from "@/lib/admin";
-import { getSidebarPref } from "@/lib/app/prefs";
 import { signOutAction } from "@/app/[lang]/auth-actions";
 import AppShell, { type AppShellContext } from "@/components/app/AppShell";
 import WizardBar from "@/components/app/WizardBar";
@@ -26,8 +25,9 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
   const sp = await searchParams;
   const supabase = await createClient();
   const initialProject = await loadInitialProject(supabase, sp.project);
-  // Tuval sayfası: kullanıcı açıkça seçmediyse menü DARALTILMIŞ başlar (geniş alan).
-  const collapsed = (await getSidebarPref()) ?? true;
+  // Tuval sayfası: menü HER ZAMAN daraltılmış başlar → tuvale en geniş alan
+  // (öteki sayfalardaki tercihi etkilemez; burada açılırsa yine açılabilir).
+  const collapsed = true;
   const canExport = await hasActivePackageById(user.id, user.email);
   // Jeton bakiyesi (anlık görüntü) — sihirbazın "kapak üretelim mi?" kartı için.
   // Yönetici jeton harcamaz → null (sınırsız).
