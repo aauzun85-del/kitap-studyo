@@ -49,6 +49,9 @@ export type EditorSession = {
   /** Yüklenen orijinal .docx + kabul edilen düzeltmeler (biçimi koruyarak dışa aktarım için). */
   originalDocx: ArrayBuffer | null;
   docxEdits: DocxEdit[];
+  /** Word'den gelen metinde ELLE değişiklik yapıldı mı (ekrandan çıkıp dönünce de
+   *  hatırlansın: Word indirme o zaman metnin son hâlinden üretilir). */
+  manualEdit: boolean;
 };
 
 const EMPTY: EditorSession = {
@@ -62,6 +65,7 @@ const EMPTY: EditorSession = {
   stopped: null,
   originalDocx: null,
   docxEdits: [],
+  manualEdit: false,
 };
 
 const sessions = new Map<string, EditorSession>();

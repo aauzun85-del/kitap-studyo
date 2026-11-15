@@ -7,10 +7,7 @@ import { loadInitialProject } from "@/lib/projects/server";
 import { toShellUser } from "@/lib/app/identity";
 import { getBalanceById, hasActivePackageById } from "@/lib/credits/server";
 import { isAdminEmail } from "@/lib/admin";
-import { getSidebarCollapsed } from "@/lib/app/prefs";
 import { signOutAction } from "@/app/[lang]/auth-actions";
-import AppShell, { type AppShellContext } from "@/components/app/AppShell";
-import WizardBar from "@/components/app/WizardBar";
 import EditorStudio from "@/components/editor/EditorStudio";
 
 export default async function EditorPage({ params, searchParams }: PageProps<"/[lang]/editor">) {
@@ -21,57 +18,27 @@ export default async function EditorPage({ params, searchParams }: PageProps<"/[
   if (!user) redirect(`/${lang}/giris`);
 
   const dict = getDictionary(lang);
-  const isTr = lang === "tr";
   const sp = await searchParams;
   const supabase = await createClient();
   const initialProject = await loadInitialProject(supabase, sp.project);
-  const collapsed = await getSidebarCollapsed();
   const canExport = await hasActivePackageById(user.id, user.email);
   // Jeton bakiyesi: editör, incelemeye başlamadan önce bedeli bununla kıyaslar.
   // Yönetici jeton harcamaz → null (sınırsız).
   const creditBalance = isAdminEmail(user.email) ? null : await getBalanceById(user.id);
+  const shellUser = await toShellUser(user);
 
-  const meta = initialProject?.data.meta;
-  const context: AppShellContext = {
-    backHref: `/${lang}/projeler`,
-    backLabel: isTr ? "Kitaplarım" : "My Books",
-    title: meta?.title?.trim() || (isTr ? "Editör çalışması" : "Editor draft"),
-    meta: meta?.author?.trim() || undefined,
-    moduleLabel: isTr ? "AI Editör modülü" : "AI Editor module",
-    savedLabel: initialProject ? (isTr ? "Otomatik kaydedilir" : "Auto-saved") : undefined,
-  };
-
-  const wizard = initialProject?.data.wizard;
-  const wizardBar =
-    initialProject && wizard?.active ? (
-      <WizardBar
-        lang={lang}
-        projectId={initialProject.id}
-        current="editor"
-        wizard={wizard}
-        backHref={`/${lang}/projeler`}
-        backLabel={isTr ? "Kitaplarım" : "My Books"}
-      />
-    ) : undefined;
-
+  // Tam ekran düzenleyici: kendi üst çubuğu var (marka, Kitaplarım, kayıt durumu,
+  // adımlar, geri al, Word indir, Metni incele, hesap) → uygulama menüsü yok.
   return (
-    <AppShell
+    <EditorStudio
+      key={initialProject?.id ?? "anon"}
       lang={lang}
-      user={await toShellUser(user)}
+      dict={dict}
+      initialProject={initialProject}
+      canExport={canExport}
+      creditBalance={creditBalance}
+      user={shellUser ? { name: shellUser.name, initials: shellUser.initials } : null}
       signOut={signOutAction.bind(null, lang)}
-      active="editor"
-      context={context}
-      wizardBar={wizardBar}
-      defaultCollapsed={collapsed}
-    >
-      <EditorStudio
-        key={initialProject?.id ?? "anon"}
-        lang={lang}
-        dict={dict}
-        initialProject={initialProject}
-        canExport={canExport}
-        creditBalance={creditBalance}
-      />
-    </AppShell>
+    />
   );
 }

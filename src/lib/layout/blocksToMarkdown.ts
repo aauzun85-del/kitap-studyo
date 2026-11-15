@@ -26,7 +26,7 @@ function runsToMarkdown(runs: Run[]): string {
     .map((r) => {
       const t = r.text;
       if (!t) return "";
-      const mark = r.bold ? "**" : r.italic ? "*" : "";
+      const mark = r.bold && r.italic ? "***" : r.bold ? "**" : r.italic ? "*" : "";
       if (!mark) return t;
       const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(t);
       if (!m || !m[2]) return t;

@@ -218,18 +218,22 @@ export function isBackCoverHeading(text: string): boolean {
 
 const plainOf = (runs: Run[]): string => runs.map((r) => r.text).join("").trim();
 
-// Satır-içi **kalın** / *italik* / _italik_ → Run[].
+// Satır-içi ***kalın italik*** / **kalın** / *italik* / _italik_ → Run[].
+// (AI Editör aynı ifadeyle ekranda biçimi gösterir: INLINE_MARK_RE.)
+export const INLINE_MARK_RE = /(\*\*\*([^*]+)\*\*\*|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_)/g;
 export function inlineRuns(text: string): Run[] {
   const runs: Run[] = [];
-  const re = /(\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_)/g;
+  const re = new RegExp(INLINE_MARK_RE.source, "g");
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     if (m.index > last) runs.push({ text: text.slice(last, m.index), bold: false, italic: false });
-    if (m[2] !== undefined || m[3] !== undefined) {
-      runs.push({ text: (m[2] ?? m[3])!, bold: true, italic: false });
+    if (m[2] !== undefined) {
+      runs.push({ text: m[2], bold: true, italic: true });
+    } else if (m[3] !== undefined || m[4] !== undefined) {
+      runs.push({ text: (m[3] ?? m[4])!, bold: true, italic: false });
     } else {
-      runs.push({ text: (m[4] ?? m[5])!, bold: false, italic: true });
+      runs.push({ text: (m[5] ?? m[6])!, bold: false, italic: true });
     }
     last = re.lastIndex;
   }
