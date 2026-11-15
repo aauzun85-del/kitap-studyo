@@ -21,21 +21,64 @@ import {
 
 type Preview = { pages: string[] } | { error: true };
 
-/** Önizleme için metnin baş kısmı: ilk bölüm başlığından ~2 sayfa. */
-function sampleBlocks(blocks: Block[]): Block[] {
-  const first = blocks.findIndex((b) => b.type === "heading" && b.level === 1 && !b.subhead);
-  const start = first >= 0 ? first : 0;
-  const out: Block[] = [];
-  let words = 0;
-  for (let i = start; i < blocks.length && out.length < 60; i++) {
-    const b = blocks[i];
-    out.push(b);
-    if (b.type === "paragraph" || b.type === "blockquote" || b.type === "heading") {
-      words += b.runs.reduce((n, r) => n + r.text.split(/\s+/).filter(Boolean).length, 0);
+const wordsOf = (b: Block): number =>
+  b.type === "paragraph" || b.type === "blockquote" || b.type === "heading"
+    ? b.runs.reduce((n, r) => n + r.text.split(/\s+/).filter(Boolean).length, 0)
+    : 0;
+const isChapter = (b: Block) => b.type === "heading" && b.level === 1 && !b.subhead;
+
+/** Önizleme örneği: kitabın İÇİNDEN, dolu bir bölüm (bölüm açılışı + dolu devam
+ *  sayfası). Kitabın ilk sayfaları çoğu zaman künye/not/kısa satırlarla dolu
+ *  olduğundan, bölümler puanlanır: uzun paragraflar artı, kısa satırlar eksi;
+ *  ara başlık/alıntı içeren bölüm biraz öne çıkar (konsept farkları görünsün).
+ *  Seçilen bölümün başındaki kısa satırlar yalnız ÖNİZLEMEDE atlanır. Bölüm
+ *  başlığı olmayan kitapta ortadan dolu bir parça alınır, başına kitabın adı
+ *  başlık olarak konur. Kitabın kendisine dokunulmaz. */
+export function sampleBlocks(blocks: Block[], title: string, verse = false): Block[] {
+  const heads = blocks.map((b, i) => (isChapter(b) ? i : -1)).filter((i) => i >= 0);
+  const take = (from: number, lead: Block[] = []): Block[] => {
+    const out: Block[] = [...lead];
+    let words = 0;
+    let skipping = true;
+    for (let i = from; i < blocks.length && out.length < 70; i++) {
+      const b = blocks[i];
+      if (out.length > lead.length + 1 && isChapter(b) && words > 300) break;
+      // Bölüm başındaki kısa satırları (künye, not, alt başlık) atla.
+      // (Şiirde kısa kıtalar şiirin kendisidir → atlanmaz.)
+      if (!verse && skipping && i > from && b.type === "paragraph" && wordsOf(b) < 10) continue;
+      if (i > from && b.type !== "blank") skipping = false;
+      out.push(b);
+      words += wordsOf(b);
+      if (words > 760) break;
     }
-    if (words > 700) break;
+    return out;
+  };
+  if (heads.length === 0) {
+    // Bölümsüz kitap: metnin ~%35'inden itibaren ilk uzun paragraf.
+    let start = Math.floor(blocks.length * 0.35);
+    while (start < blocks.length && !(blocks[start].type === "paragraph" && wordsOf(blocks[start]) >= 25)) start++;
+    if (start >= blocks.length) start = 0;
+    const synthetic: Block = { type: "heading", level: 1, runs: [{ text: title || "Bölüm", bold: false, italic: false }] };
+    return take(start, [synthetic]);
   }
-  return out;
+  let best = heads[0];
+  let bestScore = -Infinity;
+  heads.slice(0, 40).forEach((h, n) => {
+    let score = 0;
+    let extras = 0;
+    for (let i = h + 1, k = 0; i < blocks.length && k < 40 && !isChapter(blocks[i]); i++, k++) {
+      const b = blocks[i];
+      const w = wordsOf(b);
+      if (b.type === "paragraph") score += verse ? w : w >= 25 ? Math.min(w, 160) : w < 10 ? -35 : 0;
+      if (b.type === "blockquote" || (b.type === "heading" && b.level > 1)) extras++;
+    }
+    score = Math.min(score, 1100) + Math.min(extras, 2) * 120 - (n === 0 && heads.length > 2 ? 60 : 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = h;
+    }
+  });
+  return take(best);
 }
 
 /** Typst'in dikey yığdığı sayfaları ayrı SVG'lere böler (her biri <img> olur →
@@ -108,8 +151,11 @@ export default function InteriorConceptPicker({
 
   // Önizleme blokları (normal + şiir) bir kez hesaplanır.
   const samples = useMemo(
-    () => ({ prose: sampleBlocks(blocksFor(false)), verse: sampleBlocks(blocksFor(true)) }),
-    [blocksFor],
+    () => ({
+      prose: sampleBlocks(blocksFor(false), baseInput.meta.title),
+      verse: sampleBlocks(blocksFor(true), baseInput.meta.title, true),
+    }),
+    [blocksFor, baseInput.meta.title],
   );
 
   // Görünen 3 konsepti SIRAYLA derle (tek Typst işçisi). Eski sonuçlar atılır.
