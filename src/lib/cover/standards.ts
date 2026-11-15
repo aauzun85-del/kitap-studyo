@@ -74,7 +74,7 @@ export const COVER_STANDARDS: CoverStandard[] = [
           "no stairs, arrows, lightbulbs, motivational badges, scattered icons, shiny 3D or gradients", ["#e9ecd9", "#3a2436", "#e8612b"]),
         textLayout:
           "Very dark (aubergine or ink) lettering on the light ground, LEFT-aligned text block starting at about 10% from the left. Author small tracked uppercase at the top " +
-          "(about 9% of the height); the title as the dominant element in an elegant bold humanist sans serif (not an ultra-condensed poster font), 2–3 deliberate " +
+          "(about 9% of the height), with the tiny widely tracked genre label directly beneath it (about 13%), same left alignment; the title as the dominant element in an elegant bold humanist sans serif (not an ultra-condensed poster font), 2–3 deliberate " +
           "left-aligned lines occupying roughly 22–65% of the height with confident generous leading; the subtitle small and neat in 1–2 lines near the bottom left " +
           "(about 78%), leaving the lower-right corner free for the single symbol.",
       },
@@ -86,8 +86,8 @@ export const COVER_STANDARDS: CoverStandard[] = [
           "upper area mostly quiet warm plaster with faint natural shadow; no people, no stacked stones, no road to the horizon, no fake glow, no stock-photo motivational look", ["#eadfcf", "#2f3a1f", "#b5542b"]),
       c("illustrasyon", "Sıcak illüstrasyon", "Warm illustration", "El çizimi hava, pastel, samimi.", "Hand-drawn feel, pastel, friendly.",
         "warm sophisticated hand-painted editorial illustration for ADULT personal growth, not a children's cartoon: original conceptual gouache and colored-pencil work — " +
-          "an adult figure in a quiet everyday moment (reading, resting, tending a garden) inside a generous clearing framed by large botanical leaves, " +
-          "with one small telling detail that carries the idea (garden shears beside a cut vine); richly designed flat shapes, visible dry-brush texture, " +
+          "an adult figure in a quiet everyday moment (e.g. reading, resting, tending a garden) inside a generous clearing framed by large botanical leaves, " +
+          "with one small telling detail that carries the book's idea (e.g. garden shears beside a cut vine); richly designed flat shapes, visible dry-brush texture, " +
           "elegant imperfect pencil lines, paper grain, intentional color overlaps; warm natural palette (pale peach, butter yellow, sage and forest green, terracotta); " +
           "figure adult-proportioned with subtle expressive posture, not big-eyed or cute; illustration in the lower 55–60% with substantial breathing space above; " +
           "no clipart, no sticker collage, no stock vector characters, no plant-in-pot cliché, no magical glow", ["#fde3cf", "#1f3a24", "#c75b2a"]),
@@ -107,11 +107,11 @@ export const COVER_STANDARDS: CoverStandard[] = [
           "lower-middle; no eyes, crescent moons, zodiac icons, random stars, occult alphabets, pyramids, cosmic portals, glow, rectangular borders or corner flourishes", ["#0f1c24", "#efe6cf", "#b89a5a"], true),
       c("gravur", "Gravür / vintage", "Engraving / vintage", "Eski kitap, dokulu kağıt, tek renk.", "Old book, textured paper, single ink.",
         "an original imaginary plate from an old atlas of the inner world: a small anonymous figure or a single engraved scene revealing depth beneath the surface of perception " +
-          "(a lifted map layer, hidden contour landscapes, winding stairs, a distant sea, a tiny sun) — invent the composition, never reproduce a famous historical engraving; " +
+          "(e.g. a lifted map layer revealing hidden contour landscapes, or winding stairs toward a distant sea under a tiny sun) — invent the composition, never reproduce a famous historical engraving; " +
           "exquisite copperplate engraving and fine etched cross-hatching, entirely deep charcoal-brown ink on warm ivory paper, rich stippling, delicate crosshatched shadows, " +
           "broad unprinted highlights, authentic printed-plate sensibility (not a digital pencil sketch, not photorealism); paper with subtle fibers and gentle uneven warm tone, " +
           "no stains, no torn edges, no burnt parchment; the scene occupies the lower half and fades organically into blank paper; a very thin restrained double-rule border " +
-          "well inside the edges is allowed, no corner decorations; a single tiny dusty vermilion accent at most; no gold, no navy, no gradients, no glow, no all-seeing eye, " +
+          "well inside the edges is allowed — its bottom rule sits at about 89% of the height, leaving a slightly deeper plain strip of paper beneath it; no corner decorations; a single tiny dusty vermilion accent at most; no gold, no navy, no gradients, no glow, no all-seeing eye, " +
           "no zodiac wheel, no skulls, no alchemical lettering", ["#efe4cc", "#2a241c", "#8a4a1f"]),
       c("kozmik", "Kozmik soyut", "Cosmic abstract", "Nebula, ışık, derinlik.", "Nebula, light, depth.",
         "cosmic abstraction: the invisible inner world as layers of luminous space — an original composition of translucent mineral-pigment clouds and fine flowing light " +
@@ -128,15 +128,23 @@ export const COVER_STANDARDS: CoverStandard[] = [
     name: { tr: "Din", en: "Religion" },
     label: { tr: "DİN", en: "RELIGION" },
     concepts: [
-      c("tezhip", "Hat / tezhip dokusu", "Calligraphic ornament", "Klasik süsleme, lacivert-altın.", "Classical ornament, navy and gold.",
+      {
+        ...c("tezhip", "Hat / tezhip dokusu", "Calligraphic ornament", "Klasik süsleme, lacivert-altın.", "Classical ornament, navy and gold.",
         "Ottoman manuscript illumination (tezhip) interpreted as contemporary editorial design: a meticulously hand-painted vertical ornament of classical rumi and hatayi " +
           "vegetal motifs — fine muted gold stems, tiny ivory blossoms, restrained turquoise and lapis petals — forming an elongated open almond-shaped frame around generous dark " +
           "negative space; ornament concentrated in the lower half (two gently rising flowering branches meeting in a small symmetrical base flourish) and climbing delicately " +
-          "along the sides, with a small refined crown-like flourish above the title zone; the subtle irregularities of a master illuminator's brush, not mechanically repeated " +
+          "along the sides, with a small refined crown-like flourish between the author line and the title; the subtle irregularities of a master illuminator's brush, not mechanically repeated " +
           "wallpaper; rich midnight ultramarine navy with gently varied matte pigment on fine paper; antique champagne-gold illumination with small lapis, ivory and muted " +
-          "turquoise details, flat restrained metallic-ink effect (no embossed CGI, glitter, luminous gradients or fake leather); the center stays quiet and empty; a thin gold rule " +
+          "turquoise details, flat restrained metallic-ink effect (no embossed CGI, glitter, luminous gradients or fake leather); the inside of the almond frame carries only the lettering, otherwise quiet dark ground; a thin gold rule " +
           "near the edge is allowed, no heavy decorative frame; no Arabic text, no pseudo-calligraphy, no literal heart, mosque, crescent, stars, astrolabe, occult geometry, " +
           "circular medallion, stock ornament collage or wedding-invitation look", ["#101c3a", "#f3ead2", "#c9a24a"], true),
+        textLayout:
+          "Warm ivory lettering on one CENTRAL axis, all inside the open upper part of the almond frame. Author at the very top in small widely tracked uppercase at " +
+          "about 7–9% of the height; the small crown flourish sits between the author line and the title at about 13–20%; the title on two centered lines in an " +
+          "elegant high-contrast serif, roughly 60–70% of the cover width, at about 25–45% of the height; the subtitle in one small italic line just below it at " +
+          "about 49–52%; the tiny tracked genre label centered beneath the subtitle at about 55%. The ornament stays below about 58% and along the side margins, " +
+          "never behind the lettering.",
+      },
       {
         ...c("tipografik", "Sade tipografik", "Plain typographic", "Yazı odaklı, sakin, tek renk zemin.", "Text-led, calm, single-color ground.",
         "restrained typographic spirituality cover: stillness expressed through space, proportion and a quiet vertical pause; warm natural ivory uncoated paper ground, " +
@@ -257,7 +265,7 @@ export const COVER_STANDARDS: CoverStandard[] = [
             "authentic analog softness, gently faded silver-gray midtones, deep charcoal details, delicate film grain, no scratches, stains or torn edges; " +
             "the lower ~36% is a completely opaque flat muted burnt-terracotta (or another single warm) band spanning the full width with a crisp horizontal edge, " +
             "no gradient, no border, no shadow; no text over the photograph; no close-up portraits, frames, scrapbook collage, handwriting, stamps, tape, sepia, sunsets, " +
-            "dramatic lighting, famous landmarks or badges", ["#d9d2c5", "#f3ead2", "#a84a2a"]),
+            "dramatic lighting, famous landmarks or badges; the back cover and spine are the band's flat colour only, no photograph", ["#d9d2c5", "#f3ead2", "#a84a2a"], true),
         photo: {
           layout: "band",
           bg: "#a3472b",
@@ -332,7 +340,7 @@ export const COVER_STANDARDS: CoverStandard[] = [
       {
         ...c("vintage", "Vintage seri", "Vintage series", "Renkli dış çerçeve, fildişi pano, çift çizgi, küçük oval gravür.", "Colored outer field, ivory panel, double rule, small oval engraving.",
           "vintage translated-classics series design: a broad deep single-color outer field (bottle green, oxblood, navy — the series color) surrounding a tall warm-ivory " +
-            "inset paper panel (about 82% of the width, 88% of the height) with a fine double-rule rectangular frame just inside it, restrained clipped corners, tiny " +
+            "inset paper panel (about 82% of the width; its top edge at about 5% and its bottom edge at about 89% of the height, leaving a slightly deeper plain band of the series colour beneath it) with a fine double-rule rectangular frame just inside it, restrained clipped corners, tiny " +
             "symmetric corner joints, no baroque flourishes; authentic subtle uncoated paper grain, clean, not stained; in the lower middle a small oval vignette " +
             "(about 42% of the width) with a very fine double outline containing an exquisite original antique copperplate scene related to the book (an interior " +
             "with a half-open window, a writing table with a letter, a chair; or a comparable quiet scene), no people, fine engraved hatching in dark ink and warm gray " +
@@ -349,8 +357,9 @@ export const COVER_STANDARDS: CoverStandard[] = [
         ...c("gravur", "Gravür", "Engraving", "Büyük dönem gravürü, tek mürekkep rengi; anlatı sahnesi.", "Large period engraving in a single ink; a narrative scene.",
           "a large original nineteenth-century copperplate-style narrative illustration printed in a SINGLE deep ink (Prussian blue, sepia or bottle green) on warm pale " +
             "ivory paper with subtle fine grain — all tonal variation only from engraved line density and stippling; it fills the lower ~65%, extending to the left, right " +
-            "and bottom edges with no frame or oval, its uppermost lines tapering naturally into the paper; a scene from the book's world (a weathered period townhouse " +
-            "entrance, a half-open door, worn steps, a solitary figure in period dress seen from behind holding a meaningful object, modest relative to the architecture), " +
+            "and bottom edges with no frame or oval, its uppermost lines tapering naturally into the paper; a scene from the book's world (e.g. a weathered period townhouse " +
+            "entrance with a half-open door and worn steps, a solitary figure in period dress seen from behind holding a meaningful object; or a comparable scene built " +
+            "around this book's own subject), any figure modest relative to the architecture, " +
             "masterful cross-hatching, curved engraved strokes, delicate stippling, one deep dark area anchoring the composition, strong perspective, natural anatomy; " +
             "no photographic shading, digital painting, CGI, cartoon outlines, vector graphics, second accent color, sepia stains, frames, ornaments or fake aging", ["#efe6d2", "#1c2f55", "#1c2f55"]),
         textLayout:
@@ -389,9 +398,16 @@ export const COVER_STANDARDS: CoverStandard[] = [
           "an intimate scene where one object or doorway holds the emotion, quiet human memory without people, long soft diagonal light; " +
           "beautiful imperfect painterly surfaces and surprising harmonious colors (dusty coral, burnt sienna, deep ultramarine, sage, warm pale lemon); " +
           "emphatically not photographic, no glossy digital realism, no gold ornament, no artificial glow, no gradients", ["#e9dfcf", "#2b2420", "#8c5a3c"]),
-      c("tipografik", "Tipografik roman", "Typographic novel", "Resimsiz, başlık tasarımın kendisi.", "No image, the title is the design.",
+      {
+        ...c("tipografik", "Tipografik roman", "Typographic novel", "Resimsiz, başlık tasarımın kendisi.", "No image, the title is the design.",
         "warm very pale ivory uncoated paper ground with subtle print grain and nothing else — a tactile two-ink print aesthetic; " +
           "at most one tiny restrained geometric accent in burnt vermilion near the lower third (a thin threshold line), no illustration, no icon, no ornament", ["#f4efe6", "#102a2e", "#c9472b"]),
+        textLayout:
+          "The title IS the design: deep petrol-ink high-contrast display serif CAPITALS, left-aligned with margins of about 7% of the width, stacked one word or short " +
+          "phrase per line, each line scaled to span the full text width so the shortest word becomes the largest; the title block fills roughly 18% to 84% of the height " +
+          "with tight leading. The author small, widely tracked uppercase across the top at about 8%. The single burnt-vermilion accent is a thin threshold line or tiny " +
+          "doorway cut into the foot of the largest letter. The tiny tracked genre label at the bottom left, just above the logo strip.",
+      },
     ],
   },
   {
@@ -434,7 +450,7 @@ export const COVER_STANDARDS: CoverStandard[] = [
           "hard-edged expressive typographic crime cover: a flat deep vermilion-red (or another single strong) ground with a barely perceptible matte printed-paper " +
             "grain and NOTHING else — no photographs, silhouettes, streets, fog, objects, icons, weapons, blood, fingerprints, police tape, borders, warning stripes, " +
             "gradients, lighting effects, distressed textures, 3D lettering, bevels, shadows, embossing or metallic shine; the emotional effect comes solely from " +
-            "scale, weight, contrast and one displaced typographic cut — the impact of a carefully printed two-ink design", ["#c8102e", "#111111", "#f2e8d8"]),
+            "scale, weight, contrast and one displaced typographic cut — the impact of a carefully printed two-ink design", ["#c8102e", "#111111", "#f2e8d8"], true),
         textLayout:
           "Strong LEFT alignment with generous safe margins. Author at the upper left in modest warm off-white uppercase grotesque sans, precisely tracked. The title " +
           "is a monumental near-black block occupying the central ~65% of the cover: very heavy strongly condensed uppercase grotesque, rigid stems, tight spacing, " +
@@ -600,7 +616,9 @@ export const COVER_STANDARDS: CoverStandard[] = [
           "occupying about 75% of the height and 85% of the width without clipping any letter or Turkish dot. The remaining title words are deliberately tiny but " +
           "clearly legible, pushed to the margins in reading order (the word before it small near the upper left in a vermilion accent; the word after it small " +
           "near the bottom left in ivory with moderate tracking) so the whole title still reads in order. The author runs along the right margin as one small ivory " +
-          "line rotated 90° clockwise, with a clear gutter; the tiny genre label sits horizontally in the upper right. No arbitrary rotation of title words, no " +
+          "line rotated 90° clockwise, with a clear gutter; the tiny genre label sits horizontally in the upper right. A subtitle, if any, is " +
+          "one tiny ivory horizontal line at the very top left, level with the genre label and above the small leading title word — never under the giant word. " +
+          "No arbitrary rotation of title words, no " +
           "distortion, no extra punctuation.",
       },
     ],

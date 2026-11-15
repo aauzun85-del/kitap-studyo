@@ -195,6 +195,13 @@ type FabricCanvasInstance = {
   toDataURL: (opts: Record<string, unknown>) => string;
 };
 
+// Buluttan gelen görseller (Supabase imzalı URL) BAŞKA kökenden yüklenir. CORS
+// izni istenmeden yüklenirse tarayıcı tuvali "kirli" sayar ve toDataURL
+// (PDF/PNG indirme, küçük resim) SecurityError ile çöker. data:/blob: adresleri
+// aynı kökendir → seçenek gerekmez.
+const imgLoadOpts = (url: string): { crossOrigin: "anonymous" } | undefined =>
+  /^https?:\/\//i.test(url) ? { crossOrigin: "anonymous" } : undefined;
+
 const CoverCanvas = forwardRef<CoverCanvasHandle, {
   spread: SpreadDimensions;
   labels: Labels;
@@ -347,14 +354,21 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       const screenOnly = canvas.getObjects().filter((o) => o._screenOnly === true);
       screenOnly.forEach((o) => o.set("visible", false));
       canvas.renderAll();
-      const url = canvas.toDataURL({
-        format: "png",
-        multiplier,
-        enableRetinaScaling: false,
-      });
-      screenOnly.forEach((o) => o.set("visible", true));
-      canvas.renderAll();
-      return url;
+      try {
+        return canvas.toDataURL({
+          format: "png",
+          multiplier,
+          enableRetinaScaling: false,
+        });
+      } catch (e) {
+        // Tuval dışa aktarılamadı (ör. izinsiz yüklenmiş görsel). Çağıran taraf
+        // null'u "başarısız" sayar — indirme ekranı sonsuza dek dönmesin.
+        console.warn("[kapak] tuval dışa aktarılamadı", e);
+        return null;
+      } finally {
+        screenOnly.forEach((o) => o.set("visible", true));
+        canvas.renderAll();
+      }
     },
     alignSelected: (mode: AlignMode) => {
       const canvas = fabricCanvasRef.current as unknown as {
@@ -782,7 +796,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
                   };
         const rx = px(rectMm.x), ry = px(rectMm.y), rw = px(rectMm.w), rh = px(rectMm.h);
 
-        const img = await fabric.FabricImage.fromURL(images.cover);
+        const img = await fabric.FabricImage.fromURL(images.cover, imgLoadOpts(images.cover));
         if (disposed || !fabricCanvasRef.current) return;
         const iw = img.width ?? 1;
         const ih = img.height ?? 1;
@@ -867,7 +881,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       if (images.photo && images.photoLayout) {
         const slot = images.photoRect ?? photoSlotMm(spread, images.photoLayout);
         const sx = px(slot.x), sy = px(slot.y), sw = px(slot.w), sh = px(slot.h);
-        const ph = await fabric.FabricImage.fromURL(images.photo);
+        const ph = await fabric.FabricImage.fromURL(images.photo, imgLoadOpts(images.photo));
         if (disposed || !fabricCanvasRef.current) return;
         const scale = Math.max(sw / (ph.width ?? 1), sh / (ph.height ?? 1));
         ph.set({
@@ -962,7 +976,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
           rx: 3,
           ry: 3,
         });
-        const bar = await fabric.FabricImage.fromURL(barcodeUrl);
+        const bar = await fabric.FabricImage.fromURL(barcodeUrl, imgLoadOpts(barcodeUrl));
         if (disposed || !fabricCanvasRef.current) return;
         const pad = Math.min(bw, bh) * 0.1;
         const innerW = bw - pad * 2, innerH = bh - pad * 2;
@@ -981,7 +995,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
 
       // 4) Logo — ön kapakta konumlandır.
       if (images.logo) {
-        const logo = await fabric.FabricImage.fromURL(images.logo);
+        const logo = await fabric.FabricImage.fromURL(images.logo, imgLoadOpts(images.logo));
         if (disposed || !fabricCanvasRef.current) return;
         // "side" düzeni: portre sağ altta → alt logo sol sütuna alınır ve yuvanın
         // soluna sığacak kadar küçültülür (yoksa portrenin üstüne biner).
@@ -1220,7 +1234,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
             // taban genişliğine ölçeklenir; kullanıcı çarpanı 4b'de üstüne uygulanır.
             // Bozuk/geçersiz data URL render'ı kilitlemesin → try/catch ile yut.
             try {
-              const img = await fabric.FabricImage.fromURL(obj.src);
+              const img = await fabric.FabricImage.fromURL(obj.src, imgLoadOpts(obj.src));
               // Bekleme sırasında bileşen yeniden çizildi/atıldıysa ekleme.
               if (disposed || !fabricCanvasRef.current) return;
               const natW = (img.width as number) || 1;

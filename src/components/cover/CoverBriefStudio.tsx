@@ -13,6 +13,7 @@ import {
   BRIEF_TEXT_STYLES,
   briefExampleSrc,
   defaultBrief,
+  effectiveTone,
   type CoverBrief,
   type Tone,
 } from "@/lib/cover/brief";
@@ -111,7 +112,9 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
     try {
       const payload: CoverBrief = {
         ...brief,
-        // Ton: kullanıcı seçtiyse o, yoksa seçili konseptin varsayılanı (gösterilenle aynı).
+        // Ton: bilerek seçilmediyse "konsepte göre" kaydedilir (gösterilenle aynı).
+        tone,
+        toneChosen: tone !== "concept",
         photo: usingPhoto ? { mono } : undefined,
         skipped: mode === "skip" ? true : undefined,
         createdAt: new Date().toISOString(),
@@ -143,6 +146,9 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
   const photoMode = currentConcept.photo?.layout ?? null;
   const usingPhoto = !!photoMode && !!photoPreview;
   const textBy: "ai" | "app" = brief.textBy ?? "ai";
+  // Ton: kullanıcı bilerek seçmediyse konseptin kendi paleti (eski kurgulardaki
+  // varsayılan "Açık" konsepti eziyordu → artık seçim sayılmaz).
+  const tone = effectiveTone(brief);
   // Varsayılan: anı/biyografide siyah-beyaz; iş kitabı portresinde renkli.
   const mono = brief.photo?.mono ?? currentConcept.photo?.defaultMono ?? true;
   // Seçili konsept notu kapağa birebir basıyorsa (şiir dizeleri) alanın adı değişir.
@@ -439,17 +445,18 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
         <div className="space-y-3">
           <div>
             <h2 className={stepTitle}>{tr ? "4 · Ton" : "4 · Tone"}</h2>
-            <p className={stepHint}>{tr ? "Genel renk ağırlığı. Açık ton yazı okunurluğu için en güvenlisi." : "Overall color weight. Light is the safest for readable text."}</p>
+            <p className={stepHint}>{tr ? "\"Konsepte göre\" seçili kalırsa kapak, örnekteki konseptin kendi renkleriyle üretilir. Açık/Orta/Koyu aynı konsepti o yöne kaydırır." : "With \"As the concept\" the cover keeps the concept's own colours. Light/Mid/Dark shift the same concept in that direction."}</p>
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {(
               [
+                ["concept", tr ? "Konsepte göre" : "As the concept"],
                 ["light", tr ? "Açık" : "Light"],
                 ["mid", tr ? "Orta" : "Mid"],
                 ["dark", tr ? "Koyu" : "Dark"],
               ] as [Tone, string][]
             ).map(([v, label]) => (
-              <button key={v} type="button" onClick={() => patch({ tone: v })} aria-pressed={brief.tone === v} className={pill(brief.tone === v)}>
+              <button key={v} type="button" onClick={() => patch({ tone: v, toneChosen: v !== "concept" })} aria-pressed={tone === v} className={pill(tone === v)}>
                 {label}
               </button>
             ))}

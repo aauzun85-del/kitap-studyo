@@ -27,15 +27,23 @@ const STYLE_IDS = [
   "vintage",
 ] as const;
 
-const Schema = z.object({
-  artDirection: z
-    .string()
-    .describe(
-      "A vivid ENGLISH art-direction for the cover ILLUSTRATION ONLY: the imagery/subject, " +
-        "mood, lighting, color palette and composition to paint. Describe a single evocative " +
-        "scene or symbol that fits the book. ABSOLUTELY NO text, no typography, no title, no " +
-        "lettering, no book-mockup wording — only what the picture shows. 1-3 sentences.",
-    ),
+const ART_FREE =
+  "A vivid ENGLISH art-direction for the cover ILLUSTRATION ONLY: the imagery/subject, " +
+  "mood, lighting, color palette and composition to paint. Describe a single evocative " +
+  "scene or symbol that fits the book. ABSOLUTELY NO text, no typography, no title, no " +
+  "lettering, no book-mockup wording — only what the picture shows. 1-3 sentences.";
+// Kapak kurgusu: konsept (teknik/palet/kompozisyon) ZATEN seçili → asistan yalnız
+// kitaba özgü ÖZNEYİ yazar; ayrı bir sahne/palet/ışık tarif ederse konsepti ezer.
+const ART_IN_CONCEPT =
+  "ENGLISH, 1-2 short sentences: ONLY the book-specific SUBJECT that should fill the given cover " +
+  "concept — which single object, figure, place, plant, animal or symbol from THIS book goes where the " +
+  "concept has its subject (replacing the concept's own example subject). Do NOT describe medium, " +
+  "style, palette, colours, lighting, background or composition — the concept already fixes them. " +
+  "If the concept is purely typographic, pattern-based or abstract with no pictorial subject, write exactly " +
+  "'No scene.' followed by one short clause on the book's mood. No text, title or lettering wording.";
+
+const makeSchema = (inConcept: boolean) => z.object({
+  artDirection: z.string().describe(inConcept ? ART_IN_CONCEPT : ART_FREE),
   suggestedStyle: z
     .enum(STYLE_IDS)
     .describe(
@@ -50,6 +58,8 @@ const Schema = z.object({
         "the plot, polished and natural. A single short paragraph — this is printed on the back cover.",
     ),
 });
+const SchemaFree = makeSchema(false);
+const SchemaInConcept = makeSchema(true);
 
 type Body = {
   title?: string;
@@ -57,10 +67,30 @@ type Body = {
   genre?: string;
   summary?: string;
   lang?: string;
+  /** Kapak kurgusunda seçilen konseptin komutu (İngilizce). Varsa asistan
+   *  sahne değil, konseptin içine girecek kitaba özgü ÖZNEYİ yazar. */
+  concept?: string;
 };
 
-function systemPrompt(language: "tr" | "en"): string {
+function systemPrompt(language: "tr" | "en", inConcept = false): string {
   const blurbLang = language === "tr" ? "Türkçe" : "English";
+  if (inConcept) {
+    return [
+      "You are an experienced book-cover art director and copywriter.",
+      "A COVER CONCEPT has already been chosen for this book. It fixes the medium, palette, lighting and composition of the cover.",
+      "From the given book info, produce three things: the book-specific SUBJECT for that concept (artDirection), a style choice, and a BACK-COVER BLURB.",
+      "",
+      "RULES:",
+      "1) artDirection names ONLY what this particular book contributes to the concept: the one object, figure, place or symbol that should stand where the concept has its subject. If the concept gives an example subject (\"e.g. …\"), propose this book's own equivalent of the SAME kind (a figure for a figure, a plant for a plant, a place for a place, an object for an object) in the same role and scale.",
+      "2) NEVER describe medium, style, palette, colours, lighting, background or composition, and never propose a different kind of picture than the concept — the concept is fixed.",
+      "3) If the concept has no pictorial subject (purely typographic, pattern-based or abstract — it says things like 'nothing else', 'no imagery', 'no objects'), write exactly 'No scene.' followed by one short clause on the book's mood, naming NO object.",
+      "4) NEVER include any text, words, title, author name, letters or typography in artDirection.",
+      "5) Write artDirection in ENGLISH, 1-2 short sentences, concrete and specific to this book; do not invent plot facts — if the summary is thin, derive the subject from the title and genre.",
+      "6) Choose the single best matching style preset id from the allowed list.",
+      `7) Write the backCover blurb in ${blurbLang} (the book's own language): 2-4 polished sentences, evocative, ` +
+        "curiosity-evoking, no plot spoilers, flawless spelling and grammar. A single short paragraph.",
+    ].join("\n");
+  }
   return [
     "You are an experienced book-cover art director and copywriter.",
     "From the given book info, produce three things: a cover ART DIRECTION, a style choice, and a BACK-COVER BLURB.",
@@ -83,6 +113,7 @@ function buildUserPrompt(b: Body): string {
     `Book title: ${b.title}`,
     b.author ? `Author: ${b.author}` : "",
     b.genre ? `Genre: ${b.genre}` : "",
+    b.concept ? `\nCHOSEN COVER CONCEPT (fixed — do not restate or alter it):\n${b.concept}` : "",
     b.summary ? "\nOpening / excerpt of the book (for theme only):\n" + b.summary : "",
   ]
     .filter(Boolean)
@@ -109,6 +140,8 @@ export async function POST(request: Request) {
   const language: "tr" | "en" = body.lang === "en" ? "en" : "tr";
   // Özeti sınırla (maliyet + zaman aşımı koruması).
   const summary = (body.summary ?? "").trim().slice(0, MAX_CHARS);
+  const concept = (typeof body.concept === "string" ? body.concept : "").trim().slice(0, 3000);
+  const inConcept = concept.length > 0;
 
   const gate = await chargeCredits("cover-prompt");
   if (!gate.ok) return gate.response;
@@ -123,18 +156,18 @@ export async function POST(request: Request) {
     const response = await client.messages.parse({
       model: "claude-opus-4-7",
       max_tokens: 1200,
-      output_config: { format: zodOutputFormat(Schema) },
+      output_config: { format: zodOutputFormat(inConcept ? SchemaInConcept : SchemaFree) },
       system: [
         {
           type: "text",
-          text: systemPrompt(language),
+          text: systemPrompt(language, inConcept),
           cache_control: { type: "ephemeral" },
         },
       ],
       messages: [
         {
           role: "user",
-          content: buildUserPrompt({ ...body, title, summary }),
+          content: buildUserPrompt({ ...body, title, summary, concept: inConcept ? concept : undefined }),
         },
       ],
     }, {

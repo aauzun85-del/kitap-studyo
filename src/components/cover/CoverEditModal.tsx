@@ -118,6 +118,8 @@ export default function CoverEditModal({
       }
       setDims({ w: Math.round(w), h: Math.round(h) });
     };
+    // Buluttan gelen görsel: CORS izniyle yükle (yoksa piksel/maske okunamaz).
+    if (/^https?:\/\//i.test(image)) img.crossOrigin = "anonymous";
     img.src = image;
   }, [image]);
 
@@ -676,6 +678,8 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     const img = new Image();
     img.onload = () => resolve(img);
     img.onerror = reject;
+    // Buluttan gelen görsel: CORS izniyle yükle (yoksa piksel/maske okunamaz).
+    if (/^https?:\/\//i.test(src)) img.crossOrigin = "anonymous";
     img.src = src;
   });
 }

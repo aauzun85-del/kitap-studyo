@@ -7,7 +7,9 @@
 
 import { getConceptOf, resolveStandard } from "./standards";
 
-export type Tone = "light" | "mid" | "dark";
+// "concept" = konseptin KENDİ paleti (varsayılan). Açık/Orta/Koyu yalnız kullanıcı
+// bilerek seçerse devreye girer ve konseptin paletini o yöne kaydırır.
+export type Tone = "concept" | "light" | "mid" | "dark";
 export type BriefScope = "front" | "wrap";
 
 export type CoverBrief = {
@@ -22,6 +24,9 @@ export type CoverBrief = {
    *  fontuyla bindirir (düzenlenebilir). Varsayılan "ai". */
   textBy?: "ai" | "app";
   tone: Tone;
+  /** Tonu kullanıcı BİLEREK seçti. Yoksa (eski kurgularda varsayılan "light"
+   *  kaydedilmişti ve konsepti eziyordu) ton = konseptin kendi paleti sayılır. */
+  toneChosen?: boolean;
   scope: BriefScope;
   /** Yazar kendi fotoğrafını yükledi (fotoğraf IndexedDB'de bekler, bkz.
    *  briefPhoto.ts). Varsa kapağı yapay zekâ değil uygulama kurar. */
@@ -54,30 +59,52 @@ export const BRIEF_TEXT_STYLES: BriefTextStyle[] = [
   { id: "panelli", name: { tr: "Panelli (yoğun görsel için)", en: "Panelled (for busy art)" }, templateId: "sahne", previewFamily: '"EB Garamond", Georgia, serif', previewWeight: 600 },
 ];
 
-export const TONE_PROMPTS: Record<Tone, string> = {
-  light: "Palette: light and airy overall — pale grounds, soft mid-tone details; avoid large dark or black areas.",
-  mid: "Palette: balanced mid-tones with gentle contrast; neither washed-out nor heavy; avoid large pure-black areas.",
-  dark: "Palette: deep and dark overall with a single luminous focal light; keep the title zone and logo zone smoother and slightly lighter so printed text stays readable.",
+// Yalnız kullanıcı tonu bilerek seçtiyse komuta girer: konseptin paletini
+// DEĞİŞTİRMEZ, aynı renk ailesini açık/orta/koyu anahtara kaydırır.
+export const TONE_PROMPTS: Record<Exclude<Tone, "concept">, string> = {
+  light:
+    "Tone adjustment (requested): keep the CONCEPT's medium, hues and composition, but play it in a LIGHT key — " +
+    "paler grounds, softer mid-tone details; avoid large dark or black areas.",
+  mid:
+    "Tone adjustment (requested): keep the CONCEPT's medium, hues and composition, but play it in a balanced " +
+    "MID-TONE key with gentle contrast; neither washed-out nor heavy; avoid large pure-black areas.",
+  dark:
+    "Tone adjustment (requested): keep the CONCEPT's medium, hues and composition, but play it in a DEEP, DARK key; " +
+    "keep the text areas and the logo zone smoother and slightly lighter so printed text stays readable.",
 };
+
+/** Geçerli ton: kullanıcı bilerek seçmediyse konseptin kendi paleti. */
+export function effectiveTone(brief: Pick<CoverBrief, "tone" | "toneChosen">): Tone {
+  // Bu alan eklenmeden önce kaydedilen kurgularda varsayılan "light" idi; kayıtlı
+  // "mid"/"dark" ancak bilerek seçilmiş olabilir → korunur.
+  const chosen = brief.toneChosen ?? (brief.tone === "mid" || brief.tone === "dark");
+  return chosen ? brief.tone : "concept";
+}
 
 export function getTextStyle(id: string): BriefTextStyle {
   return BRIEF_TEXT_STYLES.find((s) => s.id === id) ?? BRIEF_TEXT_STYLES[0];
 }
 
-/** Kurgudan katmanlı komutun "stil" katmanı: tür standardı + konsept + ton. */
+/** Kurgudan katmanlı komutun "konsept" katmanı: tür standardı + konsept + ton. */
 export function briefStyleOverride(brief: CoverBrief): {
   stylePrompt: string;
   dark: boolean;
   tone: Tone;
+  /** Yalnız ton bilerek seçildiyse dolu; yoksa palet = konseptin kendi paleti. */
+  tonePrompt?: string;
   textLayout?: string;
   noteAsText: boolean;
 } {
   const standard = resolveStandard(brief.themaCode);
   const concept = getConceptOf(standard, brief.conceptId);
+  const tone = effectiveTone(brief);
   return {
     stylePrompt: concept.prompt,
-    dark: !!concept.dark || brief.tone === "dark",
-    tone: brief.tone,
+    // Koyu/açık zemin kuralları (arka kapak, logo bandı): ton seçilmediyse
+    // konseptin doğası, seçildiyse kullanıcının tonu belirler.
+    dark: tone === "concept" ? !!concept.dark : tone === "dark",
+    tone,
+    tonePrompt: tone === "concept" ? undefined : TONE_PROMPTS[tone],
     textLayout: concept.textLayout,
     noteAsText: !!concept.noteAsText,
   };
@@ -96,7 +123,7 @@ export function defaultBrief(themaCode = "FB"): CoverBrief {
     conceptId: standard.concepts[0].id,
     textStyleId: BRIEF_TEXT_STYLES[0].id,
     textBy: "ai",
-    tone: "light",
+    tone: "concept",
     scope: "wrap",
     createdAt: new Date().toISOString(),
   };

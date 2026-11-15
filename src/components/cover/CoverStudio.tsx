@@ -70,7 +70,6 @@ import {
 import {
   briefStyleOverride,
   getTextStyle,
-  TONE_PROMPTS,
   type CoverBrief,
 } from "@/lib/cover/brief";
 import { getConceptOf, resolveStandard } from "@/lib/cover/standards";
@@ -155,8 +154,9 @@ type AiGenOpts = {
   override?: LayeredStyleOverride;
   /** Verilirse ChatGPT başlık/yazar/tür etiketini GÖRSELE basar (yazı katmanları gizlenir). */
   text?: LayeredText;
-  /** Yazarın fotoğrafı için boş bırakılacak yuva (ChatGPT yolu). */
-  photoSlot?: PhotoSlot;
+  /** Yazarın fotoğrafı için boş bırakılacak yuva (ChatGPT yolu). null = bu
+   *  üretimde fotoğraf YOK (tuvaldeki eski yuvaya düşme); undefined = tuvaldeki. */
+  photoSlot?: PhotoSlot | null;
 };
 // Tarayıcı tarafı SON ÇARE zaman aşımları. Sunucu 120 sn içinde kendi temiz
 // hatasını döndürür; bunlar ancak bağlantı tamamen koparsa devreye girer.
@@ -891,7 +891,17 @@ export default function CoverStudio({
     // canvas.renderAll() yapar → kuyruktaki kare basılır.
     if (autoExportTimerRef.current) window.clearTimeout(autoExportTimerRef.current);
     const dataUrl = canvasRef.current?.getPrintDataUrl(PRINT_DPI);
-    if (!dataUrl) return false;
+    if (!dataUrl) {
+      // Sessiz kalma: düğmeye basan kullanıcı neden inmediğini görsün.
+      if (!silent && typeof window !== "undefined") {
+        window.alert(
+          lang === "tr"
+            ? "Kapak dışa aktarılamadı. Sayfayı yenileyip tekrar dene; sürerse bize yaz."
+            : "The cover couldn't be exported. Reload the page and try again; contact us if it persists.",
+        );
+      }
+      return false;
+    }
     setExporting(true);
     try {
       const safeTitle = (title || t.titlePlaceholder)
@@ -1613,6 +1623,47 @@ export default function CoverStudio({
     const sl = photoSlotMm(spread, photoLayout);
     return { layout: photoLayout, xMm: sl.x, yMm: sl.y, wMm: sl.w, hMm: sl.h };
   };
+  // KURGU KONSEPTİ → ChatGPT komutunun konsept + yazı katmanları. Hem kurgudan
+  // gelen ilk üretim hem de tuvaldeki "Üret" düğmesi bunu kullanır (yoksa
+  // yeniden üretimde konsept düşer, hazır stil ön ayarı devreye girerdi).
+  const conceptGenOpts = (
+    b: CoverBrief,
+    photoSlot: PhotoSlot | undefined,
+  ): Pick<AiGenOpts, "override" | "text"> => {
+    const standard = resolveStandard(b.themaCode);
+    const concept = getConceptOf(standard, b.conceptId);
+    const ov = briefStyleOverride(b);
+    const usePhoto = !!photoSlot && concept.photo?.layout === photoSlot.layout;
+    const note = (b.note ?? "").trim();
+    const byAi = (b.textBy ?? "ai") === "ai";
+    return {
+      // Yazıyı ChatGPT bassın (varsayılan): başlık/yazar/tür etiketi birebir.
+      text: byAi
+        ? {
+            title,
+            author,
+            subtitle: subtitle.trim() || undefined,
+            genreLabel: standard.label[lang] || undefined,
+            // Konsept "notu bas" diyorsa (şiir dizeleri) not kapağa birebir basılır.
+            extra: ov.noteAsText && note ? note : undefined,
+          }
+        : undefined,
+      override: {
+        // Fotoğraflı kapakta konsept cümlesi yerine "yuvayı boş bırak" tarifi;
+        // zemin rengi konsepte aittir → ton seçimi komuta girmez.
+        stylePrompt: usePhoto && concept.photo ? concept.photo.prompt : ov.stylePrompt,
+        dark: usePhoto ? !!concept.dark : ov.dark,
+        tonePrompt: usePhoto ? undefined : ov.tonePrompt,
+        // Fotoğraf yuvası varken konsept kendi "yuvalı" yazı düzenini verebilir.
+        textLayout: usePhoto && concept.photo?.textLayout ? concept.photo.textLayout : ov.textLayout,
+        bookTitle: title,
+      },
+    };
+  };
+  // Tuvalde geçerli (atlanmamış) bir kurgu var mı → ChatGPT üretimi konseptle yapılır.
+  const activeBrief = brief && !brief.skipped ? brief : null;
+  const slotFor = (opts?: AiGenOpts): PhotoSlot | undefined =>
+    opts?.photoSlot === undefined ? currentPhotoSlot() : (opts.photoSlot ?? undefined);
   const generateAiCover = async (opts?: AiGenOpts): Promise<boolean> => {
     if (aiBusyRef.current) return false; // zaten üretiliyor → çift istek yok
     aiBusyRef.current = true;
@@ -1655,7 +1706,7 @@ export default function CoverStudio({
               override: opts?.override,
               text: opts?.text,
               // Fotoğraf zaten yerleştirildiyse yeniden üretimde de yuva boş kalsın.
-              photoSlot: opts?.photoSlot ?? currentPhotoSlot(),
+              photoSlot: slotFor(opts),
             })
           : embed
             ? buildNanoCoverPrompt({
@@ -1744,7 +1795,7 @@ export default function CoverStudio({
       if (useModel === "openai") setTitlePos("top");
       // Fotoğraf yuvası istendiyse: yapay zekânın bıraktığı YEŞİL yer tutucunun
       // gerçek yerini ölç → fotoğraf tam oraya oturur (yazılarla hizalı kalır).
-      const slotUsed = useModel === "openai" ? (opts?.photoSlot ?? currentPhotoSlot()) : undefined;
+      const slotUsed = useModel === "openai" ? slotFor(opts) : undefined;
       if (!slotUsed) {
         if (!photoImage) setPhotoLayout(null); // fotoğraf yoksa tam kapak
       } else {
@@ -1993,7 +2044,9 @@ export default function CoverStudio({
         const res = await fetch("/api/cover-prompt", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, author, genre, summary, lang }),
+          // Konsepti de gönder: asistan ayrı bir sahne/palet değil, konseptin
+          // içine girecek kitaba özgü ÖZNEYİ yazsın (yoksa konsepti ezer).
+          body: JSON.stringify({ title, author, genre, summary, lang, concept: concept.prompt }),
           signal: ctrl.signal,
         });
         if (res.ok) {
@@ -2014,43 +2067,29 @@ export default function CoverStudio({
         // Not: ya sahne tarifine eklenir ya da (konsept "notu bas" diyorsa, ör.
         // şiir dizeleri) kapağa birebir basılacak metin olur.
         const noteAsText = ov0.noteAsText && (b.textBy ?? "ai") === "ai" && !!note;
-        if (note && !noteAsText) desc = desc ? `${note}. ${desc}` : note;
+        // Kullanıcının notu açık istektir → asistanın öznesinden önce gelir.
+        if (note && !noteAsText) {
+          const ask = `Explicit request from the author (must be honoured): ${note}.`;
+          // Asistan "No scene." dediyse (resimsiz konsept) yalnız kullanıcının isteği kalır.
+          desc = desc && !/^\s*no scene\b/i.test(desc) ? `${ask} ${desc}` : ask;
+        }
         const ts = getTextStyle(b.textStyleId);
         setTemplateId(ts.templateId);
         setTitlePos("top");
         setAiModel("openai");
         setAiScope(b.scope);
-        setAiDesc(desc);
+        // Asistanın iç işareti ("No scene. …") kullanıcının düzenlediği kutuya
+        // yazılmaz; ilk üretim yine tam metni kullanır.
+        setAiDesc(/^\s*no scene\b/i.test(desc) ? "" : desc);
         setCoverGenMsg(lang === "tr" ? "Kapak görseli üretiliyor…" : "Generating cover artwork…");
-        const ov = briefStyleOverride(b);
-        // Yazıyı ChatGPT bassın (varsayılan): başlık/yazar/tür etiketi birebir.
-        const text: LayeredText | undefined =
-          (b.textBy ?? "ai") === "ai"
-            ? {
-                title,
-                author,
-                subtitle: subtitle.trim() || undefined,
-                genreLabel: resolveStandard(b.themaCode).label[lang],
-                extra: noteAsText ? note : undefined,
-              }
-            : undefined;
         const done = await generateAiCover({
           styleId: aiStyle,
           desc,
           model: "openai",
           scope: b.scope,
           embedText: false,
-          // Fotoğraflı kapakta konsept cümlesi yerine "yuvayı boş bırak" tarifi.
-          photoSlot,
-          override: {
-            // Fotoğraflı konseptte zemin rengi konsepte aittir → ton seçimi komuta girmez.
-            stylePrompt: photoSlot && concept.photo ? concept.photo.prompt : ov.stylePrompt,
-            dark: photoSlot && concept.photo ? !!concept.dark : ov.dark,
-            tonePrompt: photoSlot && concept.photo ? undefined : TONE_PROMPTS[ov.tone],
-            // Fotoğraf yuvası varken konsept kendi "yuvalı" yazı düzenini verebilir.
-            textLayout: photoSlot && concept.photo?.textLayout ? concept.photo.textLayout : ov.textLayout,
-          },
-          text,
+          photoSlot: photoSlot ?? null,
+          ...conceptGenOpts(b, photoSlot),
         });
         if (done && blurb) addBackCoverBlurb(blurb);
       } finally {
@@ -2390,6 +2429,23 @@ export default function CoverStudio({
               </Field>
             )}
 
+            {activeBrief && aiModel === "openai" && (
+              <div className="rounded-lg border border-accent/30 bg-accent-soft px-3 py-2 text-xs text-foreground">
+                <div className="font-semibold">
+                  {lang === "tr" ? "Konsept (kurgudan)" : "Concept (from the brief)"}
+                </div>
+                <div className="mt-0.5">
+                  {resolveStandard(activeBrief.themaCode).name[lang]} ·{" "}
+                  {getConceptOf(resolveStandard(activeBrief.themaCode), activeBrief.conceptId).name[lang]}
+                </div>
+                <div className="mt-1 text-muted">
+                  {lang === "tr"
+                    ? "Üret'e basınca bu konseptle üretilir. Değiştirmek için yukarıdaki Kapak kurgusu bağlantısını kullan."
+                    : "Generate uses this concept. Change it via the cover brief link above."}
+                </div>
+              </div>
+            )}
+            {!(activeBrief && aiModel === "openai") && (
             <Field label={t.aiStyleLabel}>
               <select
                 value={aiStyle}
@@ -2403,6 +2459,7 @@ export default function CoverStudio({
                 ))}
               </select>
             </Field>
+            )}
 
             <Field label={t.aiScopeLabel} hint={t.aiScopeHint}>
               <div className="grid grid-cols-2 gap-2">
@@ -2427,7 +2484,22 @@ export default function CoverStudio({
 
             <button
               type="button"
-              onClick={() => generateAiCover()}
+              onClick={() => {
+                // Kurgu varsa ChatGPT üretimi seçili KONSEPTLE yapılır (konsept düşmez).
+                // Tuvaldeki fotoğraf yuvası konseptin düzenine uymuyorsa eski yol.
+                const slot = currentPhotoSlot();
+                const ok =
+                  !!activeBrief &&
+                  aiModel === "openai" &&
+                  (!slot ||
+                    getConceptOf(resolveStandard(activeBrief.themaCode), activeBrief.conceptId).photo?.layout ===
+                      slot.layout);
+                void generateAiCover(
+                  ok && activeBrief
+                    ? { model: "openai", desc: aiDesc, scope: aiScope, embedText: false, ...conceptGenOpts(activeBrief, slot) }
+                    : undefined,
+                );
+              }}
               disabled={aiBusy}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >

@@ -13,6 +13,8 @@ export async function spineColorFromImage(dataUrl: string): Promise<string | nul
       const el = new Image();
       el.onload = () => resolve(el);
       el.onerror = () => reject(new Error("image"));
+      // Buluttan gelen (imzalı URL) görsel: CORS izniyle yükle, yoksa piksel okunamaz.
+      if (/^https?:\/\//i.test(dataUrl)) el.crossOrigin = "anonymous";
       el.src = dataUrl;
     });
     const W = 48;
@@ -65,6 +67,8 @@ export async function findChromaRect(
       const el = new Image();
       el.onload = () => resolve(el);
       el.onerror = () => reject(new Error("image"));
+      // Buluttan gelen (imzalı URL) görsel: CORS izniyle yükle, yoksa piksel okunamaz.
+      if (/^https?:\/\//i.test(dataUrl)) el.crossOrigin = "anonymous";
       el.src = dataUrl;
     });
     const W = Math.min(640, img.width);

@@ -323,6 +323,8 @@ export type LayeredStyleOverride = {
   /** Konsepte özel yazı yerleşimi (İngilizce); varsa genel "yazar üstte, başlık
    *  altında" düzeninin yerine geçer (yalnız yazıyı ChatGPT basarken). */
   textLayout?: string;
+  /** Kitabın adı: kitap asistanı özne yazamadıysa model özneyi addan seçer. */
+  bookTitle?: string;
 };
 
 // Yazıyı ChatGPT bassın istenirse: BİREBİR yazılacak metinler. Yoksa görsel
@@ -370,6 +372,21 @@ export function buildLayeredPrompt(opts: {
   const focalTop = titleBottom + 0.02;
   const focalBottom = 1 - logoBand - 0.08;
   const front = opts.wrap ? "the FRONT COVER section" : "the cover";
+  // KONSEPT KİPİ (kurgudan gelen override): konsept kapağın görünüşünün TEK
+  // sahibidir (teknik, palet, kompozisyon). Kitaba özgü özne konseptin İÇİNE
+  // yerleşir; genel yerleşim satırları yalnız bölgeleri (arka/sırt/ön/logo)
+  // söyler, konseptle yarışan resim tarifi içermez.
+  const concept = !!opts.override;
+  // Konsept kipinde çerçeve/panel/rozet yasağı YOK: bazı konseptler (klasik
+  // çerçeve, fildişi panel, yaş rozeti) bunları bilerek ister.
+  const formatLine = concept
+    ? "FORMAT: flat 2D print file — the cover's own ground (paper, colour or picture) reaches all four " +
+      "canvas edges; not a book mockup, not a 3D book, not a product photo, no extra border or backdrop " +
+      "around the sheet. White space, margins and inset pictures INSIDE the design stay exactly as the " +
+      "CONCEPT describes. Frames, borders, panels or badges appear ONLY if the CONCEPT asks for them."
+    : "FORMAT: flat 2D full-bleed artwork — fills 100% of the canvas edge to edge. " +
+      "Not a book mockup, not a 3D book, not a product photo, no frame, no border, " +
+      "no inset panel, no margins, no badges.";
 
   const lines: string[] = [
     // Çerçeve: ciddi yayıncılık işi, jenerik AI görseli değil (kullanıcının
@@ -378,19 +395,58 @@ export function buildLayeredPrompt(opts: {
       "publishing cover, carefully composed like a commissioned literary jacket, not " +
       "generic AI art, not stock art, not a template. Image and (future) typography " +
       "must read as one purposeful design.",
-    "FORMAT: flat 2D full-bleed artwork — fills 100% of the canvas edge to edge. " +
-      "Not a book mockup, not a 3D book, not a product photo, no frame, no border, " +
-      "no inset panel, no margins, no badges.",
+    formatLine,
   ];
   // Fotoğraf yuvası varsa sahne = yazarın fotoğrafı; ayrıca sahne çizdirme.
-  if (desc && !opts.photoSlot) lines.push(`SCENE: ${desc}`);
+  if (concept) {
+    lines.push(
+      "CONCEPT (the art direction — it alone decides the medium, palette, composition and mood of " +
+        "this cover; follow it faithfully and do not swap it for a different kind of picture): " +
+        `${style.prompt}. Gallery-quality, striking and memorable; elegant restraint.`,
+    );
+    if (!opts.photoSlot) {
+      const how =
+        "express it strictly INSIDE the concept — same medium, same palette, same composition. Where the " +
+        "concept offers an example subject (\"e.g. …\", \"or a comparable …\"), swap in this book's own " +
+        "equivalent of the SAME kind (a figure for a figure, a plant for a plant, a place for a place). If " +
+        "this book's subject is a different kind of thing, or the concept fixes its own subject, keep the " +
+        "concept's subject and composition and add it only as one small secondary detail — never the hero, " +
+        "never in the lettering area. If the concept has no pictorial subject (purely typographic, " +
+        "pattern-based or abstract), draw NO scene, object, figure, icon or ornament from it — it only " +
+        "steers the mood (and, in a pattern-based concept, the choice of the pattern's own motif)";
+      const bt = opts.override?.bookTitle?.trim();
+      // Kitap asistanı resimsiz konseptte "No scene. <ruh hâli>" yazar → nesne
+      // adı komuta hiç girmez (adı geçen nesne çoğu zaman çizilir).
+      const noScene = /^\s*no scene\b[.:;,\s-]*/i.exec(desc);
+      if (noScene) {
+        const mood = desc.slice(noScene[0].length).trim();
+        lines.push(
+          "BOOK MOOD (this book adds no pictorial subject of its own — add NO object, figure, place, icon " +
+            "or ornament beyond what the CONCEPT itself describes; this only steers colour temperature and " +
+            `rhythm)${mood ? `: ${mood}` : "."}`,
+        );
+      } else if (desc) {
+        lines.push(`BOOK SUBJECT (what this particular book is about; ${how}): ${desc}`);
+      } else if (bt) {
+        lines.push(
+          `BOOK SUBJECT: choose the single subject that best fits a book titled "${bt.replace(/"/g, "'")}"; ${how}.`,
+        );
+      }
+    }
+  } else {
+    if (desc && !opts.photoSlot) lines.push(`SCENE: ${desc}`);
+    lines.push(
+      `STYLE: ${style.prompt}. Gallery-quality, striking and memorable; ` +
+        (opts.photoSlot
+          ? "elegant restraint throughout."
+          : "rich detail and depth concentrated in the focal subject, elegant restraint everywhere else."),
+    );
+  }
   lines.push(
-    `STYLE: ${style.prompt}. Gallery-quality, striking and memorable; ` +
-      (opts.photoSlot
-        ? "elegant restraint throughout."
-        : "rich detail and depth concentrated in the focal subject, elegant restraint everywhere else."),
+    concept
+      ? "LAYOUT (strict geometry — WHERE things go; how they look still comes from the CONCEPT):"
+      : "LAYOUT (strict, follow exactly):",
   );
-  lines.push("LAYOUT (strict, follow exactly):");
   const ps = opts.photoSlot;
   if (ps) {
     // Görselin kapsadığı alan: sarmalda tüm tuval, önde yalnız ön kapak (+taşma).
@@ -427,6 +483,36 @@ export function buildLayeredPrompt(opts: {
   if (opts.wrap) {
     const backEnd = (g.bleed + g.bookWidth) / g.totalWidth;
     const spineEnd = backEnd + g.spine / g.totalWidth;
+    if (concept) {
+      lines.push(
+        `- The canvas is one continuous wraparound sheet. The left ${pct(backEnd)} of the width is the ` +
+          "BACK COVER: one plain, even field in the concept's quietest ground colour with only its " +
+          "paper/grain texture — the front cover's picture, band, panel, pattern or motif does NOT continue " +
+          "onto it; no title, no subject; " +
+          (style.dark
+            ? "keep it at the same depth of colour as the front ground (never paler), even and low-detail, " +
+              "so light paragraph text can be printed over it."
+            : "make it clearly lighter, paler and lower-contrast than the front (pale enough to print dark " +
+              "paragraph text over it); a flat-colour concept simply uses a paler tint of its own ground."),
+      );
+      // Sırtı uygulama düz bantla kapatır → "dikişsiz" şartı yok (fotoğraf+bant
+      // konseptlerinde resmi arka kapağa taşırıyordu).
+      lines.push(
+        `- Between ${pct(backEnd)} and ${pct(spineEnd)} of the width is the SPINE zone: the front-cover ` +
+          "design ends at the left edge of the front cover; across this strip it settles into the back " +
+          "cover's quiet ground — a short soft transition or a plain edge are both fine (this strip is " +
+          "covered later); calm, low-detail, nothing important sits or crosses there.",
+      );
+      lines.push(
+        `- The right ${pct(1 - spineEnd)} of the width is the FRONT COVER section: ` +
+          (ps
+            ? "it carries only the ground, the typography and the photo placeholder exactly where " +
+              "specified above — no other subject; do not move, resize or center the placeholder."
+            : "this section alone is \"the cover\" the CONCEPT describes — its whole composition, subject " +
+              "and typography live inside it, and every position the concept gives (top, lower half, centre, " +
+              "left, right…) is measured within this section, never across the whole sheet."),
+      );
+    } else {
     lines.push(
       `- One continuous wraparound scene. The left ${pct(backEnd)} of the width is the ` +
         "BACK COVER: a much lighter, paler and calmer continuation of the scene in soft " +
@@ -445,6 +531,7 @@ export function buildLayeredPrompt(opts: {
             "specified above — no other subject; do not move, resize or center the placeholder."
           : "the main subject lives here, horizontally centered within this section."),
     );
+    }
   }
   const tx = opts.text;
   const q = (s: string) => `"${s.replace(/"/g, "'")}"`;
@@ -459,7 +546,21 @@ export function buildLayeredPrompt(opts: {
     ].filter(Boolean);
     lines.push(
       `- Typography (strict${opts.wrap ? "; every position below is relative to the FRONT COVER section, never the back cover or spine" : ""}): ` +
-        `${opts.override.textLayout} Text elements: ${items.join("; ")}. ` +
+        `${opts.override.textLayout}` +
+        // Konseptin düzeni alt başlığı / tür etiketini yerleştirmiyorsa model
+        // onu başlığa katmasın ya da rastgele bir yere koymasın.
+        (tx.subtitle && !/subtitle/i.test(opts.override.textLayout)
+          ? " Subtitle (the concept does not place it): one small quiet horizontal line in the concept's " +
+            "secondary text colour, directly beneath the title, clearly subordinate — never larger than " +
+            "the author line and never styled as a second title."
+          : "") +
+        (tx.genreLabel && !/label/i.test(opts.override.textLayout)
+          ? " Genre label (the concept does not place it): tiny, widely tracked, directly beneath the author line."
+          : "") +
+        ` Text elements: ${items.join("; ")}. ` +
+        "Each listed element appears exactly once; if the layout names more label slots than there are " +
+        "listed elements (series word, series number, second label), fill the first slot it names and " +
+        "leave the others empty — never repeat or invent words or numbers. " +
         "Correct Turkish diacritics (İ ı Ş ş Ğ ğ Ü ü Ö ö Ç ç), optical kerning, generous margins; " +
         "image and typography share one purposeful design.",
     );
@@ -467,7 +568,9 @@ export function buildLayeredPrompt(opts: {
     // Yazı görsele gömülür: konum/ölçü senin örnek komutlarındaki düzen.
     const parts = [
       `- Typography zone: the top ${pct(titleBottom)} of ${front} is quiet negative space ` +
-        "(sky, wall, mist, paper) blending naturally into the image, never a boxed panel; " +
+        (concept
+          ? "in the concept's own calm ground, never a boxed panel; "
+          : "(sky, wall, mist, paper) blending naturally into the image, never a boxed panel; ") +
         "it carries ALL the text:",
       `  · author ${q(tx.author)} — small, widely tracked uppercase, centered at about 8% of the height;`,
       `  · title ${q(tx.title)} — between about 15% and ${pct(titleBottom)} of the height, ` +
@@ -490,9 +593,11 @@ export function buildLayeredPrompt(opts: {
   } else {
     lines.push(
       `- Title zone: the top ${pct(titleBottom)} of ${front} is quiet negative space — ` +
-        "soft, even, low-detail tone that blends NATURALLY into the image (sky, wall, " +
-        "mist, paper), never a boxed panel — the author name, title and a tiny genre " +
-        "label will be printed there later.",
+        (concept
+          ? "the concept's own ground kept soft, even and low-detail there, never a boxed panel"
+          : "soft, even, low-detail tone that blends NATURALLY into the image (sky, wall, " +
+            "mist, paper), never a boxed panel") +
+        " — the author name, title and a tiny genre label will be printed there later.",
     );
   }
   lines.push(
@@ -500,21 +605,38 @@ export function buildLayeredPrompt(opts: {
       ? `- Logo zone: the bottom ${pct(logoBand)} of ${front}, only the part to the LEFT of the green ` +
           "placeholder, must be plain and free of detail — a publisher logo goes at the lower left; keep " +
           "the author name above this strip. The placeholder itself still runs down to the bottom edge."
-      : `- Logo zone: the bottom ${pct(logoBand)} of ${front} must be light-toned, plain and ` +
+      : concept
+        ? // Ayrı açık şerit İSTENMEZ: düz renkli/bantlı/alta taşan resimli
+          // konseptlerde "açık tonlu bant" kapağın altına yabancı bir şerit çiziyordu.
+          `- Logo zone: the bottom ${pct(logoBand)} of ${front} carries no text and no essential detail ` +
+          "(no face, hands, key object or motif); the concept's own ground or picture simply continues " +
+          "through it, calm and even, in its own colour and value — never a separate strip, band, panel, " +
+          "glow or fade, and never a cut-off of a picture the CONCEPT runs down to the bottom edge (it " +
+          "passes through only as a quiet low-detail area); a border, frame or rule line the CONCEPT allows " +
+          "closes above this zone, never running through it. A publisher logo is overlaid there later; any " +
+          "text the typography places near the bottom sits just above this zone."
+        : `- Logo zone: the bottom ${pct(logoBand)} of ${front} must be light-toned, plain and ` +
           "free of detail — a publisher logo and the author name go there.",
   );
   if (!ps) lines.push(
-    `- Main subject: between ${pct(focalTop)} and ${pct(focalBottom)} of the height of ` +
-      `${front}, clearly visible, not touching the edges; placed slightly off-center ` +
-      "to avoid dull perfect symmetry; strong composition with purposeful negative space.",
+    concept
+      ? "- Focal element (only if the CONCEPT has one; add none otherwise): place and scale it exactly " +
+        `as the CONCEPT says; keep it within ${front}${opts.wrap ? " (never crossing the spine)" : ""} ` +
+        "and keep its essential parts clear of the typography and of the logo zone."
+      : `- Main subject: between ${pct(focalTop)} and ${pct(focalBottom)} of the height of ` +
+        `${front}, clearly visible, not touching the edges; placed slightly off-center ` +
+        "to avoid dull perfect symmetry; strong composition with purposeful negative space.",
   );
   lines.push(
     opts.override?.tonePrompt
       ? `- ${opts.override.tonePrompt}`
-      : style.dark
-        ? "- Palette may be dark, but keep the title zone and logo zone smoother and a little " +
-          "lighter so printed text stays readable."
-        : "- Palette: light to mid tones overall; avoid large very dark or black areas.",
+      : concept
+        ? "- Palette: exactly the CONCEPT's own colours and values — do not lighten, darken or recolour it" +
+          (opts.wrap && !style.dark ? " (only the back cover is paler, as specified above)." : ".")
+        : style.dark
+          ? "- Palette may be dark, but keep the title zone and logo zone smoother and a little " +
+            "lighter so printed text stays readable."
+          : "- Palette: light to mid tones overall; avoid large very dark or black areas.",
   );
   if (tx) {
     const allowed = [tx.author, tx.title, tx.subtitle, tx.genreLabel, tx.extra]
@@ -530,15 +652,31 @@ export function buildLayeredPrompt(opts: {
           : ""),
     );
     lines.push(
-      "CONSTRAINTS: no book object, no spine shadow, no page edges. No floating objects, " +
-        "no magical particles, no cosmic effects, no artificial glow, no stock-art clichés.",
+      "CONSTRAINTS: no book object, no spine shadow, no page edges. " +
+        // Konsept kipinde üslup yasakları konseptin kendi "no …" listesinden gelir
+        // (fantastik/ezoterik konseptler ışıltı isteyebilir).
+        (concept
+          ? "No stock-art clichés; nothing the CONCEPT excludes."
+          : "No floating objects, no magical particles, no cosmic effects, no artificial glow, no stock-art clichés."),
     );
   } else {
     lines.push(
       "CONSTRAINTS: absolutely no text, no letters, no words, no title, no logo, no numbers, " +
         "no watermark, no signature. No book object, no spine shadow, no page edges. " +
-        "No floating objects, no magical particles, no cosmic effects, no artificial glow, " +
-        "no stock-art clichés.",
+        (concept
+          ? "No stock-art clichés; nothing the CONCEPT excludes."
+          : "No floating objects, no magical particles, no cosmic effects, no artificial glow, " +
+            "no stock-art clichés."),
+    );
+  }
+  if (concept) {
+    lines.push(
+      "PRIORITY: if two instructions seem to conflict — the CONCEPT decides how the cover looks (medium, " +
+        "colours, composition); LAYOUT decides where the zones are (" +
+        (opts.wrap ? "back cover, spine, front cover, " : "") +
+        `logo zone${ps ? ", photo placeholder" : ""})` +
+        (tx ? "; EXACT TEXT decides the words" : "") +
+        ". The book line (BOOK SUBJECT / BOOK MOOD) never changes the concept's look.",
     );
   }
   return lines.join("\n");
