@@ -6,7 +6,7 @@ import { getSidebarCollapsed } from "@/lib/app/prefs";
 import { signOutAction } from "@/app/[lang]/auth-actions";
 import Dashboard from "@/components/app/Dashboard";
 
-export default async function ProjelerPage({ params }: PageProps<"/[lang]/projeler">) {
+export default async function ProjelerPage({ params, searchParams }: PageProps<"/[lang]/projeler">) {
   const { lang } = await params;
   if (!isLocale(lang)) notFound();
 
@@ -15,6 +15,7 @@ export default async function ProjelerPage({ params }: PageProps<"/[lang]/projel
 
   const shellUser = (await toShellUser(user))!;
   const collapsed = await getSidebarCollapsed();
+  const sp = await searchParams;
 
   return (
     <Dashboard
@@ -22,6 +23,7 @@ export default async function ProjelerPage({ params }: PageProps<"/[lang]/projel
       user={shellUser}
       signOut={signOutAction.bind(null, lang)}
       defaultCollapsed={collapsed}
+      openNew={sp.yeni === "1"}
     />
   );
 }

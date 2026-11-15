@@ -222,6 +222,7 @@ export default function CoverStudio({
   briefRun,
   user = null,
   signOut,
+  startPreview = false,
 }: {
   lang: Locale;
   dict: Dictionary;
@@ -240,6 +241,8 @@ export default function CoverStudio({
   /** Üst çubuktaki hesap rozeti (tam ekran düzende uygulama menüsü yok). */
   user?: { name: string; initials: string } | null;
   signOut?: () => Promise<void>;
+  /** İndirme ekranındaki "Önizle" → kapak doğrudan önizlemede (tam ekran, kılavuzsuz) açılır. */
+  startPreview?: boolean;
 }) {
   const t = dict.coverStudio;
   // Bulut projesi modu: ?project=<id> ile açıldıysa kayıt/yükleme buluta gider.
@@ -411,11 +414,11 @@ export default function CoverStudio({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Tuval görünümü: büyütme ve "büyük görünüm" (paneller gizli, tam ekran).
   const [zoom, setZoom] = useState(1);
-  const [bigView, setBigView] = useState(false);
+  const [bigView, setBigView] = useState(startPreview);
   // Yeni düzen: görünüm odağı, sağ panel açık mı, önizleme, hesap menüsü.
   const [viewFocus, setViewFocus] = useState<ViewFocus>("all");
   const [panelOpen, setPanelOpen] = useState(true);
-  const [preview, setPreview] = useState(false);
+  const [preview, setPreview] = useState(startPreview);
   const [accountOpen, setAccountOpen] = useState(false);
   const [viewInfo, setViewInfo] = useState<{ realPercent: number; maxZoom: number }>({ realPercent: 100, maxZoom: 3 });
   const [wizardBusy, setWizardBusy] = useState(false);
@@ -436,7 +439,7 @@ export default function CoverStudio({
   // Büyük görünüm sayfayı kendisi kaplar; tarayıcı tam ekranı yalnız EK bir
   // kazançtır. İkisi birbirine bağlı değil: tam ekran (Esc ya da bir onay
   // kutusu yüzünden) kapansa da büyük görünüm sürer; kapatmak için düğme/Esc.
-  const bigViewRef = useRef(false);
+  const bigViewRef = useRef(startPreview);
   const toggleBigView = async () => {
     const el = rootRef.current;
     if (!bigViewRef.current) {
@@ -1482,7 +1485,7 @@ export default function CoverStudio({
         let thumb: string | undefined;
         const now = Date.now();
         if (now - lastThumbRef.current > 4000) {
-          thumb = canvasRef.current?.getPrintDataUrl(36) ?? undefined;
+          thumb = canvasRef.current?.getPrintDataUrl(72) ?? undefined;
           lastThumbRef.current = now;
         }
         void saveProjectCover(projectId, draft, thumb)

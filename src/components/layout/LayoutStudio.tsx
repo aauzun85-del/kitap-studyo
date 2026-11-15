@@ -133,6 +133,9 @@ export default function LayoutStudio({
   canExport,
   user = null,
   signOut,
+  exportThenHref,
+  autoPreflight = false,
+  startFocus = false,
 }: {
   lang: Locale;
   dict: Dictionary;
@@ -140,6 +143,12 @@ export default function LayoutStudio({
   /** Üst çubuktaki hesap rozeti (tam ekran düzende uygulama menüsü yok). */
   user?: { name: string; initials: string } | null;
   signOut?: () => Promise<void>;
+  /** "Tüm dosyaları indir": iç sayfa PDF'i inince buraya geç (kapak indirmesi). */
+  exportThenHref?: string;
+  /** "Baskı kontrolü": sayfalar hazır olunca baskı denetimini kendiliğinden çalıştır. */
+  autoPreflight?: boolean;
+  /** "Önizle": büyük görünümde (paneller gizli) aç. */
+  startFocus?: boolean;
   /** İndirme ekranından "?export=1": sayfalama hazır olunca İç sayfa PDF'ini
    *  otomatik indir + üstte durum katmanı göster. */
   autoExport?: boolean;
@@ -227,7 +236,7 @@ export default function LayoutStudio({
     });
   // Odak modu: önizleme tüm pencereyi kaplar (uygulama başlığı/sihirbaz çubuğu
   // dahil hiçbir şey yer kaplamaz). ESC ile çıkılır.
-  const [focusMode, setFocusMode] = useState(false);
+  const [focusMode, setFocusMode] = useState(startFocus);
   useEffect(() => {
     if (!focusMode) return;
     const onKey = (e: KeyboardEvent) => {
@@ -953,8 +962,10 @@ export default function LayoutStudio({
     void (async () => {
       const ok = await handleExportPdfTypst(); // varsayılan = gördüğün baskı sayfası
       setAutoExportStatus(ok ? "done" : "error");
+      // "Tüm dosyaları indir": iç sayfa indi → kapağın indirmesine geç.
+      if (ok && exportThenHref) window.setTimeout(() => window.location.assign(exportThenHref), 1500);
     })();
-  }, [autoExport, canExport, fontsReady, pages.length, handleExportPdfTypst]);
+  }, [autoExport, canExport, fontsReady, pages.length, handleExportPdfTypst, exportThenHref]);
 
   // SAFETY: yazı tipi/sayfalama asılı kalırsa overlay sonsuza dek "hazırlanıyor"
   // kalmasın → ~12 sn içinde tetiklenmediyse "error"a düş (elle "Tekrar dene").
@@ -1298,6 +1309,20 @@ export default function LayoutStudio({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // İndirme ekranındaki "Baskı kontrolü": sayfalar hazır olunca denetimi bir kez
+  // kendiliğinden çalıştır (rapor penceresi açılır) ve Denetim panelini göster.
+  const autoPreflightFiredRef = useRef(false);
+  useEffect(() => {
+    if (!autoPreflight || autoPreflightFiredRef.current) return;
+    if (blocks.length === 0 || docPageCount === 0) return;
+    autoPreflightFiredRef.current = true;
+    const id = window.setTimeout(() => {
+      setPanel("quality");
+      void handlePreflight();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [autoPreflight, blocks.length, docPageCount, handlePreflight]);
 
   // "Tüm kitaba uygula": paragraf paragraf verilmiş yazı tipi/punto ayarlarını
   // kaldırır → paneldeki ayar kitabın HER yerinde geçerli olur (geri alınabilir).

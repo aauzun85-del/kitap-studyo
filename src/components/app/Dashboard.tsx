@@ -151,6 +151,7 @@ export default function Dashboard({
   signOut,
   previewItems,
   defaultCollapsed,
+  openNew = false,
 }: {
   lang: Locale;
   user: ShellUser;
@@ -158,6 +159,8 @@ export default function Dashboard({
   /** Yalnız görsel doğrulama içindir; verildiğinde Supabase'e gidilmez. */
   previewItems?: ProjectListItem[];
   defaultCollapsed?: boolean;
+  /** İndirme ekranındaki "Yeni kitap oluştur" → başlangıç formu açık gelir. */
+  openNew?: boolean;
 }) {
   const t = COPY[lang];
   const router = useRouter();
@@ -166,7 +169,7 @@ export default function Dashboard({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // Yeni kitap sihirbazı başlangıç formu
-  const [newOpen, setNewOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(openNew);
   const [nProfile, setNProfile] = useState<PrintStandard>("kdy");
   // Seçilen kitap boyu — yalnız çok-boylu profillerde (KDP/Ingram/Serbest) anlamlı.
   const [nSizeId, setNSizeId] = useState<string>("");

@@ -37,6 +37,13 @@ export default async function LayoutPage({ params, searchParams }: PageProps<"/[
       canExport={canExport}
       user={shellUser ? { name: shellUser.name, initials: shellUser.initials } : null}
       signOut={signOutAction.bind(null, lang)}
+      exportThenHref={
+        exportMode && sp.sonra === "kapak" && initialProject
+          ? `/${lang}/kapak?project=${initialProject.id}&export=1`
+          : undefined
+      }
+      autoPreflight={sp.denetim === "1" && !exportMode}
+      startFocus={sp.onizle === "1" && !exportMode}
     />
   );
 }

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { isLocale } from "@/i18n/config";
 import { createClient } from "@/lib/supabase/server";
@@ -7,9 +8,29 @@ import { toShellUser } from "@/lib/app/identity";
 import { getSidebarCollapsed } from "@/lib/app/prefs";
 import { signOutAction } from "@/app/[lang]/auth-actions";
 import AppShell from "@/components/app/AppShell";
-import WizardBar from "@/components/app/WizardBar";
 import CreditNotice from "@/components/credits/CreditNotice";
 import { hasActivePackageById } from "@/lib/credits/server";
+import { signThumbs } from "@/lib/projects/storage";
+import { readSavedLayout } from "@/lib/layout/layoutSettings";
+import { KDY_SIZE } from "@/lib/layout/kdy";
+import { INTERIOR_SIZES } from "@/lib/layout/page";
+import { BOOK_SIZES, calcSpread, type BookSize } from "@/lib/cover/spread";
+import {
+  BookMockup,
+  FileCard,
+  EyeIcon,
+  DownloadIcon,
+  FileIcon,
+  ImageFileIcon,
+  ShieldIcon,
+} from "@/components/app/DownloadParts";
+
+// İNDİRME ekranı (sihirbazın son adımı). Dosyalar burada önceden üretilmez:
+// "İndir" ilgili modülü ?export=1 ile açar, modül GERÇEK PDF'i üretip indirir
+// ve buraya döner. "Tüm dosyaları indir" önce iç sayfayı, ardından kendiliğinden
+// kapağı indirir (ZIP değil, iki PDF).
+
+const mmText = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace(".", ","));
 
 export default async function IndirPage({ params, searchParams }: PageProps<"/[lang]/indir">) {
   const { lang } = await params;
@@ -18,7 +39,7 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
   const user = await getCurrentUser();
   if (!user) redirect(`/${lang}/giris`);
 
-  const isTr = lang === "tr";
+  const tr = lang === "tr";
   const sp = await searchParams;
   const supabase = await createClient();
   const initialProject = await loadInitialProject(supabase, sp.project);
@@ -26,102 +47,225 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
 
   if (!initialProject) redirect(`/${lang}/projeler`);
 
-  const wizard = initialProject.data.wizard;
+  const data = initialProject.data;
+  const wizard = data.wizard;
   const pid = initialProject.id;
-  const title = initialProject.data.meta.title?.trim() || (isTr ? "Kitabın" : "Your book");
+  const title = data.meta.title?.trim() || (tr ? "Adsız kitap" : "Untitled book");
+  const author = data.meta.author?.trim() || "";
   // İç sayfa PDF'i metin gerektirir — metin yoksa kullanıcıyı önce metne yönlendir.
-  const hasText = !!initialProject.data.manuscript?.text?.trim();
+  const hasText = !!data.manuscript?.text?.trim();
+  const hasCover = !!(data.cover?.coverImage || data.cover?.title || data.cover?.objects?.length);
+  const canExport = await hasActivePackageById(user.id, user.email);
+  const allDone = !!wizard && wizard.editorCompleted && wizard.layoutCompleted && wizard.coverCompleted;
+
+  // İç sayfa boyu: mizanpajda seçilen (kayıtlı) boy; yoksa sihirbazda seçilen.
+  const savedLayout = readSavedLayout(data.modules?.layout);
+  const allInterior: BookSize[] = [KDY_SIZE, ...INTERIOR_SIZES];
+  const interiorSize =
+    allInterior.find((s) => s.id === savedLayout?.sizeId) ??
+    allInterior.find((s) => s.id === data.meta.sizeId) ??
+    null;
+
+  // Tam kapak ölçüsü (taşma dahil): kapak taslağının kitap ayarlarından.
+  const cv = data.cover ?? {};
+  const coverBook = BOOK_SIZES.find((s) => s.id === (cv.sizeId ?? data.meta.sizeId)) ?? null;
+  const spread =
+    coverBook && typeof cv.pageCount === "number" && cv.paperGsm && cv.binding
+      ? calcSpread(
+          coverBook,
+          cv.pageCount,
+          cv.paperGsm,
+          cv.binding,
+          cv.spineManualOn && typeof cv.spineManualValue === "number" ? cv.spineManualValue : null,
+          typeof cv.bleedMm === "number" ? cv.bleedMm : undefined,
+        )
+      : null;
+
+  // Kitap maketi için kapağın kayıtlı küçük resmi (tam kapak: arka + sırt + ön).
+  const { data: row } = await supabase.from("projects").select("thumb_path").eq("id", pid).single();
+  const thumbPath = (row as { thumb_path?: string | null } | null)?.thumb_path ?? null;
+  const thumbUrl = thumbPath ? ((await signThumbs(supabase, [thumbPath])).get(thumbPath) ?? null) : null;
+
   const icHref = `/${lang}/mizanpaj?project=${pid}&export=1`;
   const kapakHref = `/${lang}/kapak?project=${pid}&export=1`;
-  const addTextHref = `/${lang}/mizanpaj?project=${pid}`;
-  // İndirme aktif paket ister. Paket yoksa "indirebilirsin" DEME: dürüst not +
-  // dosyalara yalnızca bakma bağlantıları (export=1 YOK → otomatik indirme yok).
-  const canExport = await hasActivePackageById(user.id, user.email);
-  const viewLink = { flex: "1 1 200px", maxWidth: 280, display: "block", textAlign: "center", background: "#fff", color: "#3b3f52", fontWeight: 700, fontSize: 14, padding: "11px 14px", borderRadius: 11, textDecoration: "none", border: "1px solid #e5e7f0" } as const;
+  const allHref = `/${lang}/mizanpaj?project=${pid}&export=1&sonra=kapak`;
+  const layoutHref = `/${lang}/mizanpaj?project=${pid}`;
+  const layoutPreviewHref = `/${lang}/mizanpaj?project=${pid}&onizle=1`;
+  const coverHref = `/${lang}/kapak?project=${pid}`;
+  const coverPreviewHref = `/${lang}/kapak?project=${pid}&onizle=1`;
+  const checkHref = `/${lang}/mizanpaj?project=${pid}&denetim=1`;
 
-  const wizardBar = wizard ? (
-    <WizardBar
-      lang={lang}
-      projectId={initialProject.id}
-      current="done"
-      wizard={wizard}
-      backHref={`/${lang}/projeler`}
-      backLabel={isTr ? "Kitaplarım" : "My Books"}
-    />
-  ) : undefined;
+  const steps: { seg: string; label: string; done: boolean }[] = [
+    { seg: "editor", label: tr ? "AI Editör" : "AI Editor", done: !!wizard?.editorCompleted },
+    { seg: "mizanpaj", label: tr ? "Mizanpaj" : "Layout", done: !!wizard?.layoutCompleted },
+    { seg: "kapak", label: tr ? "Kapak" : "Cover", done: !!wizard?.coverCompleted },
+  ];
 
   return (
-    <AppShell
-      lang={lang}
-      user={await toShellUser(user)}
-      signOut={signOutAction.bind(null, lang)}
-      wizardBar={wizardBar}
-      defaultCollapsed={collapsed}
-    >
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: "48px 34px 60px" }}>
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #eceef5",
-            borderRadius: 18,
-            boxShadow: "0 1px 2px rgba(20,24,40,.04)",
-            padding: "40px 32px",
-            textAlign: "center",
-          }}
-        >
-          <div style={{ fontSize: 40, lineHeight: 1 }}>🎉</div>
-          <h1 style={{ margin: "16px 0 6px", fontSize: 26, fontWeight: 800, letterSpacing: "-.4px" }}>
-            {isTr ? `"${title}" hazır!` : `"${title}" is ready!`}
-          </h1>
-          {canExport ? (
-            <>
-              <p style={{ margin: 0, fontSize: 15, color: "#6b7280", lineHeight: 1.6, maxWidth: 460, marginLeft: "auto", marginRight: "auto" }}>
-                {isTr
-                  ? "Üç adımı da tamamladın. Baskıya hazır dosyalarını buradan indirebilirsin."
-                  : "You've completed all three steps. Download your print-ready files below."}
-              </p>
+    <AppShell lang={lang} user={await toShellUser(user)} signOut={signOutAction.bind(null, lang)} defaultCollapsed={collapsed}>
+      <div className="mx-auto w-full max-w-[1240px] px-5 pb-10 pt-5 sm:px-8">
+        {/* Kırıntı yolu */}
+        <nav className="flex flex-wrap items-center gap-2 text-sm text-muted" aria-label={tr ? "Konum" : "Breadcrumb"}>
+          <Link href={`/${lang}/projeler`} className="hover:text-foreground">
+            {tr ? "Kitaplarım" : "My books"}
+          </Link>
+          <span aria-hidden="true">/</span>
+          <span className="max-w-[40ch] truncate">{title}</span>
+          <span aria-hidden="true">/</span>
+          <span className="font-semibold text-foreground">{tr ? "Dosyalar" : "Files"}</span>
+        </nav>
 
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center", marginTop: 28 }}>
-                <div style={{ flex: "1 1 220px", maxWidth: 280, border: "1px solid #ececf4", borderRadius: 13, padding: "18px 16px", textAlign: "left", display: "flex", flexDirection: "column" }}>
-                  <div style={{ fontSize: 15, fontWeight: 700 }}>{isTr ? "İç sayfa PDF" : "Interior PDF"}</div>
-                  <div style={{ fontSize: 13, color: "#9aa1b1", marginTop: 4, marginBottom: 14, flex: 1 }}>{isTr ? "Baskıya hazır · 300 DPI" : "Print-ready · 300 DPI"}</div>
-                  {hasText ? (
-                    <a href={icHref} style={{ display: "block", textAlign: "center", background: "#4f46e5", color: "#fff", fontWeight: 700, fontSize: 14, padding: "11px 14px", borderRadius: 11, textDecoration: "none" }}>
-                      {isTr ? "PDF indir" : "Download PDF"}
-                    </a>
-                  ) : (
-                    <a href={addTextHref} style={{ display: "block", textAlign: "center", background: "#fff", color: "#6b7280", fontWeight: 600, fontSize: 13, padding: "11px 12px", borderRadius: 11, textDecoration: "none", border: "1px dashed #d8dae6", lineHeight: 1.4 }}>
-                      {isTr ? "Önce kitabın metnini ekle →" : "Add your book's text first →"}
-                    </a>
-                  )}
-                </div>
-                <div style={{ flex: "1 1 220px", maxWidth: 280, border: "1px solid #ececf4", borderRadius: 13, padding: "18px 16px", textAlign: "left", display: "flex", flexDirection: "column" }}>
-                  <div style={{ fontSize: 15, fontWeight: 700 }}>{isTr ? "Kapak PDF" : "Cover PDF"}</div>
-                  <div style={{ fontSize: 13, color: "#9aa1b1", marginTop: 4, marginBottom: 14, flex: 1 }}>{isTr ? "Tam kapak · taşma payı" : "Full cover · bleed"}</div>
-                  <a href={kapakHref} style={{ display: "block", textAlign: "center", background: "#4f46e5", color: "#fff", fontWeight: 700, fontSize: 14, padding: "11px 14px", borderRadius: 11, textDecoration: "none" }}>
-                    {isTr ? "PDF indir" : "Download PDF"}
-                  </a>
-                </div>
+        {/* Adımlar: AI Editör → Mizanpaj → Kapak → İndir */}
+        {wizard && (
+          <ol className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
+            {steps.map((s) => (
+              <li key={s.seg} className="flex items-center gap-3">
+                <Link href={`/${lang}/${s.seg}?project=${pid}`} className="flex items-center gap-2.5 text-base text-foreground/85 hover:text-foreground">
+                  <span
+                    className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${
+                      s.done ? "bg-accent text-white" : "border-2 border-border text-muted"
+                    }`}
+                  >
+                    {s.done ? "✓" : ""}
+                  </span>
+                  {s.label}
+                </Link>
+                <span className="hidden h-px w-10 bg-border sm:block" aria-hidden="true" />
+              </li>
+            ))}
+            <li className="flex items-center gap-2.5 text-base font-semibold text-accent">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-accent">
+                <span className="h-3 w-3 rounded-full bg-accent" />
+              </span>
+              {tr ? "İndir" : "Download"}
+            </li>
+          </ol>
+        )}
+
+        {/* Başlık */}
+        <div className="mt-8 flex flex-wrap items-center gap-4">
+          <h1 className="text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
+            {allDone ? (tr ? "Kitabın hazır." : "Your book is ready.") : tr ? "Dosyaların" : "Your files"}
+          </h1>
+          {allDone && (
+            <span className="inline-flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+              <span aria-hidden="true">✓</span>
+              {tr ? "Tüm adımlar tamam" : "All steps done"}
+            </span>
+          )}
+        </div>
+        <p className="mt-2 text-lg text-muted">
+          {tr ? "İç sayfalarını ve kapağını indir, kitabını bir sonraki adıma taşı." : "Download your interior and cover, and take your book to the next step."}
+        </p>
+
+        <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+          {/* Kitap maketi */}
+          <div className="flex flex-col items-center rounded-3xl bg-accent-soft/60 px-6 pb-7 pt-10 dark:bg-white/5">
+            <BookMockup thumbUrl={thumbUrl} title={title} author={author} spread={spread} />
+            <div className="mt-8 text-center">
+              <div className="text-2xl font-bold text-foreground">{title}</div>
+              <div className="mt-1 text-base text-muted">
+                {[author, interiorSize ? `${mmText(interiorSize.width)} × ${mmText(interiorSize.height)} mm` : ""].filter(Boolean).join(" · ")}
               </div>
-            </>
-          ) : (
-            <>
-              <p style={{ margin: 0, fontSize: 15, color: "#6b7280", lineHeight: 1.6, maxWidth: 460, marginLeft: "auto", marginRight: "auto" }}>
-                {isTr ? "Üç adımı da tamamladın." : "You've completed all three steps."}
-              </p>
-              <div style={{ textAlign: "left", marginTop: 24 }}>
+              <Link href={layoutPreviewHref} className="mt-3 inline-flex items-center gap-2 text-base font-semibold text-accent hover:underline">
+                <EyeIcon />
+                {tr ? "Kitabı önizle" : "Preview the book"}
+              </Link>
+            </div>
+          </div>
+
+          {/* Dosyalar */}
+          <div className="min-w-0">
+            <h2 className="text-2xl font-bold text-foreground">{tr ? "İndirilebilir dosyalar" : "Downloadable files"}</h2>
+
+            {!canExport && (
+              <div className="mt-4">
                 <CreditNotice lang={lang} problem={{ kind: "no-package" }} />
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center", marginTop: 16 }}>
-                <a href={addTextHref} style={viewLink}>
-                  {hasText ? (isTr ? "İç sayfaları gör" : "View interior") : (isTr ? "Önce kitabın metnini ekle →" : "Add your book's text first →")}
+            )}
+
+            <div className="mt-4 space-y-4">
+              <FileCard
+                icon={<FileIcon />}
+                title={tr ? "İç sayfalar" : "Interior pages"}
+                lines={[
+                  tr ? "PDF · baskıya hazır" : "PDF · print-ready",
+                  interiorSize ? `${mmText(interiorSize.width)} × ${mmText(interiorSize.height)} mm` : "",
+                ]}
+                primary={
+                  !hasText
+                    ? { href: layoutHref, label: tr ? "Önce metni ekle" : "Add text first" }
+                    : canExport
+                      ? { href: icHref, label: tr ? "İndir" : "Download", download: true }
+                      : null
+                }
+                links={[
+                  { href: layoutPreviewHref, label: tr ? "Önizle" : "Preview", eye: true },
+                  { href: layoutHref, label: tr ? "Mizanpaja dön" : "Back to layout" },
+                ]}
+              />
+              <FileCard
+                icon={<ImageFileIcon />}
+                title={tr ? "Tam kapak" : "Full cover"}
+                lines={[
+                  tr ? "PDF · Ön kapak, sırt ve arka kapak" : "PDF · Front, spine and back",
+                  spread
+                    ? `${mmText(Math.round(spread.totalWidth * 10) / 10)} × ${mmText(Math.round(spread.totalHeight * 10) / 10)} mm · ${tr ? "taşma payı dahil" : "bleed included"}`
+                    : tr
+                      ? "Taşma payı dahil"
+                      : "Bleed included",
+                ]}
+                primary={
+                  !hasCover
+                    ? { href: coverHref, label: tr ? "Önce kapağı tasarla" : "Design the cover first" }
+                    : canExport
+                      ? { href: kapakHref, label: tr ? "İndir" : "Download", download: true }
+                      : null
+                }
+                links={[
+                  { href: coverPreviewHref, label: tr ? "Önizle" : "Preview", eye: true },
+                  { href: coverHref, label: tr ? "Kapağı düzenle" : "Edit cover" },
+                ]}
+              />
+            </div>
+
+            {canExport && hasText && hasCover && (
+              <div className="mt-5">
+                <a
+                  href={allHref}
+                  className="flex w-full items-center justify-center gap-3 rounded-xl bg-accent px-5 py-4 text-lg font-semibold text-white shadow-sm transition hover:opacity-90"
+                >
+                  <DownloadIcon className="h-6 w-6" />
+                  {tr ? "Tüm dosyaları indir" : "Download all files"}
                 </a>
-                <a href={`/${lang}/kapak?project=${pid}`} style={viewLink}>
-                  {isTr ? "Kapağı gör" : "View cover"}
-                </a>
+                <p className="mt-2 text-center text-sm text-muted">
+                  {tr ? "Önce iç sayfalar, ardından kendiliğinden kapak · 2 PDF" : "Interior first, then the cover automatically · 2 PDFs"}
+                </p>
               </div>
-            </>
-          )}
+            )}
+
+            {hasText && (
+              <a
+                href={checkHref}
+                className="mt-5 flex items-center gap-3 rounded-2xl border border-border bg-surface px-5 py-4 transition hover:border-accent/40"
+              >
+                <ShieldIcon />
+                <span className="flex-1 text-base font-semibold text-foreground">{tr ? "Baskı kontrolü" : "Print check"}</span>
+                <span className="text-base font-medium text-accent">{tr ? "Kontrol raporunu aç →" : "Open the report →"}</span>
+              </a>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-10 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-6">
+          <Link href={`/${lang}/projeler`} className="inline-flex items-center gap-2 text-base font-medium text-foreground/80 hover:text-foreground">
+            <span aria-hidden="true">←</span>
+            {tr ? "Kitaplarıma dön" : "Back to my books"}
+          </Link>
+          <Link href={`/${lang}/projeler?yeni=1`} className="inline-flex items-center gap-2 text-base font-semibold text-accent hover:underline">
+            <span aria-hidden="true">+</span>
+            {tr ? "Yeni kitap oluştur" : "Create a new book"}
+          </Link>
         </div>
       </div>
     </AppShell>

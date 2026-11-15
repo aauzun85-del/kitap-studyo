@@ -233,7 +233,8 @@ export async function uploadThumb(
   projectId: string,
   dataUrl: string,
 ): Promise<string> {
-  const blob = await compressToJpeg(dataUrl, 360, 0.72);
+  // 720 px: indirme ekranındaki kitap maketinde ön kapak keskin görünsün.
+  const blob = await compressToJpeg(dataUrl, 720, 0.8);
   const path = `${userId}/${projectId}/thumb.jpg`;
   await uploadOne(supabase, path, blob);
   return path;

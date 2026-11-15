@@ -63,6 +63,7 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
       creditBalance={creditBalance}
       user={shellUser ? { name: shellUser.name, initials: shellUser.initials } : null}
       signOut={signOutAction.bind(null, lang)}
+      startPreview={sp.onizle === "1" && !exportMode}
     />
   );
 }
