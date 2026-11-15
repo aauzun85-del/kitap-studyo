@@ -38,6 +38,17 @@ export const PAPER_OPTIONS: PaperGsm[] = [70, 80, 90, 100];
 // Ön tanımlı kitap boyutları: inç tabanlı (KDP/Ingram/B&N/Lulu ortak) + Türkiye
 // boyları. Etiketler markaya özel değildir; aynı inç boyları tüm bu standartlar
 // için geçerlidir, bu yüzden başlarına firma adı yazılmaz.
+// KDY roman boyu (130 × 195 mm). Kapak ölçüleri listesinde YOKTU → KDY
+// kitaplarının kapağı sessizce ilk ölçüye (127 × 203) düşüyordu. Tek kaynak
+// burası; iç sayfa tarafı (layout/kdy.ts KDY_SIZE) da bunu kullanır.
+export const KDY_ROMAN_SIZE: BookSize = {
+  id: "kdy-130x195",
+  label: "KDY 130×195 mm (Roman boy)",
+  width: 130,
+  height: 195,
+  category: "tr",
+};
+
 export const BOOK_SIZES: BookSize[] = [
   // KDP'nin resmî dikey (portrait) boyları — küçükten büyüğe. Aynı liste
   // Ingram/B&N/Lulu için de geçerlidir. 6×9 en yaygını olduğundan varsayılandır.
@@ -113,6 +124,14 @@ export type SpreadDimensions = {
   barcodeW: number;
   barcodeH: number;
 };
+
+/** Kapakta seçilebilen boylar: KDY roman boyu + KDP/Türkiye boyları. */
+export const COVER_SIZES: BookSize[] = [KDY_ROMAN_SIZE, ...BOOK_SIZES];
+
+/** Boy kimliğinden kapak boyu (bilinmiyorsa ilk boy) — tuval ve indirme ekranı aynı sonucu alır. */
+export function resolveCoverSize(id: string | undefined | null): BookSize {
+  return COVER_SIZES.find((s) => s.id === id) ?? BOOK_SIZES[0];
+}
 
 /** Tam kapak tuvalinin baskı ölçülerini hesaplar (hepsi mm). */
 export function calcSpread(

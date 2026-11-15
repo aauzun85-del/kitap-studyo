@@ -14,7 +14,7 @@ import { signThumbs } from "@/lib/projects/storage";
 import { readSavedLayout } from "@/lib/layout/layoutSettings";
 import { KDY_SIZE } from "@/lib/layout/kdy";
 import { INTERIOR_SIZES } from "@/lib/layout/page";
-import { BOOK_SIZES, calcSpread, type BookSize } from "@/lib/cover/spread";
+import { calcSpread, resolveCoverSize, type BookSize } from "@/lib/cover/spread";
 import {
   BookMockup,
   FileCard,
@@ -68,18 +68,17 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
 
   // Tam kapak ölçüsü (taşma dahil): kapak taslağının kitap ayarlarından.
   const cv = data.cover ?? {};
-  const coverBook = BOOK_SIZES.find((s) => s.id === (cv.sizeId ?? data.meta.sizeId)) ?? null;
-  const spread =
-    coverBook && typeof cv.pageCount === "number" && cv.paperGsm && cv.binding
-      ? calcSpread(
-          coverBook,
-          cv.pageCount,
-          cv.paperGsm,
-          cv.binding,
-          cv.spineManualOn && typeof cv.spineManualValue === "number" ? cv.spineManualValue : null,
-          typeof cv.bleedMm === "number" ? cv.bleedMm : undefined,
-        )
-      : null;
+  // Kapak tuvaliyle AYNI çözümleme ve varsayılanlar (küçük resim bu geometriyle çizildi).
+  const spread = hasCover
+    ? calcSpread(
+        resolveCoverSize(cv.sizeId ?? data.meta.sizeId),
+        Math.max(1, cv.pageCount || 200),
+        cv.paperGsm ?? 80,
+        cv.binding ?? "soft",
+        cv.spineManualOn && typeof cv.spineManualValue === "number" ? cv.spineManualValue : null,
+        typeof cv.bleedMm === "number" ? cv.bleedMm : undefined,
+      )
+    : null;
 
   // Kitap maketi için kapağın kayıtlı küçük resmi (tam kapak: arka + sırt + ön).
   const { data: row } = await supabase.from("projects").select("thumb_path").eq("id", pid).single();
@@ -239,7 +238,7 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
                   {tr ? "Tüm dosyaları indir" : "Download all files"}
                 </a>
                 <p className="mt-2 text-center text-sm text-muted">
-                  {tr ? "Önce iç sayfalar, ardından kendiliğinden kapak · 2 PDF" : "Interior first, then the cover automatically · 2 PDFs"}
+                  {tr ? "Önce iç sayfalar, sonra tek tıkla kapak · 2 PDF" : "Interior first, then the cover in one click · 2 PDFs"}
                 </p>
               </div>
             )}

@@ -11,6 +11,8 @@ import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import {
   BOOK_SIZES,
+  COVER_SIZES,
+  resolveCoverSize,
   DEFAULT_SIZE_ID,
   DEFAULT_BLEED_MM,
   BLEED_OPTIONS,
@@ -249,6 +251,7 @@ export default function CoverStudio({
   // Yoksa (anonim/yerel) mevcut IndexedDB davranışı aynen korunur.
   const projectId = initialProject?.id ?? null;
   const lastThumbRef = useRef(0);
+  const thumbRetryRef = useRef<number | null>(null);
 
   // İçerik
   const [title, setTitle] = useState("");
@@ -738,7 +741,7 @@ export default function CoverStudio({
   }, [selectedId]);
 
   const size = useMemo(
-    () => BOOK_SIZES.find((s) => s.id === sizeId) ?? BOOK_SIZES[0],
+    () => resolveCoverSize(sizeId),
     [sizeId],
   );
 
@@ -1487,6 +1490,18 @@ export default function CoverStudio({
         if (now - lastThumbRef.current > 4000) {
           thumb = canvasRef.current?.getPrintDataUrl(72) ?? undefined;
           lastThumbRef.current = now;
+        } else if (!thumbRetryRef.current) {
+          // Son düzenlemenin küçük resmi kaybolmasın: pencere bitince bir kez daha.
+          const pid = projectId;
+          thumbRetryRef.current = window.setTimeout(() => {
+            thumbRetryRef.current = null;
+            const d = latestDraftRef.current;
+            const t = canvasRef.current?.getPrintDataUrl(72) ?? undefined;
+            if (d && t) {
+              lastThumbRef.current = Date.now();
+              void saveProjectCover(pid, d, t).catch(() => {});
+            }
+          }, 4100 - (now - lastThumbRef.current));
         }
         void saveProjectCover(projectId, draft, thumb)
           .then(() => setDraftStatus("saved"))
@@ -2449,7 +2464,7 @@ export default function CoverStudio({
   };
 
   const kdpSizes = BOOK_SIZES.filter((s) => s.category === "kdp");
-  const trSizes = BOOK_SIZES.filter((s) => s.category === "tr");
+  const trSizes = COVER_SIZES.filter((s) => s.category === "tr");
 
   // Seçili nesne kullanıcı nesnesiyse onu bul (araç çubuğunda renk/boyut/sil için).
   const selectedObj =
@@ -3289,6 +3304,10 @@ export default function CoverStudio({
     if (!projectId || wizardBusy) return;
     setWizardBusy(true);
     try {
+      // İndirme ekranındaki kitap maketi son hâli göstersin: güncel küçük resimle kaydet.
+      const d = latestDraftRef.current;
+      const thumb = canvasRef.current?.getPrintDataUrl(72) ?? undefined;
+      if (d) await saveProjectCover(projectId, d, thumb).catch(() => {});
       await completeWizardStep(projectId, "cover");
     } catch {
       // kaydedilemese de ilerle; taslak zaten otomatik kaydediliyor

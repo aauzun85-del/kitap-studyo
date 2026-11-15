@@ -962,10 +962,8 @@ export default function LayoutStudio({
     void (async () => {
       const ok = await handleExportPdfTypst(); // varsayılan = gördüğün baskı sayfası
       setAutoExportStatus(ok ? "done" : "error");
-      // "Tüm dosyaları indir": iç sayfa indi → kapağın indirmesine geç.
-      if (ok && exportThenHref) window.setTimeout(() => window.location.assign(exportThenHref), 1500);
-    })();
-  }, [autoExport, canExport, fontsReady, pages.length, handleExportPdfTypst, exportThenHref]);
+})();
+  }, [autoExport, canExport, fontsReady, pages.length, handleExportPdfTypst]);
 
   // SAFETY: yazı tipi/sayfalama asılı kalırsa overlay sonsuza dek "hazırlanıyor"
   // kalmasın → ~12 sn içinde tetiklenmediyse "error"a düş (elle "Tekrar dene").
@@ -1396,6 +1394,9 @@ export default function LayoutStudio({
           status={canExport ? autoExportStatus : "locked"}
           backHref={projectId ? `/${lang}/indir?project=${projectId}` : `/${lang}/projeler`}
           onDownload={() => void handleExportPdfTypst()}
+          // "Tüm dosyaları indir": iç sayfa inince kapağa TEK TIKLA geç (tarayıcı,
+          // tıklamasız ikinci otomatik indirmeyi engelleyebiliyor).
+          next={exportThenHref ? { href: exportThenHref, label: lang === "tr" ? "Sıradaki: Kapak PDF'ini indir →" : "Next: download the cover PDF →" } : undefined}
         />
       )}
       {preflightReport && (

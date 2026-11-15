@@ -23,12 +23,15 @@ export default function ExportOverlay({
   status,
   backHref,
   onDownload,
+  next,
 }: {
   lang: "tr" | "en";
   kind: "ic" | "kapak";
   status: "working" | "done" | "error" | "locked";
   backHref: string;
   onDownload: () => void;
+  /** Bu dosya inince sıradaki adım (ör. "Tüm dosyaları indir"de kapak). */
+  next?: { href: string; label: string };
 }) {
   const tr = lang === "tr";
   const label = kind === "ic" ? (tr ? "İç sayfa PDF" : "Interior PDF") : (tr ? "Kapak PDF" : "Cover PDF");
@@ -98,8 +101,27 @@ export default function ExportOverlay({
 
         {status === "working" && <div className="tipo-exp-spin" />}
 
+        {status === "done" && next && (
+          <a
+            href={next.href}
+            style={{
+              display: "block",
+              marginTop: 22,
+              background: "#4f46e5",
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: 16,
+              padding: "14px 20px",
+              borderRadius: 12,
+              textDecoration: "none",
+            }}
+          >
+            {next.label}
+          </a>
+        )}
+
         {status !== "working" && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginTop: 22 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginTop: next && status === "done" ? 12 : 22 }}>
             {status === "locked" ? (
               <Link
                 href={`/${lang}/fiyatlar`}

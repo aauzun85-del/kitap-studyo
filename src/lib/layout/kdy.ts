@@ -8,18 +8,12 @@
 //   - Kitap adı / yazar / biyografi: Vollkorn (OFL, Google Fonts) — KDY zaten
 //     bunları Vollkorn ile kuruyor.
 
-import type { BookSize } from "@/lib/cover/spread";
+import { KDY_ROMAN_SIZE, type BookSize } from "@/lib/cover/spread";
 import type { Margins } from "./page";
 
 // ── Sayfa boyutu ──────────────────────────────────────────────────────────
 // 368.50 × 552.76 pt = 130 × 195 mm ("roman boy"). Karşılıklı sayfa (facing).
-export const KDY_SIZE: BookSize = {
-  id: "kdy-130x195",
-  label: "KDY 130×195 mm (Roman boy)",
-  width: 130,
-  height: 195,
-  category: "tr",
-};
+export const KDY_SIZE: BookSize = KDY_ROMAN_SIZE;
 
 // ── Kenar boşlukları (mm) ─────────────────────────────────────────────────
 // IDML: üst 20, alt 20, iç(cilt) 20, dış 15.

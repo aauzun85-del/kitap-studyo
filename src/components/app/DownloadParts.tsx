@@ -17,7 +17,8 @@ export function FileCard({
   links: { href: string; label: string; eye?: boolean }[];
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-5 rounded-2xl border border-border bg-surface px-5 py-5 shadow-sm sm:flex-nowrap">
+    <div className="@container rounded-2xl border border-border bg-surface px-5 py-5 shadow-sm">
+     <div className="flex flex-wrap items-center gap-5 @xl:flex-nowrap">
       <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-accent">{icon}</div>
       <div className="min-w-0 flex-1">
         <div className="text-xl font-bold text-foreground">{title}</div>
@@ -27,7 +28,7 @@ export function FileCard({
           </div>
         ))}
       </div>
-      <div className="flex w-full flex-col items-stretch gap-2.5 sm:w-auto sm:items-end">
+      <div className="flex w-full flex-col items-stretch gap-2.5 @xl:w-auto @xl:items-end">
         {primary && (
           <a
             href={primary.href}
@@ -53,6 +54,7 @@ export function FileCard({
           ))}
         </div>
       </div>
+     </div>
     </div>
   );
 }
@@ -68,23 +70,32 @@ export function BookMockup({
   thumbUrl: string | null;
   title: string;
   author: string;
-  spread: { totalWidth: number; totalHeight: number; spineStart: number; spineEnd: number; bleed: number } | null;
+  spread: {
+    totalWidth: number;
+    totalHeight: number;
+    bookHeight: number;
+    spineStart: number;
+    spineEnd: number;
+    spineCenter: number;
+    bleed: number;
+  } | null;
 }) {
+  // Maket = kesilmiş kitap: taşma payları (üst/alt/dış) görünmez.
   const H = 330;
-  const total = spread ? spread.totalWidth / spread.totalHeight : 1.37;
-  // Ön yüz: sırt bitişinden sağ taşma payının başına kadar.
+  const pxPerMm = spread ? H / spread.bookHeight : 0;
   const frontMm = spread ? spread.totalWidth - spread.spineEnd - spread.bleed : 0;
-  const frontW = spread ? Math.round((frontMm / spread.totalHeight) * H) : Math.round(H * 0.66);
+  const frontW = spread ? Math.round(frontMm * pxPerMm) : Math.round(H * 0.66);
   const spineMm = spread ? spread.spineEnd - spread.spineStart : 0;
-  // Maket: ince kitapta da sırt seçilebilsin diye en az 26 px.
-  const spineW = Math.max(26, spread ? Math.round((spineMm / spread.totalHeight) * H) : 26);
-  const imgW = H * total; // resmin bu yükseklikteki eni (px)
-  const pxPerMm = spread ? H / spread.totalHeight : 0;
+  // Maket: ince kitapta da sırt seçilebilsin diye en az 26 px (kırpma sırtın ortasına göre).
+  const spineW = Math.max(26, Math.round(spineMm * pxPerMm));
+  const imgW = spread ? spread.totalWidth * pxPerMm : 0;
+  const imgH = spread ? spread.totalHeight * pxPerMm : 0;
+  const y0 = spread ? -spread.bleed * pxPerMm : 0;
   const frontX = spread ? -(spread.spineEnd * pxPerMm) : 0;
-  const spineX = spread ? -(spread.spineStart * pxPerMm) : 0;
+  const spineX = spread ? -(spread.spineCenter * pxPerMm - spineW / 2) : 0;
   const face = (x: number) =>
     thumbUrl && spread
-      ? { backgroundImage: `url(${thumbUrl})`, backgroundSize: `${imgW}px ${H}px`, backgroundPosition: `${x}px 0` }
+      ? { backgroundImage: `url("${encodeURI(thumbUrl)}")`, backgroundSize: `${imgW}px ${imgH}px`, backgroundPosition: `${x}px ${y0}px` }
       : undefined;
   return (
     <div className="flex justify-center" style={{ perspective: 1600 }}>
