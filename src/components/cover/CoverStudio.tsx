@@ -1,6 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import Logo from "@/components/Logo";
+import { completeWizardStep } from "@/lib/projects/data";
+import WizardGuide from "@/components/app/WizardGuide";
+import { useEditorSession } from "@/lib/editor/session";
 import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionaries";
 import {
@@ -52,6 +58,9 @@ import {
   AlignRightIcon,
   FolderIcon,
   ArrowsOutIcon,
+  ArrowUUpLeftIcon,
+  ArrowUUpRightIcon,
+  CaretDownIcon,
 } from "@/components/PhosphorIcons";
 import {
   AI_STYLES,
@@ -71,6 +80,7 @@ import {
 import {
   briefStyleOverride,
   getTextStyle,
+  briefExampleSrc,
   type CoverBrief,
 } from "@/lib/cover/brief";
 import { getConceptOf, resolveStandard } from "@/lib/cover/standards";
@@ -123,6 +133,7 @@ import CoverCanvas, {
   type DividerVariant,
   type TextStyle,
   type TextStyleMap,
+  type ViewFocus,
 } from "./CoverCanvas";
 import {
   COVER_FONTS,
@@ -162,6 +173,18 @@ type AiGenOpts = {
 // Tarayıcı tarafı SON ÇARE zaman aşımları. Sunucu 120 sn içinde kendi temiz
 // hatasını döndürür; bunlar ancak bağlantı tamamen koparsa devreye girer.
 const CLIENT_AI_TIMEOUT_MS = 135_000;
+// Geri alma geçmişi: iki taslak TASARIM olarak aynı mı? (Görünüm/AI form alanları
+// adım sayılmaz; değerler değişmez nesneler olduğundan referans karşılaştırması yeter.)
+const HISTORY_IGNORE = new Set(["showGuides", "aiDesc", "aiModel", "aiStyle", "aiScope", "aiEmbedText", "selectedAngle"]);
+function sameDesign(a: CoverDraft, b: CoverDraft): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const k of keys) {
+    if (HISTORY_IGNORE.has(k)) continue;
+    if ((a as Record<string, unknown>)[k] !== (b as Record<string, unknown>)[k]) return false;
+  }
+  return true;
+}
+
 // Tuval ekran büyütme basamakları (1 = ekrana sığdır). Yalnız görünüm; baskı
 // çıktısı mm ölçüsünden üretilir, etkilenmez.
 const ZOOM_STEPS = [1, 1.25, 1.5, 2, 2.5, 3];
@@ -197,6 +220,8 @@ export default function CoverStudio({
   canExport,
   creditBalance = null,
   briefRun,
+  user = null,
+  signOut,
 }: {
   lang: Locale;
   dict: Dictionary;
@@ -212,6 +237,9 @@ export default function CoverStudio({
   creditBalance?: number | null;
   /** Kurgu sayfasından "Tuvale gönder ve üret" ile gelindi → kayıtlı kurguyla üret. */
   briefRun?: boolean;
+  /** Üst çubuktaki hesap rozeti (tam ekran düzende uygulama menüsü yok). */
+  user?: { name: string; initials: string } | null;
+  signOut?: () => Promise<void>;
 }) {
   const t = dict.coverStudio;
   // Bulut projesi modu: ?project=<id> ile açıldıysa kayıt/yükleme buluta gider.
@@ -384,19 +412,47 @@ export default function CoverStudio({
   // Tuval görünümü: büyütme ve "büyük görünüm" (paneller gizli, tam ekran).
   const [zoom, setZoom] = useState(1);
   const [bigView, setBigView] = useState(false);
+  // Yeni düzen: görünüm odağı, sağ panel açık mı, önizleme, hesap menüsü.
+  const [viewFocus, setViewFocus] = useState<ViewFocus>("all");
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [preview, setPreview] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [viewInfo, setViewInfo] = useState<{ realPercent: number; maxZoom: number }>({ realPercent: 100, maxZoom: 3 });
+  const [wizardBusy, setWizardBusy] = useState(false);
+  const [stepsOpen, setStepsOpen] = useState(false);
+  // AI Editör kontrolü başka adımdayken de sürer → adım çipinde dönen gösterge.
+  const editorJob = useEditorSession(initialProject?.id ?? null);
+  const router = useRouter();
+  // Geri al / ileri al geçmişi (taslak anlık görüntüleri).
+  const undoStackRef = useRef<CoverDraft[]>([]);
+  const redoStackRef = useRef<CoverDraft[]>([]);
+  // Geri alma/ileri almayla uygulanan anlık görüntü: ondan sonra gelen ilk
+  // otomatik kayıt AYNI tasarımsa adım sayılmaz (farklıysa gerçek düzenlemedir).
+  const appliedHistoryRef = useRef<CoverDraft | null>(null);
+  // Düğmelerin açık/kapalı hâli için yığın boyları (render'da ref okunmasın).
+  const [histLen, setHistLen] = useState({ undo: 0, redo: 0 });
+  const syncHist = () => setHistLen({ undo: undoStackRef.current.length, redo: redoStackRef.current.length });
   const rootRef = useRef<HTMLDivElement>(null);
+  // Büyük görünüm sayfayı kendisi kaplar; tarayıcı tam ekranı yalnız EK bir
+  // kazançtır. İkisi birbirine bağlı değil: tam ekran (Esc ya da bir onay
+  // kutusu yüzünden) kapansa da büyük görünüm sürer; kapatmak için düğme/Esc.
+  const bigViewRef = useRef(false);
   const toggleBigView = async () => {
     const el = rootRef.current;
-    if (!bigView) {
+    if (!bigViewRef.current) {
+      bigViewRef.current = true;
       setBigView(true);
-      // Tarayıcı izin verirse gerçek tam ekran (üst menüler de gizlenir).
       try {
         if (el && !document.fullscreenElement && el.requestFullscreen) await el.requestFullscreen();
       } catch {
-        // tam ekran desteklenmiyor → yalnız paneller gizli kalır
+        // tam ekran desteklenmiyor → sayfa içi büyük görünüm yeter
       }
+      // Bu arada (çift tık) kapatıldıysa tam ekranı da bırak.
+      if (!bigViewRef.current && document.fullscreenElement) void document.exitFullscreen().catch(() => {});
     } else {
+      bigViewRef.current = false;
       setBigView(false);
+      setPreview(false);
       try {
         if (document.fullscreenElement) await document.exitFullscreen();
       } catch {
@@ -404,26 +460,22 @@ export default function CoverStudio({
       }
     }
   };
-  // Esc ile tam ekrandan çıkılınca paneller geri gelsin.
-  useEffect(() => {
-    const onFs = () => {
-      if (!document.fullscreenElement) setBigView(false);
-    };
-    document.addEventListener("fullscreenchange", onFs);
-    return () => document.removeEventListener("fullscreenchange", onFs);
-  }, []);
-  // Tam ekran yoksa (tarayıcı izin vermedi) Esc yine büyük görünümden çıkarsın.
+  // Esc: büyük görünümden / önizlemeden çık (tam ekrandayken Esc'i tarayıcı
+  // tam ekrandan çıkmak için kullanır; ikinci Esc görünümü kapatır). Yazı
+  // yazarken ya da İndir menüsü açıkken dokunma.
   useEffect(() => {
     if (!bigView) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || document.fullscreenElement) return;
+      if (e.key !== "Escape" || document.fullscreenElement || downloadMenuOpen) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      bigViewRef.current = false;
       setBigView(false);
+      setPreview(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [bigView]);
+  }, [bigView, downloadMenuOpen]);
   const [selectedAngle, setSelectedAngle] = useState(0);
   // Yapısal metinlerin (başlık/yazar/altbaşlık/sırt) öğe bazlı stilleri +
   // seçili metnin tuvalden bildirilen canlı stili (panel varsayılanları için).
@@ -1252,6 +1304,96 @@ export default function CoverStudio({
     };
   }, [applyDraft, projectId, initialProject]);
 
+  // --- Geri al / ileri al ---
+  // Her otomatik kayıt bir adım olur (son 40). Geri alınca o adımın taslağı
+  // applyDraft ile uygulanır; bu uygulama yeni bir adım SAYILMAZ.
+  const pushHistory = (d: CoverDraft) => {
+    const applied = appliedHistoryRef.current;
+    appliedHistoryRef.current = null;
+    if (applied && sameDesign(applied, d)) return;
+    const past = undoStackRef.current;
+    const prev = past[past.length - 1];
+    if (prev && sameDesign(prev, d)) return;
+    past.push(d);
+    if (past.length > 40) past.shift();
+    redoStackRef.current = [];
+    syncHist();
+  };
+  // Henüz kayda düşmemiş (600 ms beklemedeki) son düzenlemeyi geçmişe yaz —
+  // yoksa hemen ardından basılan "Geri al" onu kaybeder ve iki adım geri gider.
+  const flushPendingHistory = () => {
+    const pending = latestDraftRef.current;
+    const past = undoStackRef.current;
+    const top = past[past.length - 1];
+    const applied = appliedHistoryRef.current;
+    if (pending && top && !sameDesign(pending, top) && !(applied && sameDesign(applied, pending))) {
+      past.push(pending);
+      if (past.length > 40) past.shift();
+      redoStackRef.current = [];
+    }
+  };
+  // Anlık görüntüyü BİREBİR geri yükle: applyDraft boş (null) alanları atlar
+  // (kayıtlı taslak yüklerken doğru), geri almada ise onlar da geri gelmeli.
+  // AI form alanları ve kılavuz anahtarı geçmişin parçası değil → şimdiki değer kalır.
+  const restoreSnapshot = (d: CoverDraft) => {
+    const merged: CoverDraft = { ...d, aiDesc, aiModel, aiStyle, aiScope, aiEmbedText, showGuides, selectedAngle };
+    appliedHistoryRef.current = merged;
+    applyDraft(merged);
+    setBrief(d.brief ?? null);
+    setPhotoLayout(d.photoLayout ?? null);
+    setPhotoImage(d.photoImage ?? null);
+    setPhotoRect(d.photoRect ?? null);
+    setBriefAppliedAt(d.briefAppliedAt ?? null);
+    setSelectedId(null);
+  };
+  const undo = () => {
+    if (editOpen) return;
+    flushPendingHistory();
+    const past = undoStackRef.current;
+    if (past.length < 2) return;
+    redoStackRef.current.push(past.pop()!);
+    restoreSnapshot(past[past.length - 1]);
+    syncHist();
+  };
+  const redo = () => {
+    if (editOpen) return;
+    const next = redoStackRef.current.pop();
+    if (!next) return;
+    undoStackRef.current.push(next);
+    restoreSnapshot(next);
+    syncHist();
+  };
+  const canUndo = histLen.undo > 1;
+  const canRedo = histLen.redo > 0;
+  const undoRef = useRef(undo);
+  const redoRef = useRef(redo);
+  const pushHistoryRef = useRef(pushHistory);
+  const editOpenRef = useRef(false);
+  useEffect(() => {
+    undoRef.current = undo;
+    redoRef.current = redo;
+    pushHistoryRef.current = pushHistory;
+    editOpenRef.current = editOpen;
+  });
+  // Kısayol: ⌘/Ctrl+Z geri, ⌘/Ctrl+Shift+Z (ya da Ctrl+Y) ileri. Yazı yazarken dokunma.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || editOpenRef.current) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (e.target as HTMLElement | null)?.isContentEditable) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undoRef.current();
+      } else if ((k === "z" && e.shiftKey) || k === "y") {
+        e.preventDefault();
+        redoRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // --- Değişiklikleri otomatik kaydet (debounce) ---
   // hydratedRef açılana kadar (ilk yükleme) kayıt yapma. Her değişiklikten
   // ~0,6 sn sonra diske yaz; arada yeni değişiklik gelirse zamanlayıcı sıfırlanır.
@@ -1328,6 +1470,7 @@ export default function CoverStudio({
     setDraftStatus("saving");
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
+      pushHistoryRef.current(draft);
       if (projectId) {
         // Buluta kaydet. Küçük resmi her ~4 sn'de bir, düşük DPI ile üret (ucuz).
         let thumb: string | undefined;
@@ -3094,15 +3237,320 @@ export default function CoverStudio({
             </section>
   ) : null;
 
+  // Sağ panelin başlığı (ikon + ad + kısa açıklama).
+  const PANEL_META: Record<PanelId, { title: string; sub: string; Icon: (p: { className?: string }) => React.ReactElement }> = {
+    ai: { title: lang === "tr" ? "AI ile kapak görseli" : "AI cover image", sub: lang === "tr" ? "Kitabına uygun bir görsel oluştur." : "Create an image that fits your book.", Icon: MagicWandIcon },
+    content: { title: lang === "tr" ? "Metin" : "Text", sub: lang === "tr" ? "Başlık, yazar ve serbest yazılar." : "Title, author and free text.", Icon: TextTIcon },
+    images: { title: lang === "tr" ? "Görsel ve logo" : "Image and logo", sub: lang === "tr" ? "Kapak görseli, yerleşimi ve logo." : "Cover image, placement and logo.", Icon: ImageIcon },
+    objects: { title: lang === "tr" ? "Nesneler" : "Objects", sub: lang === "tr" ? "Şekil ve süs ayracı ekle." : "Add shapes and dividers.", Icon: ShapesIcon },
+    colors: { title: lang === "tr" ? "Renkler" : "Colors", sub: lang === "tr" ? "Zemin, yazı ve sırt bandı renkleri." : "Ground, text and spine band colors.", Icon: PaletteIcon },
+    barcode: { title: lang === "tr" ? "Barkod" : "Barcode", sub: lang === "tr" ? "ISBN ile taranabilir barkod." : "A scannable ISBN barcode.", Icon: BarcodeIcon },
+    layers: { title: lang === "tr" ? "Katmanlar" : "Layers", sub: lang === "tr" ? "Sırala, gizle, kilitle." : "Order, hide, lock.", Icon: StackIcon },
+    setup: { title: lang === "tr" ? "Kitap ayarları" : "Book settings", sub: lang === "tr" ? "Boyut, sayfa sayısı, kağıt ve sırt." : "Size, page count, paper and spine.", Icon: SlidersIcon },
+    library: { title: lang === "tr" ? "Görsellerim" : "My images", sub: lang === "tr" ? "Yüklediğin görseller ve şablonların." : "Your uploads and saved templates.", Icon: FolderIcon },
+  };
+  const RAIL_MAIN: PanelId[] = ["ai", "content", "images", "objects", "colors", "barcode", "layers"];
+  const RAIL_BOTTOM: PanelId[] = ["setup", "library"];
+  const railLabel = (id: PanelId) =>
+    id === "library" ? PANEL_META.library.title : (panels.find((p) => p.id === id)?.label ?? PANEL_META[id].title);
+  const meta = PANEL_META[activePanel];
+  // Seçim, Katmanlar listesinden yapıldıysa liste görünür kalsın (inspector altta).
+  const inspectorReplaces = !!selectedId && activePanel !== "layers";
+  const wizard = initialProject?.data.wizard;
+  const wizardActive = !!wizard?.active && !autoExport;
+  const wizardSteps: [string, string, boolean][] = wizard
+    ? [
+        ["editor", lang === "tr" ? "AI Editör" : "AI Editor", wizard.editorCompleted],
+        ["mizanpaj", lang === "tr" ? "Mizanpaj" : "Layout", wizard.layoutCompleted],
+        ["kapak", lang === "tr" ? "Kapak" : "Cover", wizard.coverCompleted],
+      ]
+    : [];
+  const docTitle = title.trim() || (lang === "tr" ? "Kapak çalışması" : "Cover draft");
+  const togglePreview = () => {
+    if (!preview) {
+      setPreview(true);
+      setSelectedId(null);
+      if (!bigView) void toggleBigView();
+    } else {
+      setPreview(false);
+      if (bigView) void toggleBigView();
+    }
+  };
+  const finishWizard = async () => {
+    if (!projectId || wizardBusy) return;
+    setWizardBusy(true);
+    try {
+      await completeWizardStep(projectId, "cover");
+    } catch {
+      // kaydedilemese de ilerle; taslak zaten otomatik kaydediliyor
+    }
+    router.push(`/${lang}/indir?project=${projectId}`);
+  };
+  // Büyük görünümde yüzen ayar kutusu, seçili nesnenin KARŞI tarafında durur.
+  const floatOnRight = !!selectedGeoLive && selectedGeoLive.leftMm < spread.spineStart;
+  const zoomNext = zoomStep(zoom, 1);
+  const canZoomIn = zoom < ZOOM_STEPS[ZOOM_STEPS.length - 1] && zoomNext <= viewInfo.maxZoom + 0.01;
+
   return (
     <div
       ref={rootRef}
-      // Büyük görünüm: tarayıcı tam ekranı vermese bile sayfayı (üst menüler
-      // dahil) kaplar → tuval her durumda en büyük boyuta çıkar.
-      className={`mx-auto flex w-full flex-col overflow-hidden px-4 pb-2 pt-2 ${
-        bigView ? "fixed inset-0 z-[70] h-dvh max-w-none bg-background" : "h-full max-w-[1600px]"
+      className={`flex w-full flex-col bg-background ${
+        bigView ? "fixed inset-0 z-[70] h-dvh overflow-hidden" : "h-dvh overflow-y-auto lg:overflow-hidden"
       }`}
     >
+      {/* ── Üst çubuk: marka · Kitaplarım · kitap adı · kayıt · geri/ileri · Önizleme · İndir · hesap ── */}
+      {!bigView && (
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b border-border bg-surface px-3 sm:gap-3 lg:px-5">
+          <Link href={`/${lang}/projeler`} className="flex shrink-0 items-center gap-2" aria-label="Laycoty">
+            <Logo className="h-9 w-9 text-base" />
+            <span className="hidden text-lg font-bold tracking-tight text-foreground sm:inline">laycoty</span>
+          </Link>
+          <span className="hidden h-7 w-px shrink-0 bg-border md:block" />
+          <Link
+            href={`/${lang}/projeler`}
+            className="hidden shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-foreground/80 transition hover:bg-accent-soft hover:text-foreground md:flex"
+          >
+            <span aria-hidden="true">←</span>
+            {lang === "tr" ? "Kitaplarım" : "My books"}
+          </Link>
+          <span className="hidden h-7 w-px shrink-0 bg-border md:block" />
+          <span
+            className="hidden h-8 w-8 shrink-0 rounded-lg sm:block"
+            style={{ background: "linear-gradient(135deg, var(--color-accent), #7c3aed)" }}
+            aria-hidden="true"
+          />
+          <span className="min-w-0 truncate text-base font-semibold text-foreground" title={docTitle}>
+            {docTitle}
+          </span>
+          <span className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap text-sm text-muted lg:flex">
+            <span className={`h-2 w-2 rounded-full ${draftStatus === "saving" ? "bg-amber-400" : "bg-emerald-500"}`} />
+            {draftStatus === "saving" ? t.draftSaving : t.draftSaved}
+          </span>
+          {wizardActive && wizard && projectId && (
+            <nav className="ml-2 hidden shrink-0 items-center gap-1 xl:flex" aria-label={lang === "tr" ? "Adımlar" : "Steps"}>
+              {wizardSteps.map(([seg, label, done], i) => (
+                <Link
+                  key={seg}
+                  href={`/${lang}/${seg}?project=${projectId}`}
+                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition ${
+                    seg === "kapak" ? "bg-accent-soft text-accent" : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {seg === "editor" && editorJob.running !== null ? (
+                    <span
+                      className="h-5 w-5 animate-spin rounded-full border-2 border-accent/25 border-t-accent"
+                      title={lang === "tr" ? "AI Editör kontrolü arka planda sürüyor" : "AI Editor check running"}
+                    />
+                  ) : (
+                    <span
+                      className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${
+                        done ? "bg-emerald-600 text-white" : seg === "kapak" ? "bg-accent text-white" : "border border-border"
+                      }`}
+                    >
+                      {done ? "✓" : i + 1}
+                    </span>
+                  )}
+                  {label}
+                </Link>
+              ))}
+            </nav>
+          )}
+          {wizardActive && wizard && projectId && (
+            <div className="relative shrink-0 xl:hidden">
+              <button
+                type="button"
+                onClick={() => setStepsOpen((o) => !o)}
+                aria-haspopup="menu"
+                aria-expanded={stepsOpen}
+                className="flex items-center gap-1 whitespace-nowrap rounded-full bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent"
+              >
+                {lang === "tr" ? "Adım 3/3" : "Step 3/3"} <span aria-hidden="true">▾</span>
+              </button>
+              {stepsOpen && (
+                <>
+                  <button type="button" aria-label="×" className="fixed inset-0 z-30 cursor-default" onClick={() => setStepsOpen(false)} />
+                  <div role="menu" className="absolute left-0 z-40 mt-2 w-48 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg">
+                    {wizardSteps.map(([seg, label, done], i) => (
+                      <Link
+                        key={seg}
+                        href={`/${lang}/${seg}?project=${projectId}`}
+                        className="flex items-center gap-2 px-4 py-2.5 text-sm text-foreground/80 hover:bg-accent-soft hover:text-accent"
+                      >
+                        <span className="w-4 text-center text-xs">{done ? "✓" : i + 1}</span>
+                        {label}
+                      </Link>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={undo}
+            disabled={!canUndo}
+            title={lang === "tr" ? "Geri al (⌘Z)" : "Undo (⌘Z)"}
+            aria-label={lang === "tr" ? "Geri al" : "Undo"}
+            className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-lg text-foreground/70 transition hover:bg-accent-soft hover:text-foreground disabled:opacity-30 sm:flex"
+          >
+            <ArrowUUpLeftIcon className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={redo}
+            disabled={!canRedo}
+            title={lang === "tr" ? "İleri al (⇧⌘Z)" : "Redo (⇧⌘Z)"}
+            aria-label={lang === "tr" ? "İleri al" : "Redo"}
+            className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-lg text-foreground/70 transition hover:bg-accent-soft hover:text-foreground disabled:opacity-30 sm:flex"
+          >
+            <ArrowUUpRightIcon className="h-5 w-5" />
+          </button>
+          <span className="hidden h-7 w-px shrink-0 bg-border sm:block" />
+          <button
+            type="button"
+            onClick={togglePreview}
+            className="hidden shrink-0 rounded-xl border border-accent/50 px-4 py-2.5 text-sm font-semibold text-accent transition hover:bg-accent-soft md:block"
+          >
+            {lang === "tr" ? "Önizleme" : "Preview"}
+          </button>
+          {/* Tek "İndir" düğmesi → açılır menü: PDF · PNG · Paylaş · Şablona kaydet */}
+          <div className="relative" ref={downloadMenuRef}>
+            <button
+              type="button"
+              onClick={() => setDownloadMenuOpen((o) => !o)}
+              disabled={exporting}
+              aria-haspopup="menu"
+              aria-expanded={downloadMenuOpen}
+              className="flex items-center gap-1.5 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {exporting ? t.exportBusy : t.downloadMenuCta}
+              <span
+                className={`text-xs transition ${downloadMenuOpen ? "rotate-180" : ""}`}
+                aria-hidden="true"
+              >
+                ▾
+              </span>
+            </button>
+            {downloadMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 z-20 mt-2 w-52 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setDownloadMenuOpen(false);
+                    void handleExportPdf();
+                  }}
+                  className="block w-full px-4 py-2.5 text-left text-sm font-medium text-foreground/80 transition hover:bg-accent-soft hover:text-accent"
+                >
+                  {t.downloadPdf}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setDownloadMenuOpen(false);
+                    handleExportPng();
+                  }}
+                  className="block w-full px-4 py-2.5 text-left text-sm font-medium text-foreground/80 transition hover:bg-accent-soft hover:text-accent"
+                >
+                  {t.downloadPng}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setDownloadMenuOpen(false);
+                    void handleShare();
+                  }}
+                  className="block w-full px-4 py-2.5 text-left text-sm font-medium text-foreground/80 transition hover:bg-accent-soft hover:text-accent"
+                >
+                  {t.downloadShare}
+                </button>
+                <div className="my-1 border-t border-border" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setDownloadMenuOpen(false);
+                    saveCurrentAsTemplate();
+                  }}
+                  className="block w-full px-4 py-2.5 text-left text-sm font-medium text-foreground/80 transition hover:bg-accent-soft hover:text-accent"
+                >
+                  {t.downloadSaveTemplate}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setDownloadMenuOpen(false);
+                    startNewDesign();
+                  }}
+                  className="block w-full px-4 py-2.5 text-left text-sm font-medium text-foreground/60 transition hover:bg-accent-soft hover:text-accent"
+                >
+                  {lang === "tr" ? "Baştan başla" : "Start over"}
+                </button>
+              </div>
+            )}
+          </div>
+          {wizardActive && projectId && (
+            <button
+              type="button"
+              onClick={() => void finishWizard()}
+              disabled={wizardBusy}
+              title={lang === "tr" ? "Kapağı tamamla ve indirme sayfasına geç" : "Finish the cover and go to downloads"}
+              className="shrink-0 whitespace-nowrap rounded-xl border border-emerald-600/40 px-3 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
+            >
+              <span className="hidden sm:inline">{lang === "tr" ? "Tamamla →" : "Finish →"}</span>
+              <span className="sm:hidden">✓</span>
+            </button>
+          )}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setAccountOpen((o) => !o)}
+              aria-haspopup="menu"
+              aria-expanded={accountOpen}
+              title={user?.name}
+              className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white"
+              style={{ background: "linear-gradient(135deg, #d946ef, #9333ea)" }}
+            >
+              {user?.initials ?? "?"}
+            </button>
+            {accountOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-label={lang === "tr" ? "Menüyü kapat" : "Close menu"}
+                  className="fixed inset-0 z-30 cursor-default"
+                  onClick={() => setAccountOpen(false)}
+                />
+                <div role="menu" className="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg">
+                  {user?.name && <div className="truncate px-4 py-2 text-sm font-semibold text-foreground">{user.name}</div>}
+                  <Link href={`/${lang}/projeler`} className="block px-4 py-2.5 text-sm text-foreground/80 hover:bg-accent-soft hover:text-accent">
+                    {lang === "tr" ? "Kitaplarım" : "My books"}
+                  </Link>
+                  <Link href={`/${lang}/jetonlar`} className="block px-4 py-2.5 text-sm text-foreground/80 hover:bg-accent-soft hover:text-accent">
+                    {lang === "tr" ? "Jetonlarım" : "My credits"}
+                    {balance != null ? ` · ${balance}` : ""}
+                  </Link>
+                  {signOut && (
+                    <form action={signOut} className="border-t border-border">
+                      <button type="submit" className="block w-full px-4 py-2.5 text-left text-sm text-foreground/80 hover:bg-accent-soft hover:text-accent">
+                        {lang === "tr" ? "Çıkış yap" : "Sign out"}
+                      </button>
+                    </form>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </header>
+      )}
+
       {autoExport && (
         <ExportOverlay
           lang={lang}
@@ -3126,1586 +3574,1621 @@ export default function CoverStudio({
         </div>
       )}
 
-      <div className="mt-2 flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
-        {/* Canva tarzı sol ikon şeridi */}
-        <nav
-          className={`flex shrink-0 gap-1 overflow-x-auto lg:flex-col lg:overflow-visible ${bigView ? "hidden" : ""}`}
-        >
-          {panels.map(({ id, label, Icon }) => {
-            const active = activePanel === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => {
-                  // Sekmeye geçince seçim odağından çık → geniş panel geri gelir.
-                  setActivePanel(id);
-                  setSelectedId(null);
-                }}
-                className={`flex shrink-0 flex-col items-center gap-1 rounded-xl px-3 py-2.5 text-[11px] font-medium transition lg:w-16 ${
-                  active && !selectedId
-                    ? "bg-accent-soft text-accent"
-                    : "text-muted hover:bg-surface hover:text-foreground"
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-                {label}
-              </button>
-            );
-          })}
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {/* ── Sol araç şeridi ── */}
+        {!bigView && (
+          <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-surface px-2 py-2 lg:w-[92px] lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:border-b-0 lg:border-r lg:px-2 lg:py-3">
+            {[...RAIL_MAIN, ...RAIL_BOTTOM].map((id, idx) => {
+              const Icon = PANEL_META[id].Icon;
+              const active = activePanel === id && !inspectorReplaces;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setActivePanel(id);
+                    setSelectedId(null);
+                    setPanelOpen(true);
+                  }}
+                  aria-pressed={active}
+                  className={`flex shrink-0 flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-xs font-medium transition lg:w-full [@media(max-height:820px)]:gap-1 [@media(max-height:820px)]:py-2 ${
+                    idx === RAIL_MAIN.length ? "lg:mt-auto" : ""
+                  } ${active ? "bg-accent-soft text-accent" : "text-foreground/70 hover:bg-background hover:text-foreground"}`}
+                >
+                  <Icon className="h-6 w-6" />
+                  {railLabel(id)}
+                </button>
+              );
+            })}
+          </nav>
+        )}
 
-          {/* "Yüklemelerim" — sol şeridin EN ALTINDA, ayraçla ayrılmış kişisel
-              kütüphane (görseller + kaydedilen şablonlar). lg:mt-auto onu
-              dikey şeritte en dibe iter. */}
-          <button
-            type="button"
-            onClick={() => {
-              setActivePanel("library");
-              setSelectedId(null);
-            }}
-            className={`flex shrink-0 flex-col items-center gap-1 rounded-xl px-3 py-2.5 text-[11px] font-medium transition lg:mt-auto lg:w-16 lg:border-t lg:border-border lg:pt-3 ${
-              activePanel === "library" && !selectedId
-                ? "bg-accent-soft text-accent"
-                : "text-muted hover:bg-surface hover:text-foreground"
-            }`}
-          >
-            <FolderIcon className="h-5 w-5" />
-            {t.navLibrary}
-          </button>
-        </nav>
-
-        {/* Seçili grubun ayar paneli — her zaman görünür kalır ki seçim
-            yapılınca tuval yatayda kaymasın (fabric'in kaymayı sürükleme
-            sanmasını önler). */}
-        <aside
-          className={`w-full shrink-0 lg:h-full lg:w-[300px] lg:overflow-y-auto lg:pr-1 ${bigView ? "hidden" : ""}`}
-        >
-          {!bigView && inspectorNode}
-          <div className={selectedId ? "hidden" : "contents"}>
-          {/* AI Kapak */}
-          {activePanel === "ai" && (
-          <section className="space-y-4">
-            <h2 className={headingClass}>{t.aiHeading}</h2>
-            <p className="text-xs text-muted">{t.aiHint}</p>
-            {projectId && (
-              <a
-                href={`/${lang}/kapak/kurgu?project=${projectId}`}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
-              >
-                {lang === "tr" ? "Kapak kurgusu ile başla →" : "Start with the cover brief →"}
-              </a>
-            )}
-
-            <Field label={t.aiModelLabel} hint={t.aiModelHint}>
-              <select
-                value={aiModel}
-                onChange={(e) => setAiModel(e.target.value as AiModel)}
-                className={selectClass}
-              >
-                <option value="openai">{t.aiModelOpenai}</option>
-                <option value="flux">{t.aiModelFlux}</option>
-                <option value="nano">{t.aiModelNano}</option>
-                <option value="ideogram">{t.aiModelIdeogram}</option>
-              </select>
-            </Field>
-            {aiModel === "openai" && aiLastCost != null && (
-              <p className="text-xs text-muted">
-                {t.aiLastCost}: ≈ {aiLastCost.toFixed(3)} $
-              </p>
-            )}
-
-            <Field label={t.titlePosLabel} hint={t.titlePosHint}>
-              <div className="grid grid-cols-2 gap-2">
-                <SegButton active={titlePos === "top"} onClick={() => setTitlePos("top")}>
-                  {t.titlePosTop}
-                </SegButton>
-                <SegButton active={titlePos !== "top"} onClick={() => setTitlePos("auto")}>
-                  {t.titlePosAuto}
-                </SegButton>
+        {/* ── Tuval ── */}
+        <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col p-3 lg:min-h-0 lg:p-4">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+            {preview ? (
+              <div className="absolute right-3 top-3 z-30">
+                <button
+                  type="button"
+                  onClick={togglePreview}
+                  className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:opacity-90"
+                >
+                  {lang === "tr" ? "Önizlemeden çık (Esc)" : "Exit preview (Esc)"}
+                </button>
               </div>
-            </Field>
-
-            {(aiModel === "nano" || aiModel === "ideogram") && (
-              <Field label={t.aiEmbedLabel} hint={t.aiEmbedHint}>
-                <div className="grid grid-cols-2 gap-2">
-                  <SegButton
-                    active={aiEmbedText}
-                    onClick={() => setAiEmbedText(true)}
-                  >
-                    {t.aiEmbedOn}
-                  </SegButton>
-                  <SegButton
-                    active={!aiEmbedText}
-                    onClick={() => setAiEmbedText(false)}
-                  >
-                    {t.aiEmbedOff}
-                  </SegButton>
-                </div>
-              </Field>
-            )}
-
-            {activeBrief && aiModel === "openai" && (
-              <div className="rounded-lg border border-accent/30 bg-accent-soft px-3 py-2 text-xs text-foreground">
-                <div className="font-semibold">
-                  {lang === "tr" ? "Konsept (kurgudan)" : "Concept (from the brief)"}
-                </div>
-                <div className="mt-0.5">
-                  {resolveStandard(activeBrief.themaCode).name[lang]} ·{" "}
-                  {getConceptOf(resolveStandard(activeBrief.themaCode), activeBrief.conceptId).name[lang]}
-                </div>
-                <div className="mt-1 text-muted">
-                  {lang === "tr"
-                    ? "Üret'e basınca bu konseptle üretilir. Değiştirmek için yukarıdaki Kapak kurgusu bağlantısını kullan."
-                    : "Generate uses this concept. Change it via the cover brief link above."}
-                </div>
-              </div>
-            )}
-            {!(activeBrief && aiModel === "openai") && (
-            <Field label={t.aiStyleLabel}>
-              <select
-                value={aiStyle}
-                onChange={(e) => setAiStyle(e.target.value)}
-                className={selectClass}
-              >
-                {AI_STYLES.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name[lang]}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            )}
-
-            <Field label={t.aiScopeLabel} hint={t.aiScopeHint}>
-              <div className="grid grid-cols-2 gap-2">
-                <SegButton active={aiScope === "front"} onClick={() => setAiScope("front")}>
-                  {t.scopeFront}
-                </SegButton>
-                <SegButton active={aiScope === "wrap"} onClick={() => setAiScope("wrap")}>
-                  {t.scopeWrap}
-                </SegButton>
-              </div>
-            </Field>
-
-            <Field label={t.aiDescLabel} hint={t.aiDescHint}>
-              <textarea
-                value={aiDesc}
-                onChange={(e) => setAiDesc(e.target.value)}
-                placeholder={t.aiDescPlaceholder}
-                rows={3}
-                className={`${inputClass} resize-none`}
-              />
-            </Field>
-
-            <button
-              type="button"
-              onClick={() => {
-                // Kurgu varsa ChatGPT üretimi seçili KONSEPTLE yapılır (konsept düşmez).
-                // Tuvaldeki fotoğraf yuvası konseptin düzenine uymuyorsa eski yol.
-                const slot = currentPhotoSlot();
-                const ok =
-                  !!activeBrief &&
-                  aiModel === "openai" &&
-                  (!slot ||
-                    getConceptOf(resolveStandard(activeBrief.themaCode), activeBrief.conceptId).photo?.layout ===
-                      slot.layout);
-                void generateAiCover(
-                  ok && activeBrief
-                    ? { model: "openai", desc: aiDesc, scope: aiScope, embedText: false, ...conceptGenOpts(activeBrief, slot) }
-                    : undefined,
-                );
-              }}
-              disabled={aiBusy}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <MagicWandIcon className="h-4 w-4" />
-              {aiBusy ? t.aiBusy : t.aiGenerate}
-              {!aiBusy && balance != null && (
-                <span className="font-normal opacity-80">
-                  · {aiModelCost(aiModel)} {lang === "tr" ? "jeton" : "credits"}
-                </span>
-              )}
-            </button>
-
-            {aiError === "token" && (
-              <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">
-                {t.aiErrorToken}
-              </p>
-            )}
-            {aiError === "generic" && (
-              <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">
-                {t.aiErrorGeneric}
-              </p>
-            )}
-            {aiError === "timeout" && (
-              <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">
-                {t.aiErrorTimeout}
-              </p>
-            )}
-            {aiError === "credits" && aiCredit && (
-              <CreditNotice lang={lang} problem={aiCredit} className="text-xs" />
-            )}
-            {aiNotice === "embed" && (
-              <p className="rounded-lg border border-emerald-500/40 bg-emerald-50 px-3 py-3 text-xs text-emerald-700">
-                {t.aiEmbedNotice}
-              </p>
-            )}
-
-            {coverImage && (
-              <button
-                type="button"
-                onClick={() => setEditOpen(true)}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-accent bg-accent-soft px-4 py-3 text-sm font-semibold text-accent transition hover:bg-accent/10"
-              >
-                <MagicWandIcon className="h-4 w-4" />
-                {t.aiEditCta}
-              </button>
-            )}
-
-            {coverImage && (
-              <Field
-                label={lang === "tr" ? "Görsel yerleşimi" : "Image layout"}
-                hint={
-                  lang === "tr"
-                    ? "Kendi fotoğrafın için: çerçeveli portre, üstte fotoğraf + altta renkli bant ya da sağ altta portre. Zemin rengini Renkler panelinden değiştir."
-                    : "For your own photo: a framed portrait, photo on top with a colored band below, or a portrait at the lower right. Change the ground color in Colors."
-                }
-              >
-                <div className="grid grid-cols-2 gap-2">
-                  <SegButton active={!photoLayout} onClick={() => { setPhotoLayout(null); setPhotoRect(null); }}>
-                    {lang === "tr" ? "Tam kapak" : "Full cover"}
-                  </SegButton>
-                  <SegButton active={photoLayout === "framed"} onClick={() => { setPhotoLayout("framed"); setPhotoRect(null); if (!photoImage) setCoverScope("front"); }}>
-                    {lang === "tr" ? "Çerçeveli" : "Framed"}
-                  </SegButton>
-                  <SegButton active={photoLayout === "band"} onClick={() => { setPhotoLayout("band"); setPhotoRect(null); if (!photoImage) setCoverScope("front"); }}>
-                    {lang === "tr" ? "Üstte + bant" : "Top + band"}
-                  </SegButton>
-                  <SegButton active={photoLayout === "side"} onClick={() => { setPhotoLayout("side"); setPhotoRect(null); if (!photoImage) setCoverScope("front"); }}>
-                    {lang === "tr" ? "Sağ altta" : "Lower right"}
-                  </SegButton>
-                </div>
-              </Field>
-            )}
-
-            {coverImage && (
-              <Field label={t.coverFitLabel} hint={t.coverFitHint}>
-                <div className="grid grid-cols-2 gap-2">
-                  <SegButton active={coverFit === "fill"} onClick={() => setCoverFit("fill")}>
-                    {t.coverFitFill}
-                  </SegButton>
-                  <SegButton active={coverFit === "fit"} onClick={() => setCoverFit("fit")}>
-                    {t.coverFitContain}
-                  </SegButton>
-                </div>
-              </Field>
-            )}
-
-            {coverImage && (
-              <Field
-                label={`${t.opacityLabel} — %${Math.round(coverOpacity * 100)}`}
-                hint={t.opacityHint}
-              >
-                <input
-                  type="range"
-                  min={20}
-                  max={100}
-                  value={Math.round(coverOpacity * 100)}
-                  onChange={(e) => setCoverOpacity(Number(e.target.value) / 100)}
-                  className="w-full accent-accent"
-                />
-              </Field>
-            )}
-
-            <p className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted">
-              {t.aiTip}
-            </p>
-
-            {aiHistory.length > 0 && (
-              <div className="space-y-2 border-t border-border pt-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
-                    {t.aiHistoryHeading}
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={clearAiHistory}
-                    className="text-xs font-medium text-accent transition hover:opacity-80"
-                  >
-                    {t.aiHistoryClear}
-                  </button>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {aiHistory.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => restoreAiHistory(item)}
-                      title={t.aiHistoryRestore}
-                      className={`group relative aspect-[4/3] overflow-hidden rounded-md border transition ${
-                        coverImage === item.image
-                          ? "border-accent ring-2 ring-accent/40"
-                          : "border-border hover:border-accent"
-                      }`}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={item.image}
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-muted">{t.aiHistoryHint}</p>
-              </div>
-            )}
-
-            {/* AI ile TASARIM ÖĞESİ — saydam PNG nesnesi (mühür/rozet/amblem…) */}
-            <div className="space-y-3 border-t border-border pt-4">
-              <div>
-                <h3 className="text-sm font-semibold text-foreground">
-                  {t.elemHeading}
-                </h3>
-                <p className="mt-1 text-xs text-muted">{t.elemHint}</p>
-              </div>
-
-              <Field label={t.elemPresetsLabel}>
-                <div className="flex flex-wrap gap-2">
+            ) : (
+              <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-3 py-2.5 sm:px-4">
+                <div className="flex rounded-xl border border-border bg-background p-1" role="group" aria-label={lang === "tr" ? "Görünüm" : "View"}>
                   {(
                     [
-                      [t.elemPresetSeal, t.elemPresetSealEx],
-                      [t.elemPresetBadge, t.elemPresetBadgeEx],
-                      [t.elemPresetEmblem, t.elemPresetEmblemEx],
-                      [t.elemPresetOrnament, t.elemPresetOrnamentEx],
-                    ] as const
-                  ).map(([label, example]) => (
+                      ["all", lang === "tr" ? "Tam kapak" : "Full cover"],
+                      ["front", lang === "tr" ? "Ön kapak" : "Front"],
+                      ["back", lang === "tr" ? "Arka kapak" : "Back"],
+                    ] as [ViewFocus, string][]
+                  ).map(([v, label]) => (
                     <button
-                      key={label}
+                      key={v}
                       type="button"
-                      onClick={() => setElemDesc(example)}
-                      className="rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground/80 transition hover:border-accent/40 hover:text-foreground"
+                      onClick={() => setViewFocus(v)}
+                      aria-pressed={viewFocus === v}
+                      className={`rounded-lg px-3.5 py-2 text-sm font-medium transition ${
+                        viewFocus === v ? "bg-accent-soft text-accent" : "text-foreground/70 hover:text-foreground"
+                      }`}
                     >
                       {label}
                     </button>
                   ))}
                 </div>
-              </Field>
-
-              <Field label={t.elemDescLabel}>
-                <textarea
-                  value={elemDesc}
-                  onChange={(e) => setElemDesc(e.target.value)}
-                  placeholder={t.elemDescPlaceholder}
-                  rows={3}
-                  className={`${inputClass} resize-none`}
-                />
-              </Field>
-
-              <button
-                type="button"
-                onClick={generateElement}
-                disabled={elemBusy || !elemDesc.trim()}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <MagicWandIcon className="h-4 w-4" />
-                {elemBusy ? t.elemBusyLabel : t.elemGenerate}
-                {!elemBusy && balance != null && (
-                  <span className="font-normal opacity-80">
-                    · {creditCost("cover-element")} {lang === "tr" ? "jeton" : "credits"}
+                <div className="flex-1" />
+                <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground/80" title={t.bleedNote}>
+                  <span className="relative inline-flex">
+                    <input
+                      type="checkbox"
+                      checked={showGuides}
+                      onChange={(e) => setShowGuides(e.target.checked)}
+                      className="peer sr-only"
+                    />
+                    <span className="h-6 w-11 rounded-full bg-foreground/25 transition peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40" />
+                    <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
                   </span>
-                )}
-              </button>
-
-              {elemError === "token" && (
-                <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">
-                  {t.aiErrorToken}
-                </p>
-              )}
-              {elemError === "generic" && (
-                <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">
-                  {t.aiErrorGeneric}
-                </p>
-              )}
-              {elemError === "credits" && elemCredit && (
-                <CreditNotice lang={lang} problem={elemCredit} className="text-xs" />
-              )}
-
-              <p className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted">
-                {t.elemTip}
-              </p>
-            </div>
-          </section>
-          )}
-
-          {/* Renkler */}
-          {activePanel === "colors" && (
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className={headingClass}>{t.colorsHeading}</h2>
-              <button
-                type="button"
-                onClick={() => setColorOverrides({})}
-                disabled={!colorsDirty}
-                className="text-xs font-medium text-accent transition disabled:cursor-not-allowed disabled:text-muted disabled:opacity-50"
-              >
-                {t.colorsReset}
-              </button>
-            </div>
-            <p className="text-xs text-muted">{t.colorsHint}</p>
-
-            {/* Sırt bandı: sarmal görselde sırtı mm'de kapatan düz şerit. */}
-            {coverImage && coverScope === "wrap" && (
-              <div className="space-y-2 rounded-lg border border-foreground/10 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium text-foreground">
-                    {lang === "tr" ? "Sırt bandı" : "Spine band"}
-                  </span>
-                  <div className="grid grid-cols-2 gap-1">
-                    <SegButton
-                      active={!!spineBand}
-                      onClick={() => {
-                        if (spineBand) return;
-                        void spineColorFromImage(coverImage).then((c) => setSpineBand(c ?? colors.ink));
-                      }}
-                    >
-                      {lang === "tr" ? "Açık" : "On"}
-                    </SegButton>
-                    <SegButton active={!spineBand} onClick={() => setSpineBand(null)}>
-                      {lang === "tr" ? "Kapalı" : "Off"}
-                    </SegButton>
-                  </div>
-                </div>
-                {spineBand && (
-                  <div className="flex items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={() => void spineColorFromImage(coverImage).then((c) => c && setSpineBand(c))}
-                      className="text-xs font-medium text-accent hover:underline"
-                    >
-                      {lang === "tr" ? "Rengi görselden al" : "Pick color from image"}
-                    </button>
-                    <span className="flex items-center gap-2">
-                      <span className="w-24">
-                        <HexInput value={spineBand} onCommit={(hex) => setSpineBand(hex)} />
-                      </span>
-                      <input
-                        type="color"
-                        value={spineBand}
-                        onChange={(e) => setSpineBand(e.target.value)}
-                        aria-label={lang === "tr" ? "Sırt bandı rengi" : "Spine band color"}
-                        className="h-8 w-10 cursor-pointer rounded border border-border bg-transparent p-0.5"
-                      />
-                    </span>
-                  </div>
-                )}
-                <p className="text-xs text-muted">
-                  {lang === "tr"
-                    ? "Yapay zekâ sırtı yaklaşık bırakır; bu şerit sırtı tam ölçüsünde kapatır, sırt yazısı üstüne gelir."
-                    : "AI leaves the spine approximate; this band covers it at exact size, spine text sits on top."}
-                </p>
+                  {lang === "tr" ? "Kılavuzlar" : "Guides"}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void toggleBigView()}
+                  title={
+                    bigView
+                      ? lang === "tr" ? "Büyük görünümü kapat (Esc)" : "Close big view (Esc)"
+                      : lang === "tr" ? "Büyük görünüm" : "Big view"
+                  }
+                  className={`flex h-10 items-center gap-2 rounded-lg px-2.5 text-sm font-semibold transition ${
+                    bigView ? "bg-accent text-white hover:opacity-90" : "text-foreground/70 hover:bg-accent-soft hover:text-foreground"
+                  }`}
+                >
+                  <ArrowsOutIcon className="h-5 w-5" />
+                  {bigView && (lang === "tr" ? "Büyük görünümü kapat" : "Close big view")}
+                </button>
               </div>
             )}
 
-            <div className="space-y-2.5">
-              {([
-                { key: "bg" as const, label: t.colorBg },
-                { key: "ink" as const, label: t.colorInk },
-                { key: "accent" as const, label: t.colorAccent },
-              ]).map(({ key, label }) => (
-                <label
-                  key={key}
-                  className="flex items-center justify-between gap-3"
-                >
-                  <span className="text-sm text-foreground">{label}</span>
-                  <span className="flex items-center gap-2">
-                    <span className="w-24">
-                      <HexInput
-                        value={colors[key]}
-                        onCommit={(hex) => setColor(key, hex)}
-                      />
-                    </span>
-                    <input
-                      type="color"
-                      value={colors[key]}
-                      onChange={(e) => setColor(key, e.target.value)}
-                      aria-label={label}
-                      className="h-8 w-10 cursor-pointer rounded border border-border bg-transparent p-0.5"
-                    />
-                  </span>
-                </label>
-              ))}
-            </div>
-          </section>
-          )}
-
-          {/* İçerik */}
-          {activePanel === "content" && (
-          <section className="space-y-4">
-            <h2 className={headingClass}>{t.contentHeading}</h2>
-
-            {/* Okunurluk: yazıyı arka plana göre otomatik beyaz/siyah + gölge */}
-            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-surface p-3">
-              <input
-                type="checkbox"
-                checked={autoContrast}
-                onChange={(e) => setAutoContrast(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-accent"
-              />
-              <span className="text-xs leading-relaxed">
-                <span className="block font-medium text-foreground">
-                  {t.autoContrastLabel}
-                </span>
-                <span className="block text-muted">{t.autoContrastHint}</span>
-              </span>
-            </label>
-
-            <Field label={t.titleLabel}>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder={t.titlePlaceholder}
-                className={inputClass}
-              />
-            </Field>
-            <Field label={t.authorLabel}>
-              <input
-                value={author}
-                onChange={(e) => setAuthor(e.target.value)}
-                placeholder={t.authorPlaceholder}
-                className={inputClass}
-              />
-            </Field>
-            <Field label={t.subtitleLabel}>
-              <input
-                value={subtitle}
-                onChange={(e) => setSubtitle(e.target.value)}
-                placeholder={t.subtitlePlaceholder}
-                className={inputClass}
-              />
-            </Field>
-
-            {/* Serbest metin — kendi metnini ekle ve düzenle */}
-            <div className="space-y-3 border-t border-border pt-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
-                {t.freeTextHeading}
-              </h3>
-              <button type="button" onClick={addText} className={addObjBtn}>
-                <TextTIcon className="h-5 w-5" />
-                {t.objAddText}
-              </button>
-
-              {/* Eklenen yazının ayarları sağdaki "Seçim" panelinde görünür. */}
-              <p className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted">
-                {t.freeTextHint}
-              </p>
-            </div>
-
-            {/* Hazır yazı (başlık/yazar/alt başlık/sırt) ayarları sağdaki "Seçim" panelinde. */}
-          </section>
-          )}
-
-          {/* Nesneler — serbest metin + şekiller */}
-          {activePanel === "objects" && (
-          <section className="space-y-3">
-            <h2 className={headingClass}>{t.objectsHeading}</h2>
-            <p className="text-xs text-muted">{t.objectsHint}</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={addRect} className={addObjBtn}>
-                <span className="h-4 w-5 rounded-[3px] bg-current" />
-                {t.objAddRect}
-              </button>
-              <button type="button" onClick={addCircle} className={addObjBtn}>
-                <span className="h-5 w-5 rounded-full bg-current" />
-                {t.objAddCircle}
-              </button>
-              <button type="button" onClick={addLine} className={addObjBtn}>
-                <span className="h-0.5 w-6 rounded-full bg-current" />
-                {t.objAddLine}
-              </button>
-              <button type="button" onClick={addTriangle} className={addObjBtn}>
-                <span
-                  className="h-0 w-0 border-x-[10px] border-b-[16px] border-x-transparent"
-                  style={{ borderBottomColor: "currentColor" }}
-                />
-                {t.objAddTriangle}
-              </button>
-              <button type="button" onClick={addStar} className={addObjBtn}>
-                <span aria-hidden className="text-lg leading-none">
-                  ★
-                </span>
-                {t.objAddStar}
-              </button>
-              <button type="button" onClick={addDiamond} className={addObjBtn}>
-                <span className="h-3.5 w-3.5 rotate-45 bg-current" />
-                {t.objAddDiamond}
-              </button>
-            </div>
-
-            {/* Hazır süs / ayraçlar */}
-            <p className="pt-1 text-xs font-medium text-muted">{t.dividersHeading}</p>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => addDivider("double")}
-                className={addObjBtn}
-                title={t.dividerDouble}
-              >
-                <span aria-hidden className="flex flex-col gap-1">
-                  <span className="h-0.5 w-7 rounded bg-current" />
-                  <span className="h-0.5 w-7 rounded bg-current" />
-                </span>
-                {t.dividerDouble}
-              </button>
-              <button
-                type="button"
-                onClick={() => addDivider("dotline")}
-                className={addObjBtn}
-                title={t.dividerDot}
-              >
-                <span aria-hidden className="flex items-center gap-1">
-                  <span className="h-0.5 w-2.5 rounded bg-current" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                  <span className="h-0.5 w-2.5 rounded bg-current" />
-                </span>
-                {t.dividerDot}
-              </button>
-              <button
-                type="button"
-                onClick={() => addDivider("diamond")}
-                className={addObjBtn}
-                title={t.dividerDiamond}
-              >
-                <span aria-hidden className="flex items-center gap-1">
-                  <span className="h-0.5 w-2.5 rounded bg-current" />
-                  <span className="h-2 w-2 rotate-45 bg-current" />
-                  <span className="h-0.5 w-2.5 rounded bg-current" />
-                </span>
-                {t.dividerDiamond}
-              </button>
-            </div>
-
-            {/* Seçili şeklin ayarları sağdaki "Seçim" panelinde görünür. */}
-            <p className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted">
-              {t.objectsTip}
-            </p>
-          </section>
-          )}
-
-          {/* Barkod (ISBN) */}
-          {activePanel === "barcode" && (
-          <section className="space-y-4">
-            <h2 className={headingClass}>{t.barcodeHeading}</h2>
-            <p className="text-xs text-muted">{t.barcodeHint}</p>
-            <Field label={t.isbnLabel} hint={t.isbnHint}>
-              <input
-                value={isbn}
-                onChange={(e) => setIsbn(e.target.value)}
-                placeholder={t.isbnPlaceholder}
-                inputMode="numeric"
-                className={inputClass}
-              />
-              {isbnAutoCompleted ? (
-                <p className="text-xs font-medium text-emerald-600">
-                  {t.isbnAutoComplete} {isbnComplete}
-                </p>
-              ) : isbnState === "valid" ? (
-                <p className="text-xs font-medium text-emerald-600">{t.isbnValid}</p>
-              ) : isbnState === "invalid" ? (
-                <p className="text-xs font-medium text-accent">{t.isbnInvalid}</p>
-              ) : null}
-            </Field>
-            <button
-              type="button"
-              onClick={() => setIsbn(randomTestIsbn())}
-              className={ghostBtn}
-            >
-              {t.isbnRandomCta}
-            </button>
-          </section>
-          )}
-
-          {/* Görsel ve logo */}
-          {activePanel === "images" && (
-          <section className="space-y-4">
-            <h2 className={headingClass}>{t.imagesHeading}</h2>
-
-            {/* Kapak görseli */}
-            <Field label={t.coverImageLabel}>
-              <div className="flex gap-2">
-                <UploadButton
-                  label={coverImage ? t.changeCta : t.uploadCta}
-                  onChange={(e) =>
-                    readFile(e, (v) => {
-                      setCoverImage(v);
-                      // Yüklenen kapak görselini "Yüklemelerim" kütüphanesine de al.
-                      if (v) pushUserImage(v, "upload");
-                    })
-                  }
-                />
-                {coverImage && (
-                  <button type="button" onClick={() => setCoverImage(null)} className={ghostBtn}>
-                    {t.removeCta}
+            <div className="relative flex min-h-0 flex-1 flex-col px-1 pt-1">
+            {/* Tuval, kalan yüksekliği doldurur; içinde hem ene hem boya sığar. */}
+            <div className="relative min-h-0 flex-1">
+              {aiWaiting && (
+                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-lg bg-background/85 backdrop-blur-[2px]">
+                  <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-accent/25 border-t-accent" />
+                  <div className="text-sm font-semibold text-foreground">
+                    {coverGenMsg ?? (lang === "tr" ? "Kapak görseli üretiliyor…" : "Generating cover…")}
+                  </div>
+                  <div className="max-w-[260px] text-center text-xs text-muted">
+                    {aiElapsed >= 45
+                      ? t.aiSlowHint
+                      : lang === "tr"
+                        ? "Yapay zekâ kapağını çiziyor — genelde 20-40 sn sürer."
+                        : "AI is painting your cover — usually 20-40s."}
+                  </div>
+                  <div className="font-mono text-xs tabular-nums text-muted">
+                    {aiElapsed} {lang === "tr" ? "sn" : "s"}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={cancelAiGeneration}
+                    className="mt-1 rounded-lg border border-foreground/15 bg-background px-4 py-2 text-xs font-semibold text-foreground transition hover:bg-accent-soft"
+                  >
+                    {t.aiCancel}
                   </button>
-                )}
-              </div>
-            </Field>
-
-            {coverImage && (
-              <>
-                <Field label={t.scopeLabel}>
-                  <div className="grid grid-cols-2 gap-2">
-                    <SegButton active={coverScope === "front"} onClick={() => setCoverScope("front")}>
-                      {t.scopeFront}
-                    </SegButton>
-                    <SegButton active={coverScope === "wrap"} onClick={() => setCoverScope("wrap")}>
-                      {t.scopeWrap}
-                    </SegButton>
-                  </div>
-                </Field>
-                <Field label={t.coverFitLabel} hint={t.coverFitHint}>
-                  <div className="grid grid-cols-2 gap-2">
-                    <SegButton active={coverFit === "fill"} onClick={() => setCoverFit("fill")}>
-                      {t.coverFitFill}
-                    </SegButton>
-                    <SegButton active={coverFit === "fit"} onClick={() => setCoverFit("fit")}>
-                      {t.coverFitContain}
-                    </SegButton>
-                  </div>
-                </Field>
-                <Field label={t.coverFrameLabel} hint={t.coverFrameHint}>
-                  <div className="space-y-2">
-                    <div>
-                      <span className="text-xs text-muted">{t.coverPanLabel}</span>
-                      <input
-                        type="range"
-                        min={-100}
-                        max={100}
-                        value={Math.round(coverPanX * 100)}
-                        onChange={(e) => setCoverPanX(Number(e.target.value) / 100)}
-                        className="w-full accent-accent"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-xs text-muted">
-                        {t.coverZoomLabel} — {coverZoom.toFixed(2)}×
-                      </span>
-                      <input
-                        type="range"
-                        min={100}
-                        max={250}
-                        value={Math.round(coverZoom * 100)}
-                        onChange={(e) => setCoverZoom(Number(e.target.value) / 100)}
-                        className="w-full accent-accent"
-                      />
-                    </div>
-                    {(coverPanX !== 0 || coverZoom !== 1) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCoverPanX(0);
-                          setCoverZoom(1);
-                        }}
-                        className="text-xs font-medium text-accent transition hover:opacity-80"
-                      >
-                        {t.coverFrameReset}
-                      </button>
-                    )}
-                  </div>
-                </Field>
-                <Field label={`${t.darkenLabel} — %${Math.round(coverDarken * 100)}`}>
-                  <input
-                    type="range"
-                    min={0}
-                    max={70}
-                    value={Math.round(coverDarken * 100)}
-                    onChange={(e) => setCoverDarken(Number(e.target.value) / 100)}
-                    className="w-full accent-accent"
-                  />
-                  {coverDarken > 0 && (
+                </div>
+              )}
+              {/* Üretim bitti ama hata var → tuvalin üstünde görünür şerit (eskiden
+                  yalnız sağ paneldeki küçük yazıydı; kullanıcı fark etmiyordu). */}
+              {/* Jeton / oturum sorunu: "Tekrar dene" anlamsız → ortak uyarı. */}
+              {!aiWaiting && aiError === "credits" && aiCredit && (
+                <CreditNotice
+                  lang={lang}
+                  problem={aiCredit}
+                  onClose={() => setAiError("none")}
+                  className="absolute left-1/2 top-3 z-20 w-[min(92%,480px)] -translate-x-1/2 shadow-lg"
+                />
+              )}
+              {!aiWaiting && aiError !== "none" && aiError !== "credits" && (
+                <div className="absolute left-1/2 top-3 z-20 flex w-[min(92%,480px)] -translate-x-1/2 items-start gap-2 rounded-lg border border-accent/40 bg-background px-4 py-3 text-xs shadow-lg">
+                  <p className="flex-1 text-foreground">{aiErrorText}</p>
+                  {aiError !== "token" && (
                     <button
                       type="button"
-                      onClick={() => setCoverDarken(0)}
-                      className="mt-1.5 text-xs font-medium text-accent transition hover:opacity-80"
+                      onClick={() => void generateAiCover(lastAiOptsRef.current ?? undefined)}
+                      className="rounded-md bg-accent px-3 py-1.5 font-semibold text-white transition hover:opacity-90"
                     >
-                      {t.darkenRemove}
+                      {t.aiRetry}
                     </button>
                   )}
-                </Field>
-                <Field
-                  label={`${t.opacityLabel} — %${Math.round(coverOpacity * 100)}`}
-                  hint={t.opacityHint}
-                >
-                  <input
-                    type="range"
-                    min={20}
-                    max={100}
-                    value={Math.round(coverOpacity * 100)}
-                    onChange={(e) => setCoverOpacity(Number(e.target.value) / 100)}
-                    className="w-full accent-accent"
-                  />
-                </Field>
-              </>
-            )}
-
-            {/* Logo */}
-            <Field label={t.logoLabel}>
-              <div className="flex gap-2">
-                <UploadButton
-                  label={logoImage ? t.changeCta : t.uploadCta}
-                  onChange={(e) => readFile(e, setLogoImage)}
-                />
-                {logoImage && (
-                  <button type="button" onClick={() => setLogoImage(null)} className={ghostBtn}>
-                    {t.removeCta}
+                  <button
+                    type="button"
+                    onClick={() => setAiError("none")}
+                    className="rounded-md border border-foreground/15 px-3 py-1.5 font-semibold text-foreground transition hover:bg-accent-soft"
+                  >
+                    {t.aiDismiss}
                   </button>
-                )}
-              </div>
-            </Field>
-
-            {/* Tek tık KDY logosu: alt-ortaya, güvenli çizgiye, ~20mm. Her kitapta
-                çalışır; kapağın altı koyuysa Beyaz, açıksa Siyah seç. */}
-            <Field label={t.kdyLogoLabel}>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => applyKdyLogo("white")}
-                  title={t.kdyLogoWhite}
-                  className="flex h-11 items-center justify-center rounded-lg border border-[var(--border)] bg-neutral-800 transition hover:opacity-90"
-                  style={{
-                    backgroundImage: `url(/kdy/${kdyLogoBase}-white.png)`,
-                    backgroundSize: "auto 44%",
-                    backgroundPosition: "center",
-                    backgroundRepeat: "no-repeat",
-                  }}
+                </div>
+              )}
+              {/* Sihirbaz: yapay zekâ kapağı jeton harcar → üretmeden önce sor. */}
+              {!aiWaiting && aiError === "none" && wizardOffer && wizardAffordable && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="absolute left-1/2 top-3 z-20 w-[min(92%,480px)] -translate-x-1/2 rounded-lg border border-accent/40 bg-background px-4 py-3 text-sm shadow-lg"
                 >
-                  <span className="sr-only">{t.kdyLogoWhite}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyKdyLogo("black")}
-                  title={t.kdyLogoBlack}
-                  className="flex h-11 items-center justify-center rounded-lg border border-[var(--border)] bg-white transition hover:opacity-90"
-                  style={{
-                    backgroundImage: `url(/kdy/${kdyLogoBase}-black.png)`,
-                    backgroundSize: "auto 44%",
-                    backgroundPosition: "center",
-                    backgroundRepeat: "no-repeat",
-                  }}
-                >
-                  <span className="sr-only">{t.kdyLogoBlack}</span>
-                </button>
-              </div>
-            </Field>
-
-            {logoImage && (
-              <>
-                <Field label={t.logoPosLabel}>
-                  <div className="grid grid-cols-2 gap-2">
-                    <SegButton active={logoPos === "top"} onClick={() => setLogoPos("top")}>
-                      {t.logoPosTop}
-                    </SegButton>
-                    <SegButton active={logoPos === "bottom"} onClick={() => setLogoPos("bottom")}>
-                      {t.logoPosBottom}
-                    </SegButton>
+                  <p className="text-foreground">
+                    {lang === "tr"
+                      ? `Kitabın için yapay zekâ ile kapak üretelim mi? ${WIZARD_COVER_COST} jeton harcar${balance != null ? ` (bakiyen: ${balance})` : ""}.`
+                      : `Generate an AI cover for your book? Uses ${WIZARD_COVER_COST} credits${balance != null ? ` (balance: ${balance})` : ""}.`}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={runWizardCover}
+                      className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+                    >
+                      {lang === "tr" ? "Üret" : "Generate"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={skipWizardCover}
+                      className="rounded-md border border-foreground/15 px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-accent-soft"
+                    >
+                      {lang === "tr" ? "Kendim tasarlayacağım" : "I'll design it myself"}
+                    </button>
                   </div>
-                </Field>
-                <Field label={`${t.logoSizeLabel} — %${logoSize}`}>
-                  <input
-                    type="range"
-                    min={8}
-                    max={50}
-                    value={logoSize}
-                    onChange={(e) => setLogoSize(Number(e.target.value))}
-                    className="w-full accent-accent"
+                </div>
+              )}
+              {/* Bakiye yetmiyor → üretim önerme; kapak yine de elle tasarlanabilir. */}
+              {!aiWaiting && aiError === "none" && wizardOffer && !wizardAffordable && (
+                <div className="absolute left-1/2 top-3 z-20 w-[min(92%,480px)] -translate-x-1/2 shadow-lg">
+                  <CreditNotice
+                    lang={lang}
+                    problem={{ kind: "no-credits", cost: WIZARD_COVER_COST, balance: balance ?? undefined }}
+                    onClose={skipWizardCover}
                   />
-                </Field>
-              </>
-            )}
-          </section>
-          )}
-
-          {/* Kitap ayarları */}
-          {activePanel === "setup" && (
-          <section className="space-y-4">
-            <h2 className={headingClass}>{t.setupHeading}</h2>
-
-            <Field label={t.sizeLabel}>
-              <select value={sizeId} onChange={(e) => setSizeId(e.target.value)} className={selectClass}>
-                <optgroup label={t.sizeGroupKdp}>
-                  {kdpSizes.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label={t.sizeGroupTr}>
-                  {trSizes.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-            </Field>
-
-            <Field label={t.pageCountLabel} hint={t.pageCountHint}>
-              <input
-                type="number"
-                min={1}
-                value={pageCount}
-                onChange={(e) => setPageCount(parseInt(e.target.value, 10) || 0)}
-                className={inputClass}
+                  <p className="mt-1 rounded-lg bg-background px-4 py-2 text-xs text-muted">
+                    {lang === "tr"
+                      ? "Kapağını yine de elle tasarlayabilirsin: soldaki şablonlar, yazılar ve kendi görsellerin jeton harcamaz."
+                      : "You can still design the cover by hand: templates, text and your own images on the left cost no credits."}
+                  </p>
+                </div>
+              )}
+              {!aiWaiting && aiError === "none" && wizardMissingTitle && (
+                <div className="absolute left-1/2 top-3 z-20 w-[min(92%,480px)] -translate-x-1/2 rounded-lg border border-amber-500/40 bg-amber-50 px-4 py-3 text-xs text-amber-800 shadow-lg">
+                  {t.aiNoTitle}
+                </div>
+              )}
+              <CoverCanvas
+                ref={canvasRef}
+                spread={spread}
+                labels={labels}
+                lang={lang}
+                templateId={templateId}
+                colors={colors}
+                content={content}
+                showGuides={showGuides && !preview}
+                images={images}
+                objects={objects}
+                positions={positions}
+                layers={layers}
+                hidden={hidden}
+                locked={locked}
+                autoContrast={autoContrast}
+                titlePos={titlePos === "auto" ? undefined : titlePos}
+                authorPos={briefActive ? "top" : undefined}
+                textStyles={textStyles}
+                selectedId={selectedId}
+                onTextSelect={setSelectedTextLive}
+                onGeometrySelect={setSelectedGeoLive}
+                onPositionChange={handlePositionChange}
+                onSelect={setSelectedId}
+                onAngleChange={setSelectedAngle}
+                onLayersChange={handleLayersChange}
+                onReady={handleCanvasReady}
+                zoom={zoom}
+                focus={viewFocus}
+                rulers={!preview}
+                onView={(v) =>
+                  setViewInfo((p) =>
+                    p.realPercent === v.realPercent && Math.abs(p.maxZoom - v.maxZoom) < 0.01 ? p : v,
+                  )
+                }
               />
-            </Field>
-
-            <Field label={t.paperLabel}>
-              <select
-                value={paperGsm}
-                onChange={(e) => setPaperGsm(Number(e.target.value) as PaperGsm)}
-                className={selectClass}
-              >
-                {PAPER_OPTIONS.map((g) => (
-                  <option key={g} value={g}>
-                    {g} {t.paperUnit}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label={t.bindingLabel}>
-              <div className="grid grid-cols-2 gap-2">
-                <SegButton active={binding === "soft"} onClick={() => setBinding("soft")}>
-                  {t.bindingSoft}
-                </SegButton>
-                <SegButton active={binding === "hard"} onClick={() => setBinding("hard")}>
-                  {t.bindingHard}
-                </SegButton>
-              </div>
-            </Field>
-
-            <Field label={t.bleedLabel} hint={t.bleedHint}>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  step={0.5}
-                  value={bleedMm}
-                  onChange={(e) => setBleedMm(parseFloat(e.target.value) || 0)}
-                  className={`${inputClass} flex-1`}
-                />
-                <span className="text-sm text-muted">mm</span>
-              </div>
-              <div className="mt-2 flex gap-2">
-                {BLEED_OPTIONS.map((b) => (
-                  <SegButton key={b} active={bleedMm === b} onClick={() => setBleedMm(b)}>
-                    {b} mm
-                  </SegButton>
-                ))}
-              </div>
-            </Field>
-
-            <div className="rounded-xl border border-border bg-surface p-4">
-              <div className="flex items-baseline justify-between">
-                <span className={headingClass}>{t.spineHeading}</span>
-                <span className="font-sans text-lg font-bold text-accent">
-                  {formatMm(spread.spine)}
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-muted">
-                {spineManualOn ? t.spineManualLabel : t.spineAuto}
-              </p>
-              <label className="mt-3 flex items-center gap-2 text-sm text-foreground/80">
-                <input
-                  type="checkbox"
-                  checked={spineManualOn}
-                  onChange={(e) => setSpineManualOn(e.target.checked)}
-                  className="h-4 w-4 accent-accent"
-                />
-                {t.spineManualToggle}
-              </label>
-              {spineManualOn && (
-                <input
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  value={spineManualValue}
-                  onChange={(e) => setSpineManualValue(parseFloat(e.target.value) || 0)}
-                  className={`${inputClass} mt-3`}
-                />
+              {(bigView || !panelOpen) && !preview && inspectorNode && (
+                // Büyük görünümde ayar kutusu seçili nesnenin KARŞI tarafında yüzer;
+                // dar ekranda alttan açılan şerit olur.
+                <div
+                  className={`absolute inset-x-2 bottom-2 z-30 max-h-[45%] overflow-y-auto rounded-xl shadow-xl lg:inset-x-auto lg:bottom-auto lg:top-3 lg:max-h-[calc(100%-24px)] lg:w-[320px] ${
+                    floatOnRight ? "lg:right-3" : "lg:left-3"
+                  }`}
+                >
+                  {inspectorNode}
+                </div>
               )}
             </div>
 
-            {/* PDF kesim işaretleri — baskı ayarı, ölçülerin yanında dursun */}
-            <label className="flex items-start gap-2 rounded-xl border border-border bg-surface p-4 text-sm text-foreground/80">
-              <input
-                type="checkbox"
-                checked={cropMarks}
-                onChange={(e) => setCropMarks(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-accent"
-              />
-              <span>
-                {t.cropMarksLabel}
-                <span className="mt-0.5 block text-xs text-muted">{t.cropMarksHint}</span>
+            </div>
+
+            {/* Alt şerit: tam kapak ölçüsü + yakınlaştırma */}
+            <div className="relative flex h-14 shrink-0 items-center px-4">
+              <span className="hidden text-sm text-muted sm:inline" title={t.totalSizeLabel}>
+                {formatMm(spread.totalWidth)} × {formatMm(spread.totalHeight)}
               </span>
-            </label>
-          </section>
-          )}
-
-          {/* Katmanlar */}
-          {activePanel === "layers" && (
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className={headingClass}>{t.layersHeading}</h2>
-              <button
-                type="button"
-                onClick={resetLayout}
-                disabled={!layoutDirty}
-                className="text-xs font-medium text-accent transition disabled:cursor-not-allowed disabled:text-muted disabled:opacity-50"
-              >
-                {t.resetPositions}
-              </button>
-            </div>
-            <p className="text-xs text-muted">{t.layersHint}</p>
-            {layerIds.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted">
-                {t.layersEmpty}
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-1.5">
-                {layerIds.map((id, i) => {
-                  const isHidden = !!hidden[id];
-                  const isLocked = !!locked[id];
-                  return (
-                    <li
-                      key={id}
-                      draggable
-                      onDragStart={() => setDragRow(i)}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={() => {
-                        if (dragRow !== null) reorderLayer(dragRow, i);
-                        setDragRow(null);
-                      }}
-                      onDragEnd={() => setDragRow(null)}
-                      className={`flex items-center gap-2 rounded-lg border px-2 py-2 transition ${
-                        dragRow === i
-                          ? "border-accent bg-accent-soft"
-                          : "border-border bg-surface hover:border-accent/40"
-                      } ${isHidden ? "opacity-50" : ""}`}
-                    >
-                      <DragHandleIcon className="h-4 w-4 shrink-0 cursor-grab text-muted" />
-                      <button
-                        type="button"
-                        onClick={() => setSelectedId(id)}
-                        className="flex-1 truncate text-left text-sm text-foreground transition hover:text-accent"
-                        title={t.layerSelectHint}
-                      >
-                        {selectedName(id, t, objects)}
-                      </button>
-                      <div className="flex shrink-0 flex-col">
-                        <button
-                          type="button"
-                          onClick={() => reorderLayer(i, i - 1)}
-                          disabled={i === 0}
-                          title={t.zBringForward}
-                          aria-label={t.zBringForward}
-                          className="leading-none text-muted transition hover:text-accent disabled:cursor-not-allowed disabled:opacity-30"
-                        >
-                          ▲
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => reorderLayer(i, i + 1)}
-                          disabled={i === layerIds.length - 1}
-                          title={t.zSendBackward}
-                          aria-label={t.zSendBackward}
-                          className="leading-none text-muted transition hover:text-accent disabled:cursor-not-allowed disabled:opacity-30"
-                        >
-                          ▼
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleHidden(id)}
-                        title={isHidden ? t.layerShow : t.layerHide}
-                        aria-label={isHidden ? t.layerShow : t.layerHide}
-                        className="rounded-md p-1.5 text-muted transition hover:bg-accent-soft hover:text-accent"
-                      >
-                        {isHidden ? (
-                          <EyeSlashIcon className="h-4 w-4" />
-                        ) : (
-                          <EyeIcon className="h-4 w-4" />
-                        )}
-                      </button>
-                      {id !== "darken" && id !== "background" && id !== "spineBand" && id !== "photo" && id !== "photoFrame" && (
-                        <button
-                          type="button"
-                          onClick={() => toggleLocked(id)}
-                          title={isLocked ? t.layerUnlock : t.layerLock}
-                          aria-label={isLocked ? t.layerUnlock : t.layerLock}
-                          className={`rounded-md p-1.5 transition hover:bg-accent-soft hover:text-accent ${
-                            isLocked ? "text-accent" : "text-muted"
-                          }`}
-                        >
-                          {isLocked ? (
-                            <LockIcon className="h-4 w-4" />
-                          ) : (
-                            <LockOpenIcon className="h-4 w-4" />
-                          )}
-                        </button>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-          )}
-
-          {/* Yüklemelerim — kişisel görsel + şablon kütüphanesi */}
-          {activePanel === "library" && (
-          <section className="space-y-6">
-            {/* ── Görsellerim ── */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className={headingClass}>{t.libraryImagesHeading}</h2>
-                <label className="shrink-0 cursor-pointer rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground/80 transition hover:border-accent/40 hover:text-foreground">
-                  {t.libraryUploadCta}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleLibraryUpload}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-              <p className="text-xs text-muted">{t.libraryImagesHint}</p>
-              {userImages.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted">
-                  {t.libraryEmptyImages}
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {userImages.map((img) => (
-                    <li
-                      key={img.id}
-                      className="flex gap-3 rounded-xl border border-border bg-surface p-2"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={img.image}
-                        alt=""
-                        className="h-16 w-16 shrink-0 rounded-lg object-cover"
-                      />
-                      <div className="flex min-w-0 flex-1 flex-col gap-1">
-                        <span className="font-mono text-[10px] uppercase tracking-wider text-muted">
-                          {img.source === "ai" ? "AI" : t.libraryUploadCta}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => applyLibraryImageAsCover(img)}
-                          className="rounded-md border border-accent/40 px-2 py-1 text-xs font-medium text-accent transition hover:bg-accent-soft"
-                        >
-                          {t.libraryUseAsCover}
-                        </button>
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            onClick={() => addLibraryImageAsObject(img)}
-                            className="flex-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
-                          >
-                            {t.libraryAddAsObject}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteUserImage(img.id)}
-                            title={t.libraryDelete}
-                            aria-label={t.libraryDelete}
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-accent-soft hover:text-accent"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* ── Şablonlarım ── */}
-            <div className="space-y-3 border-t border-border pt-5">
-              <h2 className={headingClass}>{t.libraryTemplatesHeading}</h2>
-              <p className="text-xs text-muted">{t.libraryTemplatesHint}</p>
-              <button
-                type="button"
-                onClick={saveCurrentAsTemplate}
-                className="w-full rounded-lg border border-accent/40 px-3 py-2 text-sm font-medium text-accent transition hover:bg-accent-soft"
-              >
-                {t.librarySaveTemplateCta}
-              </button>
-              {userTemplates.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted">
-                  {t.libraryEmptyTemplates}
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {userTemplates.map((tpl) => (
-                    <li
-                      key={tpl.id}
-                      className="flex gap-3 rounded-xl border border-border bg-surface p-2"
-                    >
-                      {tpl.thumb ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={tpl.thumb}
-                          alt=""
-                          className="h-16 w-24 shrink-0 rounded-lg border border-border object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-16 w-24 shrink-0 items-center justify-center rounded-lg border border-dashed border-border text-muted">
-                          <LayoutIcon className="h-5 w-5" />
-                        </div>
-                      )}
-                      <div className="flex min-w-0 flex-1 flex-col gap-1">
-                        <span className="truncate text-sm font-medium text-foreground">
-                          {tpl.name}
-                        </span>
-                        <div className="mt-auto flex gap-1">
-                          <button
-                            type="button"
-                            onClick={() => applyUserTemplate(tpl)}
-                            className="flex-1 rounded-md border border-accent/40 px-2 py-1 text-xs font-medium text-accent transition hover:bg-accent-soft"
-                          >
-                            {t.libraryApplyTemplate}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteUserTemplate(tpl.id)}
-                            title={t.libraryDelete}
-                            aria-label={t.libraryDelete}
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-accent-soft hover:text-accent"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <p className="rounded-lg bg-surface px-3 py-2 text-[11px] leading-relaxed text-muted">
-              {t.libraryLocalNote}
-            </p>
-          </section>
-          )}
-          </div>
-        </aside>
-
-        {/* Tuval alanı */}
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-          {/* Üst bar: TEK satır (tuvale en çok yükseklik kalsın) — ölçü + görünüm + kılavuz + indir */}
-          <div className="flex flex-wrap items-center justify-between gap-2 lg:flex-nowrap">
-            <span
-              title={t.totalSizeLabel}
-              className="shrink-0 whitespace-nowrap rounded-full bg-accent-soft px-3 py-1 font-mono text-xs font-medium text-accent"
-            >
-              {formatMm(spread.totalWidth)} × {formatMm(spread.totalHeight)}
-            </span>
-            <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
-              <span className="hidden whitespace-nowrap font-mono text-xs text-muted 2xl:inline">
-                {draftStatus === "saving" ? t.draftSaving : t.draftSaved}
-              </span>
-              {/* Görünüm: yakınlaştır / sığdır / büyük görünüm (yalnız ekran; baskıyı etkilemez) */}
-              <div className="flex items-center rounded-full border border-border bg-surface" role="group" aria-label={lang === "tr" ? "Görünüm" : "View"}>
+              <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-xl border border-border bg-surface px-1.5 py-1 shadow-sm">
                 <button
                   type="button"
                   onClick={() => setZoom((z) => zoomStep(z, -1))}
                   disabled={zoom <= ZOOM_STEPS[0]}
-                  title={lang === "tr" ? "Küçült" : "Zoom out"}
                   aria-label={lang === "tr" ? "Küçült" : "Zoom out"}
-                  className="flex h-9 w-9 items-center justify-center rounded-l-full text-lg font-semibold text-foreground/80 transition hover:bg-accent-soft hover:text-accent disabled:opacity-35"
+                  title={lang === "tr" ? "Küçült" : "Zoom out"}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-foreground/80 transition hover:bg-accent-soft disabled:opacity-30"
                 >
                   −
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setZoom(1)}
-                  title={lang === "tr" ? "Ekrana sığdır" : "Fit to screen"}
-                  className="h-9 min-w-[3.5rem] px-1 font-mono text-xs font-semibold tabular-nums text-foreground/80 transition hover:bg-accent-soft hover:text-accent"
-                >
-                  {zoom === 1 ? (lang === "tr" ? "Sığdır" : "Fit") : `${Math.round(zoom * 100)}%`}
-                </button>
+                <span className="min-w-[3.5rem] text-center text-sm font-semibold tabular-nums text-foreground" aria-live="polite">
+                  {viewInfo.realPercent}%
+                </span>
                 <button
                   type="button"
                   onClick={() => setZoom((z) => zoomStep(z, 1))}
-                  disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
-                  title={lang === "tr" ? "Büyüt" : "Zoom in"}
+                  disabled={!canZoomIn}
                   aria-label={lang === "tr" ? "Büyüt" : "Zoom in"}
-                  className="flex h-9 w-9 items-center justify-center rounded-r-full text-lg font-semibold text-foreground/80 transition hover:bg-accent-soft hover:text-accent disabled:opacity-35"
+                  title={lang === "tr" ? "Büyüt" : "Zoom in"}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-foreground/80 transition hover:bg-accent-soft disabled:opacity-30"
                 >
                   +
                 </button>
-              </div>
-              <button
-                type="button"
-                onClick={() => void toggleBigView()}
-                aria-pressed={bigView}
-                className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-2 text-xs font-semibold transition ${
-                  bigView
-                    ? "border-accent bg-accent text-white hover:opacity-90"
-                    : "border-border bg-surface text-foreground/80 hover:border-accent/40 hover:text-foreground"
-                }`}
-              >
-                <ArrowsOutIcon className="h-4 w-4" />
-                {bigView
-                  ? lang === "tr" ? "Paneller" : "Panels"
-                  : lang === "tr" ? "Büyük görünüm" : "Big view"}
-              </button>
-              <button
-                type="button"
-                onClick={startNewDesign}
-                className="whitespace-nowrap rounded-full border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
-              >
-                {t.draftNew}
-              </button>
-              <span className="hidden h-5 w-px bg-border sm:block" />
-              <label className="flex items-center gap-2 whitespace-nowrap text-sm text-foreground/80" title={t.bleedNote}>
-                <input
-                  type="checkbox"
-                  checked={showGuides}
-                  onChange={(e) => setShowGuides(e.target.checked)}
-                  className="h-4 w-4 accent-accent"
-                />
-                {t.showGuides}
-              </label>
-              {/* Tek "İndir" düğmesi → açılır menü: PDF · PNG · Paylaş · Şablona kaydet */}
-              <div className="relative" ref={downloadMenuRef}>
+                <span className="mx-1 h-6 w-px bg-border" />
                 <button
                   type="button"
-                  onClick={() => setDownloadMenuOpen((o) => !o)}
-                  disabled={exporting}
-                  aria-haspopup="menu"
-                  aria-expanded={downloadMenuOpen}
-                  className="flex items-center gap-1.5 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => {
+                    setZoom(1);
+                    setViewFocus("all");
+                  }}
+                  title={lang === "tr" ? "Ekrana sığdır" : "Fit to screen"}
+                  className="flex h-9 items-center gap-2 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-foreground/80 transition hover:bg-accent-soft"
                 >
-                  {exporting ? t.exportBusy : t.downloadMenuCta}
-                  <span
-                    className={`text-xs transition ${downloadMenuOpen ? "rotate-180" : ""}`}
-                    aria-hidden="true"
-                  >
-                    ▾
-                  </span>
+                  <ArrowsOutIcon className="h-4 w-4" />
+                  <span className="hidden sm:inline">{lang === "tr" ? "Ekrana sığdır" : "Fit to screen"}</span>
                 </button>
-                {downloadMenuOpen && (
-                  <div
-                    role="menu"
-                    className="absolute right-0 z-20 mt-2 w-52 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg"
-                  >
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setDownloadMenuOpen(false);
-                        void handleExportPdf();
-                      }}
-                      className="block w-full px-4 py-2.5 text-left text-sm font-medium text-foreground/80 transition hover:bg-accent-soft hover:text-accent"
-                    >
-                      {t.downloadPdf}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setDownloadMenuOpen(false);
-                        handleExportPng();
-                      }}
-                      className="block w-full px-4 py-2.5 text-left text-sm font-medium text-foreground/80 transition hover:bg-accent-soft hover:text-accent"
-                    >
-                      {t.downloadPng}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setDownloadMenuOpen(false);
-                        void handleShare();
-                      }}
-                      className="block w-full px-4 py-2.5 text-left text-sm font-medium text-foreground/80 transition hover:bg-accent-soft hover:text-accent"
-                    >
-                      {t.downloadShare}
-                    </button>
-                    <div className="my-1 border-t border-border" />
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setDownloadMenuOpen(false);
-                        saveCurrentAsTemplate();
-                      }}
-                      className="block w-full px-4 py-2.5 text-left text-sm font-medium text-foreground/80 transition hover:bg-accent-soft hover:text-accent"
-                    >
-                      {t.downloadSaveTemplate}
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
           </div>
-
-          {/* Seçili nesne ayarları artık tuvalin sağındaki "Seçim" panelinde. */}
-
-          {/* Tuval, kalan yüksekliği doldurur; içinde hem ene hem boya sığar. */}
-          <div className="relative min-h-0 flex-1">
-            {aiWaiting && (
-              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-lg bg-background/85 backdrop-blur-[2px]">
-                <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-accent/25 border-t-accent" />
-                <div className="text-sm font-semibold text-foreground">
-                  {coverGenMsg ?? (lang === "tr" ? "Kapak görseli üretiliyor…" : "Generating cover…")}
-                </div>
-                <div className="max-w-[260px] text-center text-xs text-muted">
-                  {aiElapsed >= 45
-                    ? t.aiSlowHint
-                    : lang === "tr"
-                      ? "Yapay zekâ kapağını çiziyor — genelde 20-40 sn sürer."
-                      : "AI is painting your cover — usually 20-40s."}
-                </div>
-                <div className="font-mono text-xs tabular-nums text-muted">
-                  {aiElapsed} {lang === "tr" ? "sn" : "s"}
-                </div>
-                <button
-                  type="button"
-                  onClick={cancelAiGeneration}
-                  className="mt-1 rounded-lg border border-foreground/15 bg-background px-4 py-2 text-xs font-semibold text-foreground transition hover:bg-accent-soft"
-                >
-                  {t.aiCancel}
-                </button>
-              </div>
-            )}
-            {/* Üretim bitti ama hata var → tuvalin üstünde görünür şerit (eskiden
-                yalnız sağ paneldeki küçük yazıydı; kullanıcı fark etmiyordu). */}
-            {/* Jeton / oturum sorunu: "Tekrar dene" anlamsız → ortak uyarı. */}
-            {!aiWaiting && aiError === "credits" && aiCredit && (
-              <CreditNotice
-                lang={lang}
-                problem={aiCredit}
-                onClose={() => setAiError("none")}
-                className="absolute left-1/2 top-3 z-20 w-[min(92%,480px)] -translate-x-1/2 shadow-lg"
-              />
-            )}
-            {!aiWaiting && aiError !== "none" && aiError !== "credits" && (
-              <div className="absolute left-1/2 top-3 z-20 flex w-[min(92%,480px)] -translate-x-1/2 items-start gap-2 rounded-lg border border-accent/40 bg-background px-4 py-3 text-xs shadow-lg">
-                <p className="flex-1 text-foreground">{aiErrorText}</p>
-                {aiError !== "token" && (
-                  <button
-                    type="button"
-                    onClick={() => void generateAiCover(lastAiOptsRef.current ?? undefined)}
-                    className="rounded-md bg-accent px-3 py-1.5 font-semibold text-white transition hover:opacity-90"
-                  >
-                    {t.aiRetry}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setAiError("none")}
-                  className="rounded-md border border-foreground/15 px-3 py-1.5 font-semibold text-foreground transition hover:bg-accent-soft"
-                >
-                  {t.aiDismiss}
-                </button>
-              </div>
-            )}
-            {/* Sihirbaz: yapay zekâ kapağı jeton harcar → üretmeden önce sor. */}
-            {!aiWaiting && aiError === "none" && wizardOffer && wizardAffordable && (
-              <div
-                role="status"
-                aria-live="polite"
-                className="absolute left-1/2 top-3 z-20 w-[min(92%,480px)] -translate-x-1/2 rounded-lg border border-accent/40 bg-background px-4 py-3 text-sm shadow-lg"
-              >
-                <p className="text-foreground">
-                  {lang === "tr"
-                    ? `Kitabın için yapay zekâ ile kapak üretelim mi? ${WIZARD_COVER_COST} jeton harcar${balance != null ? ` (bakiyen: ${balance})` : ""}.`
-                    : `Generate an AI cover for your book? Uses ${WIZARD_COVER_COST} credits${balance != null ? ` (balance: ${balance})` : ""}.`}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={runWizardCover}
-                    className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
-                  >
-                    {lang === "tr" ? "Üret" : "Generate"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={skipWizardCover}
-                    className="rounded-md border border-foreground/15 px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-accent-soft"
-                  >
-                    {lang === "tr" ? "Kendim tasarlayacağım" : "I'll design it myself"}
-                  </button>
-                </div>
-              </div>
-            )}
-            {/* Bakiye yetmiyor → üretim önerme; kapak yine de elle tasarlanabilir. */}
-            {!aiWaiting && aiError === "none" && wizardOffer && !wizardAffordable && (
-              <div className="absolute left-1/2 top-3 z-20 w-[min(92%,480px)] -translate-x-1/2 shadow-lg">
-                <CreditNotice
-                  lang={lang}
-                  problem={{ kind: "no-credits", cost: WIZARD_COVER_COST, balance: balance ?? undefined }}
-                  onClose={skipWizardCover}
-                />
-                <p className="mt-1 rounded-lg bg-background px-4 py-2 text-xs text-muted">
-                  {lang === "tr"
-                    ? "Kapağını yine de elle tasarlayabilirsin: soldaki şablonlar, yazılar ve kendi görsellerin jeton harcamaz."
-                    : "You can still design the cover by hand: templates, text and your own images on the left cost no credits."}
-                </p>
-              </div>
-            )}
-            {!aiWaiting && aiError === "none" && wizardMissingTitle && (
-              <div className="absolute left-1/2 top-3 z-20 w-[min(92%,480px)] -translate-x-1/2 rounded-lg border border-amber-500/40 bg-amber-50 px-4 py-3 text-xs text-amber-800 shadow-lg">
-                {t.aiNoTitle}
-              </div>
-            )}
-            <CoverCanvas
-              ref={canvasRef}
-              spread={spread}
-              labels={labels}
-              lang={lang}
-              templateId={templateId}
-              colors={colors}
-              content={content}
-              showGuides={showGuides}
-              images={images}
-              objects={objects}
-              positions={positions}
-              layers={layers}
-              hidden={hidden}
-              locked={locked}
-              autoContrast={autoContrast}
-              titlePos={titlePos === "auto" ? undefined : titlePos}
-              authorPos={briefActive ? "top" : undefined}
-              textStyles={textStyles}
-              selectedId={selectedId}
-              onTextSelect={setSelectedTextLive}
-              onGeometrySelect={setSelectedGeoLive}
-              onPositionChange={handlePositionChange}
-              onSelect={setSelectedId}
-              onAngleChange={setSelectedAngle}
-              onLayersChange={handleLayersChange}
-              onReady={handleCanvasReady}
-              zoom={zoom}
-            />
-            {bigView && inspectorNode && (
-              <div className="absolute left-3 top-3 z-30 max-h-[calc(100%-24px)] w-[300px] overflow-y-auto rounded-xl shadow-xl">
-                {inspectorNode}
-              </div>
-            )}
-          </div>
-
         </section>
 
+        {/* ── Sağ panel: seçili aracın ayarları (ya da seçili nesne) ── */}
+        {!bigView && (
+          <aside
+            className={`flex shrink-0 flex-col border-t border-border bg-surface lg:min-h-0 lg:border-l lg:border-t-0 ${
+              panelOpen ? "lg:w-[380px]" : "lg:w-14"
+            }`}
+          >
+            {panelOpen ? (
+              <>
+                {!inspectorReplaces && (
+                  <div className="flex shrink-0 items-start gap-3 border-b border-border px-5 py-4">
+                    <button
+                      type="button"
+                      onClick={() => setPanelOpen(false)}
+                      title={lang === "tr" ? "Paneli kapat (tuval büyür)" : "Collapse panel"}
+                      aria-label={lang === "tr" ? "Paneli kapat" : "Collapse panel"}
+                      className="-ml-2 hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border text-foreground/70 transition hover:bg-accent-soft hover:text-foreground lg:flex"
+                    >
+                      ›
+                    </button>
+                    <meta.Icon className="mt-1 h-6 w-6 shrink-0 text-accent" />
+                    <div className="min-w-0">
+                      <h2 className="text-lg font-semibold leading-tight text-foreground">{meta.title}</h2>
+                      <p className="mt-0.5 text-sm text-muted">{meta.sub}</p>
+                    </div>
+                  </div>
+                )}
+                <div
+                  key={inspectorReplaces ? "sel" : activePanel}
+                  className="min-h-0 flex-1 overflow-y-auto px-5 py-4 max-lg:max-h-[70vh]"
+                >
+                  {inspectorReplaces ? (
+                    inspectorNode
+                  ) : (
+                    <>
+                    {/* AI Kapak */}
+                    {activePanel === "ai" && (
+                    <section className="space-y-5">
+                      <h2 className={headingClass}>{t.aiHeading}</h2>
+
+                      {/* Kurgu yoksa model seçilir; kurgu varsa konsept ChatGPT ile üretilir. */}
+                      {!activeBrief && (
+                        <Field label={lang === "tr" ? "Model" : "Model"}>
+                          <select
+                            value={aiModel}
+                            onChange={(e) => setAiModel(e.target.value as AiModel)}
+                            className={selectClass}
+                          >
+                            <option value="openai">{t.aiModelOpenai}</option>
+                            <option value="flux">{t.aiModelFlux}</option>
+                            <option value="nano">{t.aiModelNano}</option>
+                            <option value="ideogram">{t.aiModelIdeogram}</option>
+                          </select>
+                        </Field>
+                      )}
+
+                      <Field label={lang === "tr" ? "Görseli tarif et" : "Describe the image"}>
+                        <textarea
+                          value={aiDesc}
+                          onChange={(e) => setAiDesc(e.target.value)}
+                          placeholder={
+                            lang === "tr"
+                              ? "Ör: eski bir şehrin sokakları, ince gravür çizgileri, krem kâğıt dokusu"
+                              : "e.g. old city streets, fine engraving lines, cream paper texture"
+                          }
+                          rows={3}
+                          className={`${inputClass} resize-none`}
+                        />
+                      </Field>
+
+                      {activeBrief ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold text-foreground">{lang === "tr" ? "Konsept" : "Concept"}</span>
+                            {projectId && (
+                              <a
+                                href={`/${lang}/kapak/kurgu?project=${projectId}`}
+                                className="text-xs font-semibold text-accent hover:underline"
+                              >
+                                {lang === "tr" ? "Kurguyu değiştir →" : "Change brief →"}
+                              </a>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            {resolveStandard(activeBrief.themaCode).concepts.map((k, i) => {
+                              const sel = k.id === activeBrief.conceptId;
+                              return (
+                                <button
+                                  key={k.id}
+                                  type="button"
+                                  onClick={() => setBrief({ ...activeBrief, conceptId: k.id })}
+                                  aria-pressed={sel}
+                                  className={`relative overflow-hidden rounded-xl border-2 bg-background text-left transition ${
+                                    sel ? "border-accent" : "border-border hover:border-accent/50"
+                                  }`}
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={briefExampleSrc(resolveStandard(activeBrief.themaCode).code, i)}
+                                    alt=""
+                                    className="aspect-[2/3] w-full object-cover"
+                                  />
+                                  <span className="line-clamp-2 block px-1.5 py-1.5 text-center text-xs font-medium leading-tight text-foreground" title={k.name[lang]}>
+                                    {k.name[lang]}
+                                  </span>
+                                  {sel && <CheckBadge />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <span className="text-sm font-semibold text-foreground">{t.aiStyleLabel}</span>
+                          <div className="grid grid-cols-2 gap-2.5">
+                            {AI_STYLES.map((s) => {
+                              const sel = s.id === aiStyle;
+                              return (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  onClick={() => setAiStyle(s.id)}
+                                  aria-pressed={sel}
+                                  className={`relative overflow-hidden rounded-xl border-2 bg-background text-left transition ${
+                                    sel ? "border-accent" : "border-border hover:border-accent/50"
+                                  }`}
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={STYLE_EXAMPLE[s.id] ?? STYLE_EXAMPLE.literary}
+                                    alt=""
+                                    className="aspect-[4/3] w-full object-cover object-top"
+                                    style={{ background: STYLE_SWATCH[s.id] ?? STYLE_SWATCH.literary }}
+                                  />
+                                  <span className="block truncate px-2 py-1.5 text-center text-xs font-medium text-foreground">
+                                    {s.name[lang]}
+                                  </span>
+                                  {sel && <CheckBadge />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      <Field label={t.aiScopeLabel}>
+                        <div className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-background p-1">
+                          <SegButton active={aiScope === "wrap"} onClick={() => setAiScope("wrap")}>
+                            {lang === "tr" ? "Tam kapak" : "Full cover"}
+                          </SegButton>
+                          <SegButton active={aiScope === "front"} onClick={() => setAiScope("front")}>
+                            {lang === "tr" ? "Ön kapak" : "Front cover"}
+                          </SegButton>
+                        </div>
+                      </Field>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Kurgu varsa üretim HER ZAMAN seçili konseptle (ChatGPT) yapılır.
+                          // Tuvaldeki fotoğraf yuvası konseptin düzenine uymuyorsa eski yol.
+                          // Fotoğraf yuvası yalnız seçili konseptin fotoğraf düzeniyle eşleşirse ayrılır.
+                          const slot = currentPhotoSlot();
+                          const matching =
+                            activeBrief && slot &&
+                            getConceptOf(resolveStandard(activeBrief.themaCode), activeBrief.conceptId).photo?.layout === slot.layout
+                              ? slot
+                              : undefined;
+                          void generateAiCover(
+                            activeBrief
+                              ? {
+                                  model: "openai",
+                                  desc: aiDesc,
+                                  scope: aiScope,
+                                  embedText: false,
+                                  photoSlot: matching ?? null,
+                                  ...conceptGenOpts(activeBrief, matching),
+                                }
+                              : undefined,
+                          );
+                        }}
+                        disabled={aiBusy}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3.5 text-base font-semibold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <MagicWandIcon className="h-5 w-5" />
+                        {aiBusy ? t.aiBusy : lang === "tr" ? "Görsel oluştur" : "Generate image"}
+                        {!aiBusy && balance != null && (
+                          <span className="font-normal opacity-80">
+                            · {aiModelCost(activeBrief ? "openai" : aiModel)} {lang === "tr" ? "jeton" : "credits"}
+                          </span>
+                        )}
+                      </button>
+
+                      {aiError === "token" && (
+                        <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">
+                          {t.aiErrorToken}
+                        </p>
+                      )}
+                      {aiError === "generic" && (
+                        <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">
+                          {t.aiErrorGeneric}
+                        </p>
+                      )}
+                      {aiError === "timeout" && (
+                        <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">
+                          {t.aiErrorTimeout}
+                        </p>
+                      )}
+                      {aiError === "credits" && aiCredit && (
+                        <CreditNotice lang={lang} problem={aiCredit} className="text-xs" />
+                      )}
+                      {aiNotice === "embed" && (
+                        <p className="rounded-lg border border-emerald-500/40 bg-emerald-50 px-3 py-3 text-xs text-emerald-700">
+                          {t.aiEmbedNotice}
+                        </p>
+                      )}
+
+                      {coverImage && (
+                        <button
+                          type="button"
+                          onClick={() => setEditOpen(true)}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-accent/50 bg-surface px-4 py-3 text-sm font-semibold text-accent transition hover:bg-accent-soft"
+                        >
+                          <MagicWandIcon className="h-4 w-4" />
+                          {lang === "tr" ? "Bir yerini düzelt" : "Fix one area"}
+                        </button>
+                      )}
+
+                      <div className="divide-y divide-border border-t border-border">
+                        <Accordion icon={<LayoutIcon className="h-5 w-5" />} title={lang === "tr" ? "Yerleşim ayarları" : "Layout settings"}>
+                          <Field label={t.titlePosLabel} hint={t.titlePosHint}>
+                            <div className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-background p-1">
+                              <SegButton active={titlePos === "top"} onClick={() => setTitlePos("top")}>
+                                {t.titlePosTop}
+                              </SegButton>
+                              <SegButton active={titlePos !== "top"} onClick={() => setTitlePos("auto")}>
+                                {t.titlePosAuto}
+                              </SegButton>
+                            </div>
+                          </Field>
+                          {coverImage && (
+                            <Field
+                              label={lang === "tr" ? "Fotoğraf yerleşimi" : "Photo layout"}
+                              hint={
+                                lang === "tr"
+                                  ? "Kendi fotoğrafın için: çerçeveli portre, üstte fotoğraf + altta bant ya da sağ altta portre."
+                                  : "For your own photo: framed portrait, photo on top with a band, or a portrait at the lower right."
+                              }
+                            >
+                              <div className="grid grid-cols-2 gap-2">
+                                <SegButton active={!photoLayout} onClick={() => { setPhotoLayout(null); setPhotoRect(null); }}>
+                                  {lang === "tr" ? "Fotoğraf yok" : "No photo"}
+                                </SegButton>
+                                <SegButton active={photoLayout === "framed"} onClick={() => { setPhotoLayout("framed"); setPhotoRect(null); if (!photoImage) setCoverScope("front"); }}>
+                                  {lang === "tr" ? "Çerçeveli" : "Framed"}
+                                </SegButton>
+                                <SegButton active={photoLayout === "band"} onClick={() => { setPhotoLayout("band"); setPhotoRect(null); if (!photoImage) setCoverScope("front"); }}>
+                                  {lang === "tr" ? "Üstte + bant" : "Top + band"}
+                                </SegButton>
+                                <SegButton active={photoLayout === "side"} onClick={() => { setPhotoLayout("side"); setPhotoRect(null); if (!photoImage) setCoverScope("front"); }}>
+                                  {lang === "tr" ? "Sağ altta" : "Lower right"}
+                                </SegButton>
+                              </div>
+                            </Field>
+                          )}
+                          {coverImage && (
+                            <Field label={t.coverFitLabel} hint={t.coverFitHint}>
+                              <div className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-background p-1">
+                                <SegButton active={coverFit === "fill"} onClick={() => setCoverFit("fill")}>
+                                  {t.coverFitFill}
+                                </SegButton>
+                                <SegButton active={coverFit === "fit"} onClick={() => setCoverFit("fit")}>
+                                  {t.coverFitContain}
+                                </SegButton>
+                              </div>
+                            </Field>
+                          )}
+                          {coverImage && (
+                            <Field label={`${t.opacityLabel} — %${Math.round(coverOpacity * 100)}`} hint={t.opacityHint}>
+                              <input
+                                type="range"
+                                min={20}
+                                max={100}
+                                value={Math.round(coverOpacity * 100)}
+                                onChange={(e) => setCoverOpacity(Number(e.target.value) / 100)}
+                                className="w-full accent-accent"
+                              />
+                            </Field>
+                          )}
+                        </Accordion>
+
+                        <Accordion icon={<SlidersIcon className="h-5 w-5" />} title={lang === "tr" ? "Gelişmiş ayarlar" : "Advanced settings"}>
+                          {activeBrief && (
+                            <p className="text-xs text-muted">
+                              {lang === "tr"
+                                ? "Kurgulu kapaklar seçili konseptle ChatGPT'de üretilir."
+                                : "Briefed covers are generated with ChatGPT using the chosen concept."}
+                            </p>
+                          )}
+                          {aiLastCost != null && (
+                            <p className="text-xs text-muted">
+                              {t.aiLastCost}: ≈ {aiLastCost.toFixed(3)} $
+                            </p>
+                          )}
+                          {!activeBrief && projectId && (
+                            <a
+                              href={`/${lang}/kapak/kurgu?project=${projectId}`}
+                              className="inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline"
+                            >
+                              {lang === "tr" ? "Kapak kurgusu ile başla →" : "Start with the cover brief →"}
+                            </a>
+                          )}
+                          {!activeBrief && (aiModel === "nano" || aiModel === "ideogram") && (
+                            <Field label={t.aiEmbedLabel} hint={t.aiEmbedHint}>
+                              <div className="grid grid-cols-2 gap-2">
+                                <SegButton active={aiEmbedText} onClick={() => setAiEmbedText(true)}>
+                                  {t.aiEmbedOn}
+                                </SegButton>
+                                <SegButton active={!aiEmbedText} onClick={() => setAiEmbedText(false)}>
+                                  {t.aiEmbedOff}
+                                </SegButton>
+                              </div>
+                            </Field>
+                          )}
+
+                          {aiHistory.length > 0 && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-semibold text-foreground">
+                                  {lang === "tr" ? "Önceki denemeler" : "Earlier attempts"}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={clearAiHistory}
+                                  className="text-xs font-medium text-accent transition hover:opacity-80"
+                                >
+                                  {t.aiHistoryClear}
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                {aiHistory.map((item) => (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => restoreAiHistory(item)}
+                                    title={t.aiHistoryRestore}
+                                    className={`group relative aspect-[4/3] overflow-hidden rounded-md border transition ${
+                                      coverImage === item.image
+                                        ? "border-accent ring-2 ring-accent/40"
+                                        : "border-border hover:border-accent"
+                                    }`}
+                                  >
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={item.image} alt="" className="h-full w-full object-cover" />
+                                  </button>
+                                ))}
+                              </div>
+                              <p className="text-xs text-muted">{lang === "tr" ? "Birine tıkla, kapağa geri gelsin." : "Click one to bring it back."}</p>
+                            </div>
+                          )}
+
+                          {/* AI ile TASARIM ÖĞESİ — saydam PNG nesnesi (mühür/rozet/amblem…) */}
+                          <div className="space-y-3">
+                            <div>
+                              <h3 className="text-sm font-semibold text-foreground">{t.elemHeading}</h3>
+                              <p className="mt-1 text-xs text-muted">{t.elemHint}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {(
+                                [
+                                  [t.elemPresetSeal, t.elemPresetSealEx],
+                                  [t.elemPresetBadge, t.elemPresetBadgeEx],
+                                  [t.elemPresetEmblem, t.elemPresetEmblemEx],
+                                  [t.elemPresetOrnament, t.elemPresetOrnamentEx],
+                                ] as const
+                              ).map(([label, example]) => (
+                                <button
+                                  key={label}
+                                  type="button"
+                                  onClick={() => setElemDesc(example)}
+                                  className="rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground/80 transition hover:border-accent/40 hover:text-foreground"
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                            <textarea
+                              value={elemDesc}
+                              onChange={(e) => setElemDesc(e.target.value)}
+                              placeholder={t.elemDescPlaceholder}
+                              rows={2}
+                              aria-label={t.elemDescLabel}
+                              className={`${inputClass} resize-none`}
+                            />
+                            <button
+                              type="button"
+                              onClick={generateElement}
+                              disabled={elemBusy || !elemDesc.trim()}
+                              className="flex w-full items-center justify-center gap-2 rounded-xl border border-accent/50 px-4 py-2.5 text-sm font-semibold text-accent transition hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <MagicWandIcon className="h-4 w-4" />
+                              {elemBusy ? t.elemBusyLabel : t.elemGenerate}
+                              {!elemBusy && balance != null && (
+                                <span className="font-normal opacity-80">
+                                  · {creditCost("cover-element")} {lang === "tr" ? "jeton" : "credits"}
+                                </span>
+                              )}
+                            </button>
+                            {elemError === "token" && (
+                              <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">{t.aiErrorToken}</p>
+                            )}
+                            {elemError === "generic" && (
+                              <p className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-3 text-xs text-accent">{t.aiErrorGeneric}</p>
+                            )}
+                            {elemError === "credits" && elemCredit && (
+                              <CreditNotice lang={lang} problem={elemCredit} className="text-xs" />
+                            )}
+                          </div>
+                        </Accordion>
+                      </div>
+                    </section>
+                    )}
+
+                    {/* Renkler */}
+                    {activePanel === "colors" && (
+                    <section className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h2 className={headingClass}>{t.colorsHeading}</h2>
+                        <button
+                          type="button"
+                          onClick={() => setColorOverrides({})}
+                          disabled={!colorsDirty}
+                          className="text-xs font-medium text-accent transition disabled:cursor-not-allowed disabled:text-muted disabled:opacity-50"
+                        >
+                          {t.colorsReset}
+                        </button>
+                      </div>
+                      <p className="text-xs text-muted">{t.colorsHint}</p>
+
+                      {/* Sırt bandı: sarmal görselde sırtı mm'de kapatan düz şerit. */}
+                      {coverImage && coverScope === "wrap" && (
+                        <div className="space-y-2 rounded-lg border border-foreground/10 p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-medium text-foreground">
+                              {lang === "tr" ? "Sırt bandı" : "Spine band"}
+                            </span>
+                            <div className="grid grid-cols-2 gap-1">
+                              <SegButton
+                                active={!!spineBand}
+                                onClick={() => {
+                                  if (spineBand) return;
+                                  void spineColorFromImage(coverImage).then((c) => setSpineBand(c ?? colors.ink));
+                                }}
+                              >
+                                {lang === "tr" ? "Açık" : "On"}
+                              </SegButton>
+                              <SegButton active={!spineBand} onClick={() => setSpineBand(null)}>
+                                {lang === "tr" ? "Kapalı" : "Off"}
+                              </SegButton>
+                            </div>
+                          </div>
+                          {spineBand && (
+                            <div className="flex items-center justify-between gap-3">
+                              <button
+                                type="button"
+                                onClick={() => void spineColorFromImage(coverImage).then((c) => c && setSpineBand(c))}
+                                className="text-xs font-medium text-accent hover:underline"
+                              >
+                                {lang === "tr" ? "Rengi görselden al" : "Pick color from image"}
+                              </button>
+                              <span className="flex items-center gap-2">
+                                <span className="w-24">
+                                  <HexInput value={spineBand} onCommit={(hex) => setSpineBand(hex)} />
+                                </span>
+                                <input
+                                  type="color"
+                                  value={spineBand}
+                                  onChange={(e) => setSpineBand(e.target.value)}
+                                  aria-label={lang === "tr" ? "Sırt bandı rengi" : "Spine band color"}
+                                  className="h-8 w-10 cursor-pointer rounded border border-border bg-transparent p-0.5"
+                                />
+                              </span>
+                            </div>
+                          )}
+                          <p className="text-xs text-muted">
+                            {lang === "tr"
+                              ? "Yapay zekâ sırtı yaklaşık bırakır; bu şerit sırtı tam ölçüsünde kapatır, sırt yazısı üstüne gelir."
+                              : "AI leaves the spine approximate; this band covers it at exact size, spine text sits on top."}
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="space-y-2.5">
+                        {([
+                          { key: "bg" as const, label: t.colorBg },
+                          { key: "ink" as const, label: t.colorInk },
+                          { key: "accent" as const, label: t.colorAccent },
+                        ]).map(({ key, label }) => (
+                          <label
+                            key={key}
+                            className="flex items-center justify-between gap-3"
+                          >
+                            <span className="text-sm text-foreground">{label}</span>
+                            <span className="flex items-center gap-2">
+                              <span className="w-24">
+                                <HexInput
+                                  value={colors[key]}
+                                  onCommit={(hex) => setColor(key, hex)}
+                                />
+                              </span>
+                              <input
+                                type="color"
+                                value={colors[key]}
+                                onChange={(e) => setColor(key, e.target.value)}
+                                aria-label={label}
+                                className="h-8 w-10 cursor-pointer rounded border border-border bg-transparent p-0.5"
+                              />
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </section>
+                    )}
+
+                    {/* İçerik */}
+                    {activePanel === "content" && (
+                    <section className="space-y-4">
+                      <h2 className={headingClass}>{t.contentHeading}</h2>
+
+                      {/* Okunurluk: yazıyı arka plana göre otomatik beyaz/siyah + gölge */}
+                      <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-surface p-3">
+                        <input
+                          type="checkbox"
+                          checked={autoContrast}
+                          onChange={(e) => setAutoContrast(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 accent-accent"
+                        />
+                        <span className="text-xs leading-relaxed">
+                          <span className="block font-medium text-foreground">
+                            {t.autoContrastLabel}
+                          </span>
+                          <span className="block text-muted">{t.autoContrastHint}</span>
+                        </span>
+                      </label>
+
+                      <Field label={t.titleLabel}>
+                        <input
+                          value={title}
+                          onChange={(e) => setTitle(e.target.value)}
+                          placeholder={t.titlePlaceholder}
+                          className={inputClass}
+                        />
+                      </Field>
+                      <Field label={t.authorLabel}>
+                        <input
+                          value={author}
+                          onChange={(e) => setAuthor(e.target.value)}
+                          placeholder={t.authorPlaceholder}
+                          className={inputClass}
+                        />
+                      </Field>
+                      <Field label={t.subtitleLabel}>
+                        <input
+                          value={subtitle}
+                          onChange={(e) => setSubtitle(e.target.value)}
+                          placeholder={t.subtitlePlaceholder}
+                          className={inputClass}
+                        />
+                      </Field>
+
+                      {/* Serbest metin — kendi metnini ekle ve düzenle */}
+                      <div className="space-y-3 border-t border-border pt-4">
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
+                          {t.freeTextHeading}
+                        </h3>
+                        <button type="button" onClick={addText} className={addObjBtn}>
+                          <TextTIcon className="h-5 w-5" />
+                          {t.objAddText}
+                        </button>
+
+                        {/* Eklenen yazının ayarları sağdaki "Seçim" panelinde görünür. */}
+                        <p className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted">
+                          {t.freeTextHint}
+                        </p>
+                      </div>
+
+                      {/* Hazır yazı (başlık/yazar/alt başlık/sırt) ayarları sağdaki "Seçim" panelinde. */}
+                    </section>
+                    )}
+
+                    {/* Nesneler — serbest metin + şekiller */}
+                    {activePanel === "objects" && (
+                    <section className="space-y-3">
+                      <h2 className={headingClass}>{t.objectsHeading}</h2>
+                      <p className="text-xs text-muted">{t.objectsHint}</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button type="button" onClick={addRect} className={addObjBtn}>
+                          <span className="h-4 w-5 rounded-[3px] bg-current" />
+                          {t.objAddRect}
+                        </button>
+                        <button type="button" onClick={addCircle} className={addObjBtn}>
+                          <span className="h-5 w-5 rounded-full bg-current" />
+                          {t.objAddCircle}
+                        </button>
+                        <button type="button" onClick={addLine} className={addObjBtn}>
+                          <span className="h-0.5 w-6 rounded-full bg-current" />
+                          {t.objAddLine}
+                        </button>
+                        <button type="button" onClick={addTriangle} className={addObjBtn}>
+                          <span
+                            className="h-0 w-0 border-x-[10px] border-b-[16px] border-x-transparent"
+                            style={{ borderBottomColor: "currentColor" }}
+                          />
+                          {t.objAddTriangle}
+                        </button>
+                        <button type="button" onClick={addStar} className={addObjBtn}>
+                          <span aria-hidden className="text-lg leading-none">
+                            ★
+                          </span>
+                          {t.objAddStar}
+                        </button>
+                        <button type="button" onClick={addDiamond} className={addObjBtn}>
+                          <span className="h-3.5 w-3.5 rotate-45 bg-current" />
+                          {t.objAddDiamond}
+                        </button>
+                      </div>
+
+                      {/* Hazır süs / ayraçlar */}
+                      <p className="pt-1 text-xs font-medium text-muted">{t.dividersHeading}</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => addDivider("double")}
+                          className={addObjBtn}
+                          title={t.dividerDouble}
+                        >
+                          <span aria-hidden className="flex flex-col gap-1">
+                            <span className="h-0.5 w-7 rounded bg-current" />
+                            <span className="h-0.5 w-7 rounded bg-current" />
+                          </span>
+                          {t.dividerDouble}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => addDivider("dotline")}
+                          className={addObjBtn}
+                          title={t.dividerDot}
+                        >
+                          <span aria-hidden className="flex items-center gap-1">
+                            <span className="h-0.5 w-2.5 rounded bg-current" />
+                            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                            <span className="h-0.5 w-2.5 rounded bg-current" />
+                          </span>
+                          {t.dividerDot}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => addDivider("diamond")}
+                          className={addObjBtn}
+                          title={t.dividerDiamond}
+                        >
+                          <span aria-hidden className="flex items-center gap-1">
+                            <span className="h-0.5 w-2.5 rounded bg-current" />
+                            <span className="h-2 w-2 rotate-45 bg-current" />
+                            <span className="h-0.5 w-2.5 rounded bg-current" />
+                          </span>
+                          {t.dividerDiamond}
+                        </button>
+                      </div>
+
+                      {/* Seçili şeklin ayarları sağdaki "Seçim" panelinde görünür. */}
+                      <p className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted">
+                        {t.objectsTip}
+                      </p>
+                    </section>
+                    )}
+
+                    {/* Barkod (ISBN) */}
+                    {activePanel === "barcode" && (
+                    <section className="space-y-4">
+                      <h2 className={headingClass}>{t.barcodeHeading}</h2>
+                      <p className="text-xs text-muted">{t.barcodeHint}</p>
+                      <Field label={t.isbnLabel} hint={t.isbnHint}>
+                        <input
+                          value={isbn}
+                          onChange={(e) => setIsbn(e.target.value)}
+                          placeholder={t.isbnPlaceholder}
+                          inputMode="numeric"
+                          className={inputClass}
+                        />
+                        {isbnAutoCompleted ? (
+                          <p className="text-xs font-medium text-emerald-600">
+                            {t.isbnAutoComplete} {isbnComplete}
+                          </p>
+                        ) : isbnState === "valid" ? (
+                          <p className="text-xs font-medium text-emerald-600">{t.isbnValid}</p>
+                        ) : isbnState === "invalid" ? (
+                          <p className="text-xs font-medium text-accent">{t.isbnInvalid}</p>
+                        ) : null}
+                      </Field>
+                      <button
+                        type="button"
+                        onClick={() => setIsbn(randomTestIsbn())}
+                        className={ghostBtn}
+                      >
+                        {t.isbnRandomCta}
+                      </button>
+                    </section>
+                    )}
+
+                    {/* Görsel ve logo */}
+                    {activePanel === "images" && (
+                    <section className="space-y-4">
+                      <h2 className={headingClass}>{t.imagesHeading}</h2>
+
+                      {/* Kapak görseli */}
+                      <Field label={t.coverImageLabel}>
+                        <div className="flex gap-2">
+                          <UploadButton
+                            label={coverImage ? t.changeCta : t.uploadCta}
+                            onChange={(e) =>
+                              readFile(e, (v) => {
+                                setCoverImage(v);
+                                // Yüklenen kapak görselini "Yüklemelerim" kütüphanesine de al.
+                                if (v) pushUserImage(v, "upload");
+                              })
+                            }
+                          />
+                          {coverImage && (
+                            <button type="button" onClick={() => setCoverImage(null)} className={ghostBtn}>
+                              {t.removeCta}
+                            </button>
+                          )}
+                        </div>
+                      </Field>
+
+                      {coverImage && (
+                        <>
+                          <Field label={t.scopeLabel}>
+                            <div className="grid grid-cols-2 gap-2">
+                              <SegButton active={coverScope === "front"} onClick={() => setCoverScope("front")}>
+                                {t.scopeFront}
+                              </SegButton>
+                              <SegButton active={coverScope === "wrap"} onClick={() => setCoverScope("wrap")}>
+                                {t.scopeWrap}
+                              </SegButton>
+                            </div>
+                          </Field>
+                          <Field label={t.coverFitLabel} hint={t.coverFitHint}>
+                            <div className="grid grid-cols-2 gap-2">
+                              <SegButton active={coverFit === "fill"} onClick={() => setCoverFit("fill")}>
+                                {t.coverFitFill}
+                              </SegButton>
+                              <SegButton active={coverFit === "fit"} onClick={() => setCoverFit("fit")}>
+                                {t.coverFitContain}
+                              </SegButton>
+                            </div>
+                          </Field>
+                          <Field label={t.coverFrameLabel} hint={t.coverFrameHint}>
+                            <div className="space-y-2">
+                              <div>
+                                <span className="text-xs text-muted">{t.coverPanLabel}</span>
+                                <input
+                                  type="range"
+                                  min={-100}
+                                  max={100}
+                                  value={Math.round(coverPanX * 100)}
+                                  onChange={(e) => setCoverPanX(Number(e.target.value) / 100)}
+                                  className="w-full accent-accent"
+                                />
+                              </div>
+                              <div>
+                                <span className="text-xs text-muted">
+                                  {t.coverZoomLabel} — {coverZoom.toFixed(2)}×
+                                </span>
+                                <input
+                                  type="range"
+                                  min={100}
+                                  max={250}
+                                  value={Math.round(coverZoom * 100)}
+                                  onChange={(e) => setCoverZoom(Number(e.target.value) / 100)}
+                                  className="w-full accent-accent"
+                                />
+                              </div>
+                              {(coverPanX !== 0 || coverZoom !== 1) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCoverPanX(0);
+                                    setCoverZoom(1);
+                                  }}
+                                  className="text-xs font-medium text-accent transition hover:opacity-80"
+                                >
+                                  {t.coverFrameReset}
+                                </button>
+                              )}
+                            </div>
+                          </Field>
+                          <Field label={`${t.darkenLabel} — %${Math.round(coverDarken * 100)}`}>
+                            <input
+                              type="range"
+                              min={0}
+                              max={70}
+                              value={Math.round(coverDarken * 100)}
+                              onChange={(e) => setCoverDarken(Number(e.target.value) / 100)}
+                              className="w-full accent-accent"
+                            />
+                            {coverDarken > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setCoverDarken(0)}
+                                className="mt-1.5 text-xs font-medium text-accent transition hover:opacity-80"
+                              >
+                                {t.darkenRemove}
+                              </button>
+                            )}
+                          </Field>
+                          <Field
+                            label={`${t.opacityLabel} — %${Math.round(coverOpacity * 100)}`}
+                            hint={t.opacityHint}
+                          >
+                            <input
+                              type="range"
+                              min={20}
+                              max={100}
+                              value={Math.round(coverOpacity * 100)}
+                              onChange={(e) => setCoverOpacity(Number(e.target.value) / 100)}
+                              className="w-full accent-accent"
+                            />
+                          </Field>
+                        </>
+                      )}
+
+                      {/* Logo */}
+                      <Field label={t.logoLabel}>
+                        <div className="flex gap-2">
+                          <UploadButton
+                            label={logoImage ? t.changeCta : t.uploadCta}
+                            onChange={(e) => readFile(e, setLogoImage)}
+                          />
+                          {logoImage && (
+                            <button type="button" onClick={() => setLogoImage(null)} className={ghostBtn}>
+                              {t.removeCta}
+                            </button>
+                          )}
+                        </div>
+                      </Field>
+
+                      {/* Tek tık KDY logosu: alt-ortaya, güvenli çizgiye, ~20mm. Her kitapta
+                          çalışır; kapağın altı koyuysa Beyaz, açıksa Siyah seç. */}
+                      <Field label={t.kdyLogoLabel}>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => applyKdyLogo("white")}
+                            title={t.kdyLogoWhite}
+                            className="flex h-11 items-center justify-center rounded-lg border border-[var(--border)] bg-neutral-800 transition hover:opacity-90"
+                            style={{
+                              backgroundImage: `url(/kdy/${kdyLogoBase}-white.png)`,
+                              backgroundSize: "auto 44%",
+                              backgroundPosition: "center",
+                              backgroundRepeat: "no-repeat",
+                            }}
+                          >
+                            <span className="sr-only">{t.kdyLogoWhite}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applyKdyLogo("black")}
+                            title={t.kdyLogoBlack}
+                            className="flex h-11 items-center justify-center rounded-lg border border-[var(--border)] bg-white transition hover:opacity-90"
+                            style={{
+                              backgroundImage: `url(/kdy/${kdyLogoBase}-black.png)`,
+                              backgroundSize: "auto 44%",
+                              backgroundPosition: "center",
+                              backgroundRepeat: "no-repeat",
+                            }}
+                          >
+                            <span className="sr-only">{t.kdyLogoBlack}</span>
+                          </button>
+                        </div>
+                      </Field>
+
+                      {logoImage && (
+                        <>
+                          <Field label={t.logoPosLabel}>
+                            <div className="grid grid-cols-2 gap-2">
+                              <SegButton active={logoPos === "top"} onClick={() => setLogoPos("top")}>
+                                {t.logoPosTop}
+                              </SegButton>
+                              <SegButton active={logoPos === "bottom"} onClick={() => setLogoPos("bottom")}>
+                                {t.logoPosBottom}
+                              </SegButton>
+                            </div>
+                          </Field>
+                          <Field label={`${t.logoSizeLabel} — %${logoSize}`}>
+                            <input
+                              type="range"
+                              min={8}
+                              max={50}
+                              value={logoSize}
+                              onChange={(e) => setLogoSize(Number(e.target.value))}
+                              className="w-full accent-accent"
+                            />
+                          </Field>
+                        </>
+                      )}
+                    </section>
+                    )}
+
+                    {/* Kitap ayarları */}
+                    {activePanel === "setup" && (
+                    <section className="space-y-4">
+                      <h2 className={headingClass}>{t.setupHeading}</h2>
+
+                      <Field label={t.sizeLabel}>
+                        <select value={sizeId} onChange={(e) => setSizeId(e.target.value)} className={selectClass}>
+                          <optgroup label={t.sizeGroupKdp}>
+                            {kdpSizes.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label={t.sizeGroupTr}>
+                            {trSizes.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                        </select>
+                      </Field>
+
+                      <Field label={t.pageCountLabel} hint={t.pageCountHint}>
+                        <input
+                          type="number"
+                          min={1}
+                          value={pageCount}
+                          onChange={(e) => setPageCount(parseInt(e.target.value, 10) || 0)}
+                          className={inputClass}
+                        />
+                      </Field>
+
+                      <Field label={t.paperLabel}>
+                        <select
+                          value={paperGsm}
+                          onChange={(e) => setPaperGsm(Number(e.target.value) as PaperGsm)}
+                          className={selectClass}
+                        >
+                          {PAPER_OPTIONS.map((g) => (
+                            <option key={g} value={g}>
+                              {g} {t.paperUnit}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+
+                      <Field label={t.bindingLabel}>
+                        <div className="grid grid-cols-2 gap-2">
+                          <SegButton active={binding === "soft"} onClick={() => setBinding("soft")}>
+                            {t.bindingSoft}
+                          </SegButton>
+                          <SegButton active={binding === "hard"} onClick={() => setBinding("hard")}>
+                            {t.bindingHard}
+                          </SegButton>
+                        </div>
+                      </Field>
+
+                      <Field label={t.bleedLabel} hint={t.bleedHint}>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.5}
+                            value={bleedMm}
+                            onChange={(e) => setBleedMm(parseFloat(e.target.value) || 0)}
+                            className={`${inputClass} flex-1`}
+                          />
+                          <span className="text-sm text-muted">mm</span>
+                        </div>
+                        <div className="mt-2 flex gap-2">
+                          {BLEED_OPTIONS.map((b) => (
+                            <SegButton key={b} active={bleedMm === b} onClick={() => setBleedMm(b)}>
+                              {b} mm
+                            </SegButton>
+                          ))}
+                        </div>
+                      </Field>
+
+                      <div className="rounded-xl border border-border bg-surface p-4">
+                        <div className="flex items-baseline justify-between">
+                          <span className={headingClass}>{t.spineHeading}</span>
+                          <span className="font-sans text-lg font-bold text-accent">
+                            {formatMm(spread.spine)}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-muted">
+                          {spineManualOn ? t.spineManualLabel : t.spineAuto}
+                        </p>
+                        <label className="mt-3 flex items-center gap-2 text-sm text-foreground/80">
+                          <input
+                            type="checkbox"
+                            checked={spineManualOn}
+                            onChange={(e) => setSpineManualOn(e.target.checked)}
+                            className="h-4 w-4 accent-accent"
+                          />
+                          {t.spineManualToggle}
+                        </label>
+                        {spineManualOn && (
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.1}
+                            value={spineManualValue}
+                            onChange={(e) => setSpineManualValue(parseFloat(e.target.value) || 0)}
+                            className={`${inputClass} mt-3`}
+                          />
+                        )}
+                      </div>
+
+                      {/* PDF kesim işaretleri — baskı ayarı, ölçülerin yanında dursun */}
+                      <label className="flex items-start gap-2 rounded-xl border border-border bg-surface p-4 text-sm text-foreground/80">
+                        <input
+                          type="checkbox"
+                          checked={cropMarks}
+                          onChange={(e) => setCropMarks(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 accent-accent"
+                        />
+                        <span>
+                          {t.cropMarksLabel}
+                          <span className="mt-0.5 block text-xs text-muted">{t.cropMarksHint}</span>
+                        </span>
+                      </label>
+                    </section>
+                    )}
+
+                    {/* Katmanlar */}
+                    {activePanel === "layers" && (
+                    <section className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h2 className={headingClass}>{t.layersHeading}</h2>
+                        <button
+                          type="button"
+                          onClick={resetLayout}
+                          disabled={!layoutDirty}
+                          className="text-xs font-medium text-accent transition disabled:cursor-not-allowed disabled:text-muted disabled:opacity-50"
+                        >
+                          {t.resetPositions}
+                        </button>
+                      </div>
+                      <p className="text-xs text-muted">{t.layersHint}</p>
+                      {layerIds.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted">
+                          {t.layersEmpty}
+                        </p>
+                      ) : (
+                        <ul className="flex flex-col gap-1.5">
+                          {layerIds.map((id, i) => {
+                            const isHidden = !!hidden[id];
+                            const isLocked = !!locked[id];
+                            return (
+                              <li
+                                key={id}
+                                draggable
+                                onDragStart={() => setDragRow(i)}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={() => {
+                                  if (dragRow !== null) reorderLayer(dragRow, i);
+                                  setDragRow(null);
+                                }}
+                                onDragEnd={() => setDragRow(null)}
+                                className={`flex items-center gap-2 rounded-lg border px-2 py-2 transition ${
+                                  dragRow === i
+                                    ? "border-accent bg-accent-soft"
+                                    : "border-border bg-surface hover:border-accent/40"
+                                } ${isHidden ? "opacity-50" : ""}`}
+                              >
+                                <DragHandleIcon className="h-4 w-4 shrink-0 cursor-grab text-muted" />
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedId(id)}
+                                  className="flex-1 truncate text-left text-sm text-foreground transition hover:text-accent"
+                                  title={t.layerSelectHint}
+                                >
+                                  {selectedName(id, t, objects)}
+                                </button>
+                                <div className="flex shrink-0 flex-col">
+                                  <button
+                                    type="button"
+                                    onClick={() => reorderLayer(i, i - 1)}
+                                    disabled={i === 0}
+                                    title={t.zBringForward}
+                                    aria-label={t.zBringForward}
+                                    className="leading-none text-muted transition hover:text-accent disabled:cursor-not-allowed disabled:opacity-30"
+                                  >
+                                    ▲
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => reorderLayer(i, i + 1)}
+                                    disabled={i === layerIds.length - 1}
+                                    title={t.zSendBackward}
+                                    aria-label={t.zSendBackward}
+                                    className="leading-none text-muted transition hover:text-accent disabled:cursor-not-allowed disabled:opacity-30"
+                                  >
+                                    ▼
+                                  </button>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleHidden(id)}
+                                  title={isHidden ? t.layerShow : t.layerHide}
+                                  aria-label={isHidden ? t.layerShow : t.layerHide}
+                                  className="rounded-md p-1.5 text-muted transition hover:bg-accent-soft hover:text-accent"
+                                >
+                                  {isHidden ? (
+                                    <EyeSlashIcon className="h-4 w-4" />
+                                  ) : (
+                                    <EyeIcon className="h-4 w-4" />
+                                  )}
+                                </button>
+                                {id !== "darken" && id !== "background" && id !== "spineBand" && id !== "photo" && id !== "photoFrame" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleLocked(id)}
+                                    title={isLocked ? t.layerUnlock : t.layerLock}
+                                    aria-label={isLocked ? t.layerUnlock : t.layerLock}
+                                    className={`rounded-md p-1.5 transition hover:bg-accent-soft hover:text-accent ${
+                                      isLocked ? "text-accent" : "text-muted"
+                                    }`}
+                                  >
+                                    {isLocked ? (
+                                      <LockIcon className="h-4 w-4" />
+                                    ) : (
+                                      <LockOpenIcon className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </section>
+                    )}
+
+                    {/* Yüklemelerim — kişisel görsel + şablon kütüphanesi */}
+                    {activePanel === "library" && (
+                    <section className="space-y-6">
+                      {/* ── Görsellerim ── */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <h2 className={headingClass}>{t.libraryImagesHeading}</h2>
+                          <label className="shrink-0 cursor-pointer rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground/80 transition hover:border-accent/40 hover:text-foreground">
+                            {t.libraryUploadCta}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              onChange={handleLibraryUpload}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+                        <p className="text-xs text-muted">{t.libraryImagesHint}</p>
+                        {userImages.length === 0 ? (
+                          <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted">
+                            {t.libraryEmptyImages}
+                          </p>
+                        ) : (
+                          <ul className="flex flex-col gap-2">
+                            {userImages.map((img) => (
+                              <li
+                                key={img.id}
+                                className="flex gap-3 rounded-xl border border-border bg-surface p-2"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={img.image}
+                                  alt=""
+                                  className="h-16 w-16 shrink-0 rounded-lg object-cover"
+                                />
+                                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted">
+                                    {img.source === "ai" ? "AI" : t.libraryUploadCta}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => applyLibraryImageAsCover(img)}
+                                    className="rounded-md border border-accent/40 px-2 py-1 text-xs font-medium text-accent transition hover:bg-accent-soft"
+                                  >
+                                    {t.libraryUseAsCover}
+                                  </button>
+                                  <div className="flex gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => addLibraryImageAsObject(img)}
+                                      className="flex-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground/70 transition hover:border-accent/40 hover:text-foreground"
+                                    >
+                                      {t.libraryAddAsObject}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteUserImage(img.id)}
+                                      title={t.libraryDelete}
+                                      aria-label={t.libraryDelete}
+                                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-accent-soft hover:text-accent"
+                                    >
+                                      <TrashIcon className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+
+                      {/* ── Şablonlarım ── */}
+                      <div className="space-y-3 border-t border-border pt-5">
+                        <h2 className={headingClass}>{t.libraryTemplatesHeading}</h2>
+                        <p className="text-xs text-muted">{t.libraryTemplatesHint}</p>
+                        <button
+                          type="button"
+                          onClick={saveCurrentAsTemplate}
+                          className="w-full rounded-lg border border-accent/40 px-3 py-2 text-sm font-medium text-accent transition hover:bg-accent-soft"
+                        >
+                          {t.librarySaveTemplateCta}
+                        </button>
+                        {userTemplates.length === 0 ? (
+                          <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted">
+                            {t.libraryEmptyTemplates}
+                          </p>
+                        ) : (
+                          <ul className="flex flex-col gap-2">
+                            {userTemplates.map((tpl) => (
+                              <li
+                                key={tpl.id}
+                                className="flex gap-3 rounded-xl border border-border bg-surface p-2"
+                              >
+                                {tpl.thumb ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={tpl.thumb}
+                                    alt=""
+                                    className="h-16 w-24 shrink-0 rounded-lg border border-border object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-16 w-24 shrink-0 items-center justify-center rounded-lg border border-dashed border-border text-muted">
+                                    <LayoutIcon className="h-5 w-5" />
+                                  </div>
+                                )}
+                                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                                  <span className="truncate text-sm font-medium text-foreground">
+                                    {tpl.name}
+                                  </span>
+                                  <div className="mt-auto flex gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => applyUserTemplate(tpl)}
+                                      className="flex-1 rounded-md border border-accent/40 px-2 py-1 text-xs font-medium text-accent transition hover:bg-accent-soft"
+                                    >
+                                      {t.libraryApplyTemplate}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteUserTemplate(tpl.id)}
+                                      title={t.libraryDelete}
+                                      aria-label={t.libraryDelete}
+                                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-accent-soft hover:text-accent"
+                                    >
+                                      <TrashIcon className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+
+                      <p className="rounded-lg bg-surface px-3 py-2 text-[11px] leading-relaxed text-muted">
+                        {t.libraryLocalNote}
+                      </p>
+                    </section>
+                    )}
+                      {activePanel === "layers" && inspectorNode && <div className="mt-5">{inspectorNode}</div>}
+                    </>
+                  )}
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setPanelOpen(true)}
+                title={lang === "tr" ? "Paneli aç" : "Open panel"}
+                className="hidden h-full flex-col items-center gap-3 px-2 py-4 text-foreground/70 transition hover:bg-accent-soft hover:text-foreground lg:flex"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-border">‹</span>
+                <meta.Icon className="h-6 w-6 text-accent" />
+                {selectedId && <span className="h-2 w-2 rounded-full bg-accent" aria-label={lang === "tr" ? "Seçili öğe var" : "Item selected"} />}
+              </button>
+            )}
+          </aside>
+        )}
       </div>
+
+
+      {wizardActive && projectId && !bigView && <WizardGuide lang={lang} step="cover" projectId={projectId} />}
 
       {editOpen && coverImage && (
         <CoverEditModal
@@ -4752,8 +5235,7 @@ export default function CoverStudio({
   );
 }
 
-const headingClass =
-  "font-mono text-xs font-medium uppercase tracking-[0.16em] text-muted";
+const headingClass = "sr-only";
 const selectClass =
   "w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-accent";
 const inputClass =
@@ -4789,7 +5271,7 @@ function Field({
 }) {
   return (
     <div className="space-y-2">
-      <label className="block text-sm font-medium text-foreground">{label}</label>
+      <label className="block text-sm font-semibold text-foreground">{label}</label>
       {children}
       {hint && <p className="text-xs text-muted">{hint}</p>}
     </div>
@@ -4905,6 +5387,62 @@ function NumInput({
   );
 }
 
+// Seçili kartın köşesindeki onay rozeti.
+function CheckBadge() {
+  return (
+    <span className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-accent text-xs font-bold text-white shadow">
+      ✓
+    </span>
+  );
+}
+
+// Açılır bölüm (Yerleşim ayarları / Gelişmiş ayarlar) — kapalı başlar.
+function Accordion({
+  title,
+  icon,
+  children,
+  defaultOpen = false,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details className="group py-1" open={defaultOpen}>
+      <summary className="flex cursor-pointer list-none items-center gap-3 py-3 text-base font-medium text-foreground [&::-webkit-details-marker]:hidden">
+        {icon && <span className="text-foreground/70">{icon}</span>}
+        <span className="flex-1">{title}</span>
+        <CaretDownIcon className="h-4 w-4 text-foreground/60 transition group-open:rotate-180" />
+      </summary>
+      <div className="space-y-4 pb-4 pt-1">{children}</div>
+    </details>
+  );
+}
+
+// Stil kartlarının örnek görselleri: kapak kurgusunun en yakın konsept örneği.
+const STYLE_EXAMPLE: Record<string, string> = {
+  literary: "/kurgu/FB/1.jpg",
+  thriller: "/kurgu/FF/1.jpg",
+  fantasy: "/kurgu/FM/1.jpg",
+  romance: "/kurgu/FR/1.jpg",
+  children: "/kurgu/YF/1.jpg",
+  minimal: "/kurgu/QD/1.jpg",
+  nonfiction: "/kurgu/K/1.jpg",
+  vintage: "/kurgu/DB/1.jpg",
+};
+// Görsel yüklenene kadar kartın zemin rengi.
+const STYLE_SWATCH: Record<string, string> = {
+  literary: "linear-gradient(160deg, #efe7d6 0%, #d8c8a8 55%, #8a6f4d 100%)",
+  thriller: "linear-gradient(160deg, #2b2f3a 0%, #151821 60%, #b3261e 100%)",
+  fantasy: "linear-gradient(160deg, #2a2357 0%, #5b3f9a 55%, #d8b25a 100%)",
+  romance: "linear-gradient(160deg, #f6e3e1 0%, #e8b4b8 55%, #b5546a 100%)",
+  children: "linear-gradient(160deg, #fbe7a1 0%, #9ed3c6 55%, #f08a5d 100%)",
+  minimal: "linear-gradient(160deg, #f4f2ee 0%, #e3ddd3 60%, #b9ae9c 100%)",
+  nonfiction: "linear-gradient(160deg, #e7eef5 0%, #9fb6cc 55%, #2f4f6b 100%)",
+  vintage: "linear-gradient(160deg, #efe1c3 0%, #c9a97a 55%, #6b4b2e 100%)",
+};
+
 function SegButton({
   active,
   onClick,
@@ -4926,8 +5464,8 @@ function SegButton({
       title={title}
       className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
         active
-          ? "border-accent bg-accent-soft text-accent"
-          : "border-border bg-surface text-foreground/70 hover:border-accent/40"
+          ? "border-accent bg-accent text-white shadow-sm"
+          : "border-transparent bg-transparent text-foreground/75 hover:bg-accent-soft hover:text-foreground"
       }`}
     >
       {children}

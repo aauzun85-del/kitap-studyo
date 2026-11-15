@@ -1212,7 +1212,7 @@ const tr: Dictionary = {
     libraryApplyConfirm:
       "Bu şablon mevcut tasarımının yerine geçecek. Devam edilsin mi?",
     libraryLocalNote:
-      "Not: Bunlar şimdilik yalnız bu tarayıcıda saklanır. Giriş sistemi bağlanınca hesabına taşınacak.",
+      "Not: Kayıtlı şablonların yalnız bu tarayıcıda saklanır; başka cihazda görünmez.",
     barcodeHeading: "Barkod (ISBN)",
     barcodeHint:
       "ISBN numaranı gir; arka kapakta gerçek, taranabilir barkod oluşur.",
@@ -2401,7 +2401,7 @@ const en: Dictionary = {
     libraryApplyConfirm:
       "This template will replace your current design. Continue?",
     libraryLocalNote:
-      "Note: these are stored only in this browser for now. They'll move to your account once login is connected.",
+      "Note: saved templates are kept only in this browser; they won't show on other devices.",
     barcodeHeading: "Barcode (ISBN)",
     barcodeHint:
       "Enter your ISBN to generate a real, scannable barcode on the back cover.",

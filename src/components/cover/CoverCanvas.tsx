@@ -4,6 +4,7 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -181,6 +182,11 @@ const GUIDE_LABEL = "rgba(40,38,34,0.55)";
 const MAX_DISPLAY_WIDTH = 2000;
 // Yakınlaştırmada tuvalin ekrandaki en büyük genişliği (piksel).
 const MAX_ZOOM_WIDTH = 6000;
+// Cetvel kalınlıkları ve dış bölüm etiketi satırı (px).
+const RULER_TOP = 26;
+const RULER_LEFT = 34;
+const LABEL_ROW = 26;
+export type ViewFocus = "all" | "front" | "back";
 
 export type CoverCanvasHandle = {
   /** Baskı için tuvali verilen DPI'da PNG dataURL olarak verir (ekran yardımcıları hariç). */
@@ -237,6 +243,13 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   /** Ekran büyütmesi: 1 = kutuya sığdır; >1 = büyüt (kutu kaydırılır). Baskı
    *  çıktısını etkilemez (çıktı mm ölçüsünden ve DPI'dan hesaplanır). */
   zoom?: number;
+  /** Görünüm odağı: tüm kapak / yalnız ön / yalnız arka (sığdırma o bölgeye göre). */
+  focus?: ViewFocus;
+  /** mm cetvelleri + tuvalin ÜSTÜNDE "Arka kapak · Sırt · Ön kapak" etiketleri
+   *  (o zaman tuvalin içindeki bölüm etiketleri çizilmez). */
+  rulers?: boolean;
+  /** Ekran ölçeği değişince: gerçek boyuta göre yüzde + en çok kaç kat büyütülebilir. */
+  onView?: (v: { realPercent: number; maxZoom: number }) => void;
 }>(function CoverCanvas({
   spread,
   labels,
@@ -264,6 +277,9 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   onLayersChange,
   onReady,
   zoom = 1,
+  focus = "all",
+  rulers = false,
+  onView,
 }, ref) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasElRef = useRef<HTMLCanvasElement>(null);
@@ -271,6 +287,19 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   const displayDpiRef = useRef(96);
   const [containerW, setContainerW] = useState(0);
   const [containerH, setContainerH] = useState(0);
+  // Son çizimin ekran ölçeği (cetveller ve dış etiketler için) + kutu kaydırılıyor mu.
+  // x0/clipW: "ön"/"arka" odakta yalnız o bölge görünür (kalanı kırpılır).
+  const [view, setView] = useState<{ pxPerMm: number; w: number; h: number; scroll: boolean; x0: number; clipW: number }>({
+    pxPerMm: 0,
+    w: 0,
+    h: 0,
+    scroll: false,
+    x0: 0,
+    clipW: 0,
+  });
+  const onViewRef = useRef(onView);
+  // Yakınlaştırma/odak değişince görünür merkezi koru (ilk büyütmede ön kapağa odaklan).
+  const prevViewKeyRef = useRef<string>("1|all");
   // Yazı tipleri yüklenince tuval yeniden çizilsin (ilk boyamada fallback fontla
   // çizilmesini önler). document.fonts hazır olunca true olur.
   const [fontsReady, setFontsReady] = useState(false);
@@ -314,19 +343,24 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   // Her nesnenin oluşturulduğu andaki "temel" ölçeği (editId → {sx, sy}).
   // Kullanıcı boyutu buna GÖRE oran olarak saklanır → ekran yeniden ölçeklenince bozulmaz.
   const baseScaleRef = useRef<Record<string, { sx: number; sy: number }>>({});
-  spreadRef.current = spread;
-  positionsRef.current = positions;
-  layersRef.current = layers;
-  hiddenRef.current = hidden ?? {};
-  lockedRef.current = locked ?? {};
-  onPosRef.current = onPositionChange;
-  onSelRef.current = onSelect;
-  onTextSelRef.current = onTextSelect;
-  onGeoRef.current = onGeometrySelect;
-  onAngleRef.current = onAngleChange;
-  onLayersRef.current = onLayersChange;
-  onReadyRef.current = onReady;
-  textStylesRef.current = textStyles;
+  // En güncel değerleri ref'lere aktar (çizimden hemen sonra, efektlerden ÖNCE;
+  // olay işleyicileri ve çizim efekti hep güncel değeri okur).
+  useLayoutEffect(() => {
+    spreadRef.current = spread;
+    positionsRef.current = positions;
+    layersRef.current = layers;
+    hiddenRef.current = hidden ?? {};
+    lockedRef.current = locked ?? {};
+    onPosRef.current = onPositionChange;
+    onSelRef.current = onSelect;
+    onTextSelRef.current = onTextSelect;
+    onGeoRef.current = onGeometrySelect;
+    onAngleRef.current = onAngleChange;
+    onLayersRef.current = onLayersChange;
+    onReadyRef.current = onReady;
+    textStylesRef.current = textStyles;
+    onViewRef.current = onView;
+  });
 
   // Bir nesnenin güncel dönüşümünü kayıt formatına çevirir (konum + oran + açı).
   // Ref'lerden okuduğu için her zaman en güncel değerleri kullanır.
@@ -461,16 +495,23 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
     // güvenmek bazı düzen yarışlarında containerW=0'da takılı kalmaya yol
     // açıyordu → fabric hiç başlatılmıyordu (tuval 300×150 kalıyordu).
     // contentRect = içerik kutusu (padding hariç) olduğundan, padding'i çıkar.
-    const cs = getComputedStyle(el);
-    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
-    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-    setContainerW(el.clientWidth - padX);
-    setContainerH(el.clientHeight - padY);
-    const ro = new ResizeObserver((entries) => {
-      setContainerW(entries[0].contentRect.width);
-      setContainerH(entries[0].contentRect.height);
-    });
-    ro.observe(el);
+    // Ölçüyü KAYMAYAN üst kutudan al: kaydırılan kutunun içi, kaydırma çubuğu
+    // çıkınca küçülür → tuval küçülür → çubuk kaybolur → büyür… döngüsü olmasın.
+    const host = el.parentElement ?? el;
+    const measure = () => {
+      const cs = getComputedStyle(el);
+      const extraX =
+        parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) +
+        parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+      const extraY =
+        parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) +
+        parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+      setContainerW(Math.max(0, host.clientWidth - extraX));
+      setContainerH(Math.max(0, host.clientHeight - extraY));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(host);
     return () => ro.disconnect();
   }, []);
 
@@ -506,13 +547,58 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       // Tuval, çevreleyen kutuya HEM ene HEM boya sığsın (Canva gibi ortalı).
       // Kapak yatay olduğundan çoğu ekranda yükseklik belirleyici olur → taşmaz.
       const aspect = spread.totalWidth / spread.totalHeight;
-      const heightCap = containerH > 0 ? containerH * aspect : Infinity;
-      const fitW = Math.min(containerW, heightCap, MAX_DISPLAY_WIDTH);
-      const targetW = zoom > 1 ? Math.min(fitW * zoom, MAX_ZOOM_WIDTH) : fitW;
+      // Cetveller açıksa onların payını düş.
+      const availW = Math.max(40, containerW - (rulers ? RULER_LEFT : 0));
+      const availH = Math.max(40, containerH - (rulers ? RULER_TOP + LABEL_ROW : 0));
+      const heightCap = containerH > 0 ? availH * aspect : Infinity;
+      // Odak: "ön"/"arka" seçiliyse o bölge kutunun enine sığar (kapak taşar, kaydırılır).
+      const region =
+        focus === "front"
+          ? { x0: spread.spineEnd - 2, x1: spread.totalWidth }
+          : focus === "back"
+            ? { x0: 0, x1: spread.spineStart + 2 }
+            : { x0: 0, x1: spread.totalWidth };
+      const regionShare = Math.max(0.2, (region.x1 - region.x0) / spread.totalWidth);
+      const fitW = Math.min(availW / regionShare, heightCap, MAX_DISPLAY_WIDTH / regionShare);
+      // Ekran kartının (iPad Safari dahil) tuval alanı sınırı: cihaz pikseli olarak
+      // ~14 milyon pikseli aşınca tuval BOŞ görünür → büyütmeyi orada durdur.
+      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+      const capW = Math.min(MAX_ZOOM_WIDTH, Math.sqrt(14_000_000 * aspect) / dpr, 8000 / dpr);
+      const targetW = zoom > 1 ? Math.max(fitW, Math.min(fitW * zoom, capW)) : Math.min(fitW, capW);
       const displayDpi = (targetW / spread.totalWidth) * 25.4;
       displayDpiRef.current = displayDpi;
       const pxW = Math.round(targetW);
       const pxH = Math.round(targetW * (spread.totalHeight / spread.totalWidth));
+      const pxPerMmNow = pxW / spread.totalWidth;
+      const x0px = focus === "all" ? 0 : Math.max(0, Math.round(region.x0 * pxPerMmNow));
+      const clipW = focus === "all" ? pxW : Math.min(pxW - x0px, Math.round((region.x1 - region.x0) * pxPerMmNow));
+      const scrollable = clipW > availW + 1 || pxH > availH + 1;
+      setView((v) =>
+        v.w === pxW && v.h === pxH && v.scroll === scrollable && v.x0 === x0px && v.clipW === clipW
+          ? v
+          : { pxPerMm: pxPerMmNow, w: pxW, h: pxH, scroll: scrollable, x0: x0px, clipW },
+      );
+      onViewRef.current?.({
+        realPercent: Math.round(((pxW / spread.totalWidth) / (96 / 25.4)) * 100),
+        maxZoom: fitW > 0 ? Math.max(1, capW / fitW) : 1,
+      });
+      // Görünür merkez: büyütme/odak değişince korunur; yeni odakta bölgenin ortası.
+      const wrapEl = wrapperRef.current;
+      const viewKey = `${zoom}|${focus}`;
+      let centerTo: { fx: number; fy: number } | null = null;
+      if (wrapEl && viewKey !== prevViewKeyRef.current) {
+        const prevFocus = prevViewKeyRef.current.split("|")[1];
+        if (prevFocus === focus && wrapEl.scrollWidth > wrapEl.clientWidth + 1) {
+          centerTo = {
+            fx: (wrapEl.scrollLeft + wrapEl.clientWidth / 2) / wrapEl.scrollWidth,
+            fy: (wrapEl.scrollTop + wrapEl.clientHeight / 2) / Math.max(1, wrapEl.scrollHeight),
+          };
+        } else {
+          // İlk büyütmede (tam kapak) ön kapağa; odakta görünen bölge zaten o kapak.
+          centerTo = { fx: focus === "all" ? spread.frontCenter / spread.totalWidth : 0.5, fy: 0.5 };
+        }
+      }
+      prevViewKeyRef.current = viewKey;
       const px = (mm: number) => mmToPx(mm, displayDpi);
       pxRef.current = px;
       // px → mm: YUVARLANMAMIŞ tam ölçek kullan. (px(1) yuvarlandığı için
@@ -530,6 +616,35 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
           preserveObjectStacking: true,
         });
         fabricCanvasRef.current = canvas;
+        // İmleç konumu: fabric, imlecin ALTINDAKİ öğenin kaydırmasını ekleyip
+        // önbellekteki ofseti çıkarır. Büyütülmüş (kaydırılmış) kutuda sürükleme
+        // tuvalin dışına taşınca bu ikisi tutmaz → nesne zıplar. Konumu doğrudan
+        // tuvalin ekrandaki yerinden hesapla (kaydırmadan bağımsız, aynı sonuç).
+        {
+          const fab = fabric;
+          const cvp = canvas as unknown as {
+            upperCanvasEl: HTMLCanvasElement;
+            viewportTransform: number[];
+            getRetinaScaling: () => number;
+            getPointer: (e: Event, fromViewport?: boolean) => InstanceType<typeof fabric.Point>;
+          };
+          cvp.getPointer = (e: Event, fromViewport = false) => {
+            const el = cvp.upperCanvasEl;
+            const b = el.getBoundingClientRect();
+            const te = e as TouchEvent;
+            const src: { clientX: number; clientY: number } =
+              (te.changedTouches && te.changedTouches[0]) || (te.touches && te.touches[0]) || (e as MouseEvent);
+            let p = new fab.Point(src.clientX - b.left, src.clientY - b.top);
+            if (!fromViewport) {
+              p = fab.util.sendPointToPlane(p, undefined, cvp.viewportTransform as unknown as Parameters<typeof fab.util.sendPointToPlane>[2]);
+            }
+            const r = cvp.getRetinaScaling();
+            if (r !== 1) p = new fab.Point(p.x / r, p.y / r);
+            const sx = b.width ? el.width / b.width : 1;
+            const sy = b.height ? el.height / b.height : 1;
+            return new fab.Point(p.x * sx, p.y * sy);
+          };
+        }
 
         const cv = canvas;
         type AnyObj = Record<string, unknown> & {
@@ -722,6 +837,27 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       // yeniden ekleme + yeniden seçme) parent state'ine YANSIMASIN.
       rebuildingRef.current = true;
       canvas.setDimensions({ width: pxW, height: pxH });
+      // Büyütülmüşken dokunmatik ekranda boş yere dokunup sürükleyince kutu
+      // kaydırılabilsin (fabric varsayılanı touch-action:none → kaydırma yok).
+      {
+        const cvx = canvas as unknown as {
+          allowTouchScrolling: boolean;
+          upperCanvasEl?: HTMLCanvasElement;
+          lowerCanvasEl?: HTMLCanvasElement;
+          wrapperEl?: HTMLElement;
+        };
+        cvx.allowTouchScrolling = scrollable;
+        const ta = scrollable ? "pan-x pan-y" : "none";
+        for (const el of [cvx.upperCanvasEl, cvx.lowerCanvasEl, cvx.wrapperEl]) if (el) el.style.touchAction = ta;
+      }
+      if (centerTo && wrapEl) {
+        const c = centerTo;
+        requestAnimationFrame(() => {
+          if (!wrapEl.isConnected) return;
+          wrapEl.scrollLeft = Math.max(0, c.fx * wrapEl.scrollWidth - wrapEl.clientWidth / 2);
+          wrapEl.scrollTop = Math.max(0, c.fy * wrapEl.scrollHeight - wrapEl.clientHeight / 2);
+        });
+      }
       canvas.clear();
       canvas.backgroundColor = "#ffffff";
 
@@ -1669,10 +1805,12 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
           lbl.set({ left: px(centerXmm), top: labelY });
           return lbl;
         };
-        canvas.add(
-          sectionLabel(labels.backCover, spread.backCenter),
-          sectionLabel(labels.frontCover, spread.frontCenter),
-        );
+        if (!rulers) {
+          canvas.add(
+            sectionLabel(labels.backCover, spread.backCenter),
+            sectionLabel(labels.frontCover, spread.frontCenter),
+          );
+        }
 
         // Kesim işaretleri (cross) — dört trim köşesi, taşma payı içine uzanır.
         // Her çizgi çift katman: altta kalın BEYAZ hale, üstte ince SİYAH çizgi.
@@ -1751,7 +1889,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       // kalmasın → bir sonraki seçim olayları yine parent'a yansıyabilsin.
       rebuildingRef.current = false;
     };
-  }, [spread, labels, lang, templateId, titlePos, authorPos, colors, content, showGuides, images, objects, positions, layers, hidden, locked, autoContrast, textStyles, containerW, containerH, fontsReady, zoom]);
+  }, [spread, labels, lang, templateId, titlePos, authorPos, colors, content, showGuides, images, objects, positions, layers, hidden, locked, autoContrast, textStyles, containerW, containerH, fontsReady, zoom, focus, rulers]);
 
   useEffect(() => {
     return () => {
@@ -1795,19 +1933,117 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
   return (
     <div
       ref={wrapperRef}
-      // Sığdırılmışken kaydırma çubuğu yok (yuvarlama titremesi olmasın);
-      // büyütülünce kutu kaydırılır, tuval ortada kalır (m-auto: taşınca da
-      // sol/üst kenar erişilebilir).
-      className={`flex h-full min-h-0 rounded-xl border border-border bg-[#efe9de] p-2 ${
-        zoom > 1 ? "overflow-auto" : "items-center justify-center overflow-hidden"
+      // Sığmıyorsa (büyütme/odak) kutu kaydırılır; m-auto: taşınca da sol/üst
+      // kenara erişilir. Sığıyorsa kaydırma çubuğu yok.
+      className={`flex h-full min-h-0 ${view.scroll ? "overflow-auto" : "overflow-hidden"} ${
+        rulers ? "" : "rounded-xl border border-border bg-[#efe9de] p-2"
       }`}
-      style={{ touchAction: zoom > 1 ? "pan-x pan-y" : "none" }}
+      style={{ touchAction: view.scroll ? "pan-x pan-y" : "none" }}
     >
-      <div className={zoom > 1 ? "m-auto shrink-0" : undefined}>
-        <canvas ref={canvasElRef} className="block" />
+      <div className="m-auto shrink-0">
+        {rulers && view.pxPerMm > 0 && (
+          <div className="sticky top-0 z-[2] flex bg-surface" style={{ height: RULER_TOP }}>
+            <div className="sticky left-0 z-[3] shrink-0 bg-surface" style={{ width: RULER_LEFT }} />
+            <div className="overflow-hidden" style={{ width: view.clipW || view.w }}>
+              <div style={{ marginLeft: -view.x0 }}>
+                <Ruler orientation="h" lengthMm={spread.totalWidth} pxPerMm={view.pxPerMm} />
+              </div>
+            </div>
+          </div>
+        )}
+        <div className="flex">
+          {rulers && view.pxPerMm > 0 && (
+            <div className="sticky left-0 z-[2] shrink-0 bg-surface" style={{ width: RULER_LEFT, paddingTop: LABEL_ROW }}>
+              <Ruler orientation="v" lengthMm={spread.totalHeight} pxPerMm={view.pxPerMm} />
+            </div>
+          )}
+          <div className="overflow-hidden" style={view.clipW ? { width: view.clipW } : undefined}>
+           <div style={{ marginLeft: -view.x0, width: view.w || undefined }}>
+            {rulers && view.pxPerMm > 0 && (
+              <div className="relative text-sm text-muted" style={{ height: LABEL_ROW, width: view.w }}>
+                {(
+                  [
+                    [labels.backCover, spread.backCenter],
+                    [labels.spine, spread.spineCenter],
+                    [labels.frontCover, spread.frontCenter],
+                  ] as [string, number][]
+                ).map(([txt, mm]) => (
+                  <span
+                    key={txt}
+                    className="absolute top-1 -translate-x-1/2 whitespace-nowrap font-medium"
+                    style={{ left: mm * view.pxPerMm }}
+                  >
+                    {txt}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className={rulers ? "shadow-[0_1px_8px_rgba(20,20,40,0.12)]" : undefined}>
+              <canvas ref={canvasElRef} className="block" />
+            </div>
+           </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 });
 
 export default CoverCanvas;
+
+// mm cetveli: her 5 mm kısa, her 10 mm orta çizgi; sayı aralığı ölçeğe göre
+// (yazılar sıkışmasın). Yatay cetvel tuvalle birlikte kaydırılır, dikey olan da.
+function Ruler({
+  orientation,
+  lengthMm,
+  pxPerMm,
+}: {
+  orientation: "h" | "v";
+  lengthMm: number;
+  pxPerMm: number;
+}) {
+  const len = Math.round(lengthMm * pxPerMm);
+  const step = pxPerMm * 20 >= 44 ? 20 : pxPerMm * 50 >= 44 ? 50 : 100;
+  const ticks: { mm: number; size: number }[] = [];
+  for (let mm = 0; mm <= lengthMm + 0.001; mm += 5) {
+    ticks.push({ mm, size: mm % step === 0 ? 9 : mm % 10 === 0 ? 6 : 3 });
+  }
+  const h = orientation === "h";
+  const T = h ? 26 : 34;
+  return (
+    <svg
+      width={h ? len : T}
+      height={h ? T : len}
+      className="block shrink-0 text-muted"
+      aria-hidden="true"
+    >
+      {ticks.map(({ mm, size }) => {
+        const p = Math.round(mm * pxPerMm) + 0.5;
+        return h ? (
+          <line key={mm} x1={p} x2={p} y1={T - size} y2={T} stroke="currentColor" strokeOpacity={0.55} />
+        ) : (
+          <line key={mm} y1={p} y2={p} x1={T - size} x2={T} stroke="currentColor" strokeOpacity={0.55} />
+        );
+      })}
+      {ticks
+        .filter((t) => t.mm % step === 0)
+        .map(({ mm }) => {
+          const p = Math.round(mm * pxPerMm);
+          return h ? (
+            <text key={`t${mm}`} x={p + (mm === 0 ? 1 : 0)} y={12} fontSize={11} textAnchor={mm === 0 ? "start" : "middle"} fill="currentColor">
+              {mm}
+            </text>
+          ) : (
+            <text key={`t${mm}`} x={T - 12} y={p + 4} fontSize={11} textAnchor="end" fill="currentColor">
+              {mm}
+            </text>
+          );
+        })}
+      {h && (
+        <text x={len - 2} y={12} fontSize={11} textAnchor="end" fill="currentColor" opacity={0.8}>
+          mm
+        </text>
+      )}
+    </svg>
+  );
+}

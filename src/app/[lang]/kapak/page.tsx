@@ -8,8 +8,6 @@ import { toShellUser } from "@/lib/app/identity";
 import { getBalanceById, hasActivePackageById } from "@/lib/credits/server";
 import { isAdminEmail } from "@/lib/admin";
 import { signOutAction } from "@/app/[lang]/auth-actions";
-import AppShell, { type AppShellContext } from "@/components/app/AppShell";
-import WizardBar from "@/components/app/WizardBar";
 import CoverStudio from "@/components/cover/CoverStudio";
 
 export default async function CoverPage({ params, searchParams }: PageProps<"/[lang]/kapak">) {
@@ -21,27 +19,13 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
   if (!user) redirect(`/${lang}/giris`);
 
   const dict = getDictionary(lang);
-  const isTr = lang === "tr";
   const sp = await searchParams;
   const supabase = await createClient();
   const initialProject = await loadInitialProject(supabase, sp.project);
-  // Tuval sayfası: menü HER ZAMAN daraltılmış başlar → tuvale en geniş alan
-  // (öteki sayfalardaki tercihi etkilemez; burada açılırsa yine açılabilir).
-  const collapsed = true;
   const canExport = await hasActivePackageById(user.id, user.email);
   // Jeton bakiyesi (anlık görüntü) — sihirbazın "kapak üretelim mi?" kartı için.
   // Yönetici jeton harcamaz → null (sınırsız).
   const creditBalance = isAdminEmail(user.email) ? null : await getBalanceById(user.id);
-
-  const meta = initialProject?.data.meta;
-  const context: AppShellContext = {
-    backHref: `/${lang}/projeler`,
-    backLabel: isTr ? "Kitaplarım" : "My Books",
-    title: meta?.title?.trim() || (isTr ? "Kapak çalışması" : "Cover draft"),
-    meta: meta?.author?.trim() || undefined,
-    moduleLabel: isTr ? "Kapak modülü" : "Cover module",
-    savedLabel: initialProject ? (isTr ? "Otomatik kaydedilir" : "Auto-saved") : undefined,
-  };
 
   // İndirme ekranından "?export=1" ile gelindi → Kapak PDF'ini otomatik üret
   // (kapak yeniden ÜRETİLMEZ, sadece mevcut tasarım PDF'e basılır).
@@ -62,40 +46,23 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
     redirect(`/${lang}/kapak/kurgu?project=${initialProject.id}`);
   }
   const briefRun = briefParam === "1";
-  const wizardBar =
-    initialProject && wizard?.active && !exportMode ? (
-      <WizardBar
-        lang={lang}
-        projectId={initialProject.id}
-        current="cover"
-        wizard={wizard}
-        backHref={`/${lang}/projeler`}
-        backLabel={isTr ? "Kitaplarım" : "My Books"}
-      />
-    ) : undefined;
+  const shellUser = await toShellUser(user);
 
+  // Tam ekran düzenleyici: kendi üst çubuğu var (marka, Kitaplarım, kayıt
+  // durumu, geri al, Önizleme, İndir, hesap) → uygulama menüsü/sihirbaz çubuğu yok.
   return (
-    <AppShell
+    <CoverStudio
+      key={initialProject?.id ?? "anon"}
       lang={lang}
-      user={await toShellUser(user)}
+      dict={dict}
+      initialProject={initialProject}
+      wizardAuto={!!wizard?.active && !exportMode}
+      autoExport={exportMode}
+      briefRun={briefRun}
+      canExport={canExport}
+      creditBalance={creditBalance}
+      user={shellUser ? { name: shellUser.name, initials: shellUser.initials } : null}
       signOut={signOutAction.bind(null, lang)}
-      active="kapak"
-      context={context}
-      wizardBar={wizardBar}
-      fitContent
-      defaultCollapsed={collapsed}
-    >
-      <CoverStudio
-        key={initialProject?.id ?? "anon"}
-        lang={lang}
-        dict={dict}
-        initialProject={initialProject}
-        wizardAuto={!!wizard?.active && !exportMode}
-        autoExport={exportMode}
-        briefRun={briefRun}
-        canExport={canExport}
-        creditBalance={creditBalance}
-      />
-    </AppShell>
+    />
   );
 }
