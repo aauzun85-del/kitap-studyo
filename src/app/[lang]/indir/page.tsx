@@ -18,7 +18,6 @@ import { calcSpread, resolveCoverSize, type BookSize } from "@/lib/cover/spread"
 import {
   BookMockup,
   FileCard,
-  EyeIcon,
   DownloadIcon,
   FileIcon,
   ImageFileIcon,
@@ -89,9 +88,7 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
   const kapakHref = `/${lang}/kapak?project=${pid}&export=1`;
   const allHref = `/${lang}/mizanpaj?project=${pid}&export=1&sonra=kapak`;
   const layoutHref = `/${lang}/mizanpaj?project=${pid}`;
-  const layoutPreviewHref = `/${lang}/mizanpaj?project=${pid}&onizle=1`;
   const coverHref = `/${lang}/kapak?project=${pid}`;
-  const coverPreviewHref = `/${lang}/kapak?project=${pid}&onizle=1`;
   const checkHref = `/${lang}/mizanpaj?project=${pid}&denetim=1`;
 
   const steps: { seg: string; label: string; done: boolean }[] = [
@@ -166,10 +163,6 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
               <div className="mt-1 text-base text-muted">
                 {[author, interiorSize ? `${mmText(interiorSize.width)} × ${mmText(interiorSize.height)} mm` : ""].filter(Boolean).join(" · ")}
               </div>
-              <Link href={layoutPreviewHref} className="mt-3 inline-flex items-center gap-2 text-base font-semibold text-accent hover:underline">
-                <EyeIcon />
-                {tr ? "Kitabı önizle" : "Preview the book"}
-              </Link>
             </div>
           </div>
 
@@ -199,7 +192,6 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
                       : null
                 }
                 links={[
-                  { href: layoutPreviewHref, label: tr ? "Önizle" : "Preview", eye: true },
                   { href: layoutHref, label: tr ? "Mizanpaja dön" : "Back to layout" },
                 ]}
               />
@@ -222,7 +214,6 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
                       : null
                 }
                 links={[
-                  { href: coverPreviewHref, label: tr ? "Önizle" : "Preview", eye: true },
                   { href: coverHref, label: tr ? "Kapağı düzenle" : "Edit cover" },
                 ]}
               />
