@@ -14,16 +14,24 @@ export default async function SiteHeader({
   dict: Dictionary;
 }) {
   const user = await getCurrentUser();
-  const links = [
-    { href: `/${lang}`, label: dict.nav.home },
-    { href: `/${lang}/kapak`, label: dict.nav.cover },
-    { href: `/${lang}/mizanpaj`, label: dict.nav.layout },
-    { href: `/${lang}/editor`, label: dict.nav.editor },
-    { href: `/${lang}/ekitap`, label: dict.nav.publish },
-    { href: `/${lang}/sesli-kitap`, label: dict.nav.audiobook },
-    { href: `/${lang}/tanitim`, label: dict.nav.promo },
-    { href: `/${lang}/fiyatlar`, label: lang === "tr" ? "Fiyatlar" : "Pricing" },
-  ];
+  const tr = lang === "tr";
+  // Giriş yapmamış ziyaretçi: sade pazarlama menüsü (ana sayfanın bölümleri).
+  // Giriş yapmış kullanıcı: modüllere doğrudan bağlantılar.
+  const links = user
+    ? [
+        { href: `/${lang}/kapak`, label: dict.nav.cover },
+        { href: `/${lang}/mizanpaj`, label: dict.nav.layout },
+        { href: `/${lang}/editor`, label: dict.nav.editor },
+        { href: `/${lang}/ekitap`, label: dict.nav.publish },
+        { href: `/${lang}/sesli-kitap`, label: dict.nav.audiobook },
+        { href: `/${lang}/tanitim`, label: dict.nav.promo },
+        { href: `/${lang}/fiyatlar`, label: tr ? "Fiyatlar" : "Pricing" },
+      ]
+    : [
+        { href: `/${lang}#ozellikler`, label: tr ? "Özellikler" : "Features" },
+        { href: `/${lang}#nasil-calisir`, label: tr ? "Nasıl çalışır?" : "How it works" },
+        { href: `/${lang}/fiyatlar`, label: tr ? "Fiyatlandırma" : "Pricing" },
+      ];
 
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
@@ -39,7 +47,11 @@ export default async function SiteHeader({
             {dict.brand}
           </span>
         </Link>
-        <nav className="hidden items-center gap-6 whitespace-nowrap text-sm font-medium text-muted lg:flex">
+        <nav
+          className={`hidden items-center whitespace-nowrap text-sm font-semibold text-foreground/80 ${
+            user ? "gap-6 xl:flex" : "gap-8 md:flex"
+          }`}
+        >
           {links.map((link) => (
             <Link key={link.href} href={link.href} className="transition hover:text-foreground">
               {link.label}
@@ -82,7 +94,7 @@ export default async function SiteHeader({
             <>
               <Link
                 href={`/${lang}/fiyatlar`}
-                className="hidden text-sm font-medium text-muted transition hover:text-foreground min-[480px]:block lg:hidden"
+                className="hidden text-sm font-medium text-muted transition hover:text-foreground min-[480px]:block md:hidden"
               >
                 {lang === "tr" ? "Fiyatlar" : "Pricing"}
               </Link>
