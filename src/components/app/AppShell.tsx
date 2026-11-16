@@ -331,7 +331,6 @@ export default function AppShell({
   // Aktif menü öğesi: dışarıdan "active" verilirse onu, yoksa rotadan çıkar.
   const isHome = active === "home" || (!active && (seg === "" || seg === "projeler"));
   const moduleActive = (s: string) => active === s || (!active && seg === s);
-  const isBooks = active === "books" || (!active && !isHome && !MODULES.some((m) => m.seg === seg) && seg === "projeler");
 
   const navRow = (
     key: string,
@@ -450,7 +449,6 @@ export default function AppShell({
         </Link>
 
         {navRow("home", `/${lang}/projeler`, "home", t.home, isHome)}
-        {navRow("books", `/${lang}/projeler`, "books", t.myBooks, isBooks)}
 
         {collapsed ? (
           <div style={{ height: 1, background: "var(--sb-bd)", margin: "12px 8px 9px" }} />
