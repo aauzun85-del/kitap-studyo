@@ -84,6 +84,27 @@ const HELPERS = String.raw`#set heading(numbering: none)
 #show heading.where(level: 4): it => block(sticky: true, breakable: false, width: 100%, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false); text(size: 12pt, weight: 700, it.body) })
 #let _subhead(font: _hf, body) = block(sticky: true, breakable: false, width: 100%, above: 0pt, below: _ha, { set par(first-line-indent: 0pt, justify: false); set text(hyphenate: false, font: font); align(_subal, text(size: 11pt, weight: 700, tracking: if _cfg.sub == "left-caps" { 0.1em } else { 0pt }, body)) })
 #let _orn = ("EB Garamond", "Cormorant Garamond", "Source Serif 4")
+// SÜS (konseptte seçilir): bölüm başı süsü, başlık altı süs ve sahne ayracı
+// aynı süsü kullanır. ✦ ve —◆— çizilir (yazı tipine bağlı değil).
+#let _orng(sz) = {
+  let k = _cfg.orn
+  let ink = luma(60)
+  if k == "none" { none }
+  else if k == "leaf" { text(font: _orn, size: sz, fill: ink)[❧] }
+  else if k == "asterism" { text(font: ("Literata", "Cormorant Garamond", "Inter", "Source Serif 4"), size: sz * 0.85, fill: ink)[⁂] }
+  else if k == "star" {
+    let r = sz * 0.28
+    let q = r * 0.3
+    box(polygon(fill: ink, (r, 0pt), (r + q, r - q), (2 * r, r), (r + q, r + q), (r, 2 * r), (r - q, r + q), (0pt, r), (r - q, r - q)))
+  }
+  else if k == "diamond-rule" {
+    box(grid(columns: 3, column-gutter: sz * 0.22, align: horizon,
+      line(length: sz * 1.6, stroke: 0.5pt + luma(90)),
+      rotate(45deg, square(size: sz * 0.2, fill: ink)),
+      line(length: sz * 1.6, stroke: 0.5pt + luma(90))))
+  }
+  else { text(font: _orn, size: sz, fill: ink)[❦] }
+}
 #let _chapter(kicker: none, ornament: "none", right: true, top: 30mm, num: none, body) = {
   let st = _cfg.chapter
   if _cfg.newpage { if right { pagebreak(to: "odd", weak: true) } else { pagebreak(weak: true) } } else { v(2.2em, weak: true) }
@@ -95,7 +116,7 @@ const HELPERS = String.raw`#set heading(numbering: none)
     if st == "numeral-left" and num != none { align(left, text(font: _hf, size: 60pt * _cfg.scale, weight: 400, fill: luma(115), num)); v(0.05em) }
     else if st == "numeral-center" and num != none { align(center, text(font: _hf, size: 54pt * _cfg.scale, weight: 400, num)); v(0.15em) }
     else if st == "boxed" and num != none { box(fill: black, inset: (x: 0.6em, y: 0.4em), radius: 2.5pt, text(font: _hf, size: 18pt, weight: 700, fill: white, num)); v(0.8em) }
-    else if st == "ornament" { align(center, text(font: _orn, size: 26pt, fill: luma(70))[❦]); v(0.35em) }
+    else if st == "ornament" { if _cfg.orn != "none" { align(center, _orng(26pt)); v(0.35em) } }
     else if kicker != none and not _poem {
       // Varsayılan (ortalı) biçim bugünkü kicker'ın aynısı; konseptler daha ince.
       if st == "centered" { align(center, text(font: _hf, size: 11pt, weight: 700, tracking: 0.12em, kicker)); v(0.5em) }
@@ -104,7 +125,7 @@ const HELPERS = String.raw`#set heading(numbering: none)
     body
     if ornament == "rule" { v(0.4em); align(al, line(length: 14%, stroke: 0.6pt + black)) }
     if ornament == "dots" { v(0.3em); align(center, text(size: 13pt)[• • •]) }
-    if ornament == "fleuron" { v(0.35em); align(center, text(font: _orn, size: 15pt, fill: luma(60))[❦]) }
+    if ornament == "fleuron" and _cfg.orn != "none" { v(0.35em); align(center, _orng(15pt)) }
   }
   // Akış içindeki başlık (şiir) sayfa sonunda yalnız kalmasın: ilk satırlarla birlikte.
   if _cfg.newpage { head } else { block(sticky: true, breakable: false, width: 100%, head) }
@@ -113,11 +134,12 @@ const HELPERS = String.raw`#set heading(numbering: none)
 // Sahne ayracı ("* * *" satırı): konseptin seçtiği işaretle ortalı.
 #let _scene() = {
   let sc = _cfg.scene
-  if sc == "space" { v(1.8em, weak: true) } else {
+  // "fleuron"/"asterism" ayracı konseptin SEÇİLEN süsünü çizer; süs yoksa boşluk.
+  let orn = sc == "fleuron" or sc == "asterism"
+  if sc == "space" or (orn and _cfg.orn == "none") { v(1.8em, weak: true) } else {
     block(above: 1.2em, below: 1.2em, width: 100%, align(center, {
       set par(first-line-indent: 0pt, justify: false)
-      if sc == "asterism" { text(font: ("Literata", "Cormorant Garamond", "Inter", "Source Serif 4"), size: 1.15em)[⁂] }
-      else if sc == "fleuron" { text(font: _orn, size: 1.2em, fill: luma(60))[❦] }
+      if orn { _orng(13pt) }
       else if sc == "rule" { line(length: 16%, stroke: 0.5pt) }
       else [\* #h(0.7em) \* #h(0.7em) \*]
     }))
@@ -211,6 +233,42 @@ const HELPERS = String.raw`#set heading(numbering: none)
   #v(0.9em)
   #outline(title: none, target: heading.where(level: 1))
 ]
+// İçindekiler (konsept düzenleri): sade / numaralı / zarif. entries =
+// ((etiket, numara, başlık), …) — başlığın özgün yazımı + sayfası (etiketten).
+#let _toc2(title, entries) = page(header: none, footer: none)[
+  #set par(first-line-indent: 0pt, justify: false)
+  #set text(hyphenate: false)
+  #align(center, text(font: _hf, size: 11pt, weight: 600, tracking: 0.08em, title))
+  #v(1.4em)
+  #context {
+    let st = _cfg.toc
+    for e in entries {
+      let loc = locate(label(e.at(0)))
+      let pg = str(counter(page).at(loc).first())
+      if st == "numbered" {
+        block(above: 0.75em, below: 0.75em, link(loc, grid(columns: (2.2em, 1fr, auto), column-gutter: 0.5em,
+          text(font: _hf, fill: luma(110), e.at(1)), e.at(2), pg)))
+      } else if st == "elegant" {
+        block(above: 1.1em, below: 1.1em, width: 100%, link(loc, align(center, [#e.at(2) \ #text(size: 0.82em, style: "italic", fill: luma(90), pg)])))
+      } else {
+        block(above: 0.8em, below: 0.8em, link(loc, [#e.at(2) #h(1fr) #pg]))
+      }
+    }
+  }
+]
+// Kaynakça girişi (konsept düzeni): asılı girinti / numaralı / sade.
+#let _bib(n, body) = {
+  let st = _cfg.bib
+  if st == "numbered" {
+    block(above: 0.6em, below: 0.6em, grid(columns: (2.4em, 1fr), text(size: 0.93em)[\[#n\]], { set par(first-line-indent: 0pt, justify: false); text(size: 0.93em, body) }))
+  } else if st == "plain" {
+    block(above: 0.5em, below: 0.5em, { set par(first-line-indent: 0pt, justify: false); text(size: 0.9em, body) })
+  } else {
+    // Asılı girinti için metin AÇIKÇA paragraf olmalı (blok içi satır içi
+    // içerik par kuralının hanging-indent'ini almıyor).
+    block(above: 0.6em, below: 0.6em, { set par(first-line-indent: 0pt, justify: false, hanging-indent: 1.4em); par(text(size: 0.93em, body)) })
+  }
+}
 `;
 
 export function buildPreamble(input: TypstBookInput): string {
@@ -231,7 +289,7 @@ export function buildPreamble(input: TypstBookInput): string {
   // Başlık yazı tipi (bölüm/ara başlık, kapak sayfası). Boşsa gövdeninki.
   const headFontExpr = typstFontExpr(s.headingFontFamily || s.bodyFontFamily);
   const cfg = `#let _hf = ${headFontExpr}
-#let _cfg = (chapter: "${s.chapterStyle ?? "centered"}", scale: ${(s.chapterTitleScale ?? 1).toFixed(2)}, newpage: ${s.chapterNewPage !== false}, sub: "${s.subheadStyle ?? "center"}", quote: "${s.quoteStyle ?? "indent"}", rh: "${s.runningHeadStyle ?? "italic"}", folio: "${s.folioPosition ?? "outer"}", scene: "${s.sceneBreak ?? "stars"}", foliopen: ${!!s.keepLineBreaks})`;
+#let _cfg = (chapter: "${s.chapterStyle ?? "centered"}", scale: ${(s.chapterTitleScale ?? 1).toFixed(2)}, newpage: ${s.chapterNewPage !== false}, sub: "${s.subheadStyle ?? "center"}", quote: "${s.quoteStyle ?? "indent"}", rh: "${s.runningHeadStyle ?? "italic"}", folio: "${s.folioPosition ?? "outer"}", scene: "${s.sceneBreak ?? "stars"}", foliopen: ${!!s.keepLineBreaks}, orn: "${s.ornamentKind ?? "fleuron"}", toc: "${s.tocStyle ?? "classic"}", bib: "${s.bibStyle ?? "none"}")`;
   // Koşu başlığında kitap adı: "caps" biçiminde Türkçe kuralıyla büyük harf.
   const headTitle = s.runningHeadStyle === "caps" ? upperTr(meta.title, s.lang) : meta.title;
   // Tireleme/dil işleme kitabın diline göre (EN kitap → İngilizce desenler).

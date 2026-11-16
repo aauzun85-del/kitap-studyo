@@ -101,7 +101,17 @@ export type LayoutSettings = {
   keepLineBreaks?: boolean;
   /** Gövdenin soldan içeri alınması (mm; deneysel şiir düzeni). */
   bodyInsetMm?: number;
+  /** Süs (bölüm başı + sahne ayracı): ❦ ❧ ⁂ ✦ —◆— ya da yok (vars. "fleuron"). */
+  ornamentKind?: OrnamentKind;
+  /** İçindekiler düzeni (vars. "classic" = noktalı çizgi, bugünkü). */
+  tocStyle?: TocStyle;
+  /** "Kaynakça" bölümünün düzeni (vars. "none" = düz paragraf, bugünkü). */
+  bibStyle?: BibStyle;
 };
+
+export type OrnamentKind = "fleuron" | "leaf" | "asterism" | "star" | "diamond-rule" | "none";
+export type TocStyle = "classic" | "plain" | "numbered" | "elegant";
+export type BibStyle = "none" | "hanging" | "numbered" | "plain";
 
 /** Bölüm açılış biçimleri (Typst _chapter). */
 export type ChapterStyle =

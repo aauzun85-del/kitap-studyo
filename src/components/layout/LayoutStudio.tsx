@@ -45,8 +45,23 @@ import {
   type ParaAlign,
   type ChapterStyle,
   type SceneBreak,
+  type OrnamentKind,
+  type TocStyle,
+  type BibStyle,
 } from "@/lib/layout/paginate";
-import { conceptLayoutSettings, type InteriorConcept, type ConceptSizeAdjust } from "@/lib/layout/concepts";
+import {
+  conceptLayoutSettings,
+  ORNAMENT_OPTIONS,
+  TOC_OPTIONS,
+  BIB_OPTIONS,
+  CHAPTER_STYLE_OPTIONS,
+  SCENE_OPTIONS,
+  QUOTE_OPTIONS,
+  SUBHEAD_OPTIONS,
+  type InteriorConcept,
+  type ConceptSizeAdjust,
+  type ConceptDetails,
+} from "@/lib/layout/concepts";
 import InteriorConceptPicker from "@/components/layout/InteriorConceptPicker";
 import { TYPST_FAMILY_IDS } from "@/lib/typst/fonts";
 import {
@@ -316,6 +331,12 @@ export default function LayoutStudio({
   const [quoteStyle, setQuoteStyle] = useState<"indent" | "box" | "bar">(saved?.quoteStyle ?? "indent");
   const [keepLineBreaks, setKeepLineBreaks] = useState(saved?.keepLineBreaks ?? false);
   const [bodyInsetMm, setBodyInsetMm] = useState(saved?.bodyInsetMm ?? 0);
+  // Bu alan gelmeden kaydedilmiş kitaplar: "⁂ ayraç"lı konsept (Çağdaş) ⁂ kalsın.
+  const [ornamentKind, setOrnamentKind] = useState<OrnamentKind>(
+    saved?.ornamentKind ?? (saved?.sceneBreak === "asterism" ? "asterism" : "fleuron"),
+  );
+  const [tocStyle, setTocStyle] = useState<TocStyle>(saved?.tocStyle ?? "classic");
+  const [bibStyle, setBibStyle] = useState<BibStyle>(saved?.bibStyle ?? "none");
 
   const [fontsReady, setFontsReady] = useState(false);
   const measureRef = useRef<HTMLCanvasElement | null>(null);
@@ -355,6 +376,7 @@ export default function LayoutStudio({
       chapterTopRatio, chapterOrnament, showChapterKicker, tocOverrides,
       conceptId, chapterStyle, chapterNewPage, chapterTitleScale, firstWordsCaps, sceneBreak,
       runningHeadStyle, folioPosition, subheadStyle, quoteStyle, keepLineBreaks, bodyInsetMm,
+      ornamentKind, tocStyle, bibStyle,
     }),
     [
       standard, bleedOn, sizeId, margins, presetId, gutterAuto, gutterManual, cropMarks,
@@ -365,6 +387,7 @@ export default function LayoutStudio({
       chapterTopRatio, chapterOrnament, showChapterKicker, tocOverrides,
       conceptId, chapterStyle, chapterNewPage, chapterTitleScale, firstWordsCaps, sceneBreak,
       runningHeadStyle, folioPosition, subheadStyle, quoteStyle, keepLineBreaks, bodyInsetMm,
+      ornamentKind, tocStyle, bibStyle,
     ],
   );
   useModuleSync(projectId, "layout", layoutSlice, !!autoExport);
@@ -434,6 +457,9 @@ export default function LayoutStudio({
       quoteStyle,
       keepLineBreaks,
       bodyInsetMm,
+      ornamentKind,
+      tocStyle,
+      bibStyle,
     }),
     [
       fontId,
@@ -468,6 +494,9 @@ export default function LayoutStudio({
       quoteStyle,
       keepLineBreaks,
       bodyInsetMm,
+      ornamentKind,
+      tocStyle,
+      bibStyle,
       lang,
     ],
   );
@@ -502,12 +531,15 @@ export default function LayoutStudio({
     setQuoteStyle("indent");
     setKeepLineBreaks(false);
     setBodyInsetMm(0);
+    setOrnamentKind("fleuron");
+    setTocStyle("classic");
+    setBibStyle("none");
   }, []);
 
   // İç tasarım konsepti uygula: tipografi + bölüm/sayfa biçimleri paketçe.
   // Marjlara ve boyuta DOKUNMAZ (baskı profili korunur).
-  const applyConcept = useCallback((k: InteriorConcept, adjust: ConceptSizeAdjust) => {
-    const c = conceptLayoutSettings(k, familyOf, adjust);
+  const applyConcept = useCallback((k: InteriorConcept, adjust: ConceptSizeAdjust, details: ConceptDetails = {}) => {
+    const c = conceptLayoutSettings(k, familyOf, adjust, details);
     setConceptId(k.id);
     setThemeId("");
     setFontId(k.bodyFontId);
@@ -535,6 +567,9 @@ export default function LayoutStudio({
     setQuoteStyle(c.quoteStyle);
     setKeepLineBreaks(c.keepLineBreaks);
     setBodyInsetMm(c.bodyInsetMm);
+    setOrnamentKind(c.ornamentKind);
+    setTocStyle(c.tocStyle);
+    setBibStyle(c.bibStyle);
   }, []);
 
   // Tür → tema: sihirbazda seçilen kitap türü bir temaya eşleşiyorsa mizanpaj
@@ -1510,9 +1545,10 @@ export default function LayoutStudio({
           blocksFor={conceptBlocksFor}
           familyOf={familyOf}
           currentConceptId={conceptId && conceptId !== "skip" ? conceptId : undefined}
+          currentDetails={{ ornamentKind, tocStyle, bibStyle }}
           firstTime={!conceptId}
-          onApply={(k, adj) => {
-            applyConcept(k, adj);
+          onApply={(k, adj, det) => {
+            applyConcept(k, adj, det);
             setConceptOpen(false);
           }}
           onSkip={() => {
@@ -2368,6 +2404,14 @@ export default function LayoutStudio({
                       themePicker={<ThemePicker t={t} lang={lang} themeId={themeId} onApply={applyTheme} />}
                       tocEditor={frontMatter && chapterTitles.length > 0 ? tocEditor : null}
                       onApplyAll={applyToWholeBook}
+                      detailsPanel={
+                        <ConceptDetailsControls
+                          lang={lang}
+                          values={{ chapterStyle, ornamentKind, sceneBreak, subheadStyle, quoteStyle, tocStyle, bibStyle, runningHeadStyle, folioPosition, chapterNewPage, firstWordsCaps, keepLineBreaks }}
+                          set={{ setChapterStyle, setOrnamentKind, setSceneBreak, setSubheadStyle, setQuoteStyle, setTocStyle, setBibStyle, setRunningHeadStyle, setFolioPosition, setChapterNewPage, setFirstWordsCaps, setKeepLineBreaks }}
+                          onConcept={() => setConceptOpen(true)}
+                        />
+                      }
                     />
                   )}
                   {panel === "quality" && (
@@ -3388,6 +3432,8 @@ function TypeLayoutPanel(props: {
   setKerning: (v: boolean) => void;
   themePicker: React.ReactNode;
   tocEditor: React.ReactNode;
+  /** Konsept ayrıntıları (bölüm başı, süs, içindekiler, kaynakça…). */
+  detailsPanel: React.ReactNode;
   onApplyAll: () => void;
 }) {
   const { t } = props;
@@ -3516,6 +3562,12 @@ function TypeLayoutPanel(props: {
           {props.themePicker}
         </PanelAccordion>
         <PanelAccordion
+          title={tr ? "Bölüm, süs, içindekiler, kaynakça" : "Chapters, ornament, contents, bibliography"}
+          icon={<PaletteIcon className="h-5 w-5" />}
+        >
+          {props.detailsPanel}
+        </PanelAccordion>
+        <PanelAccordion
           title={tr ? "Üstbilgi ve sayfa numarası" : "Running heads & page numbers"}
           icon={<svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden="true"><rect x="3" y="2" width="14" height="16" rx="2" /><path d="M6 6h8M6 9h8M6 12h5" /></svg>}
         >
@@ -3548,6 +3600,120 @@ function TypeLayoutPanel(props: {
       >
         {tr ? "Tüm kitaba uygula" : "Apply to whole book"}
       </button>
+    </div>
+  );
+}
+
+// Konsept ayrıntıları — Yazı panelinde tek tek değiştirilebilir (konsept
+// seçildikten sonra da). Etiketler konsept ekranıyla ortak (concepts.ts).
+function ConceptDetailsControls({
+  lang,
+  values: v,
+  set,
+  onConcept,
+}: {
+  lang: Locale;
+  values: {
+    chapterStyle: ChapterStyle;
+    ornamentKind: OrnamentKind;
+    sceneBreak: SceneBreak;
+    subheadStyle: "center" | "left" | "left-caps";
+    quoteStyle: "indent" | "box" | "bar";
+    tocStyle: TocStyle;
+    bibStyle: BibStyle;
+    runningHeadStyle: "italic" | "caps";
+    folioPosition: "outer" | "center";
+    chapterNewPage: boolean;
+    firstWordsCaps: boolean;
+    keepLineBreaks: boolean;
+  };
+  set: {
+    setChapterStyle: (x: ChapterStyle) => void;
+    setOrnamentKind: (x: OrnamentKind) => void;
+    setSceneBreak: (x: SceneBreak) => void;
+    setSubheadStyle: (x: "center" | "left" | "left-caps") => void;
+    setQuoteStyle: (x: "indent" | "box" | "bar") => void;
+    setTocStyle: (x: TocStyle) => void;
+    setBibStyle: (x: BibStyle) => void;
+    setRunningHeadStyle: (x: "italic" | "caps") => void;
+    setFolioPosition: (x: "outer" | "center") => void;
+    setChapterNewPage: (x: boolean) => void;
+    setFirstWordsCaps: (x: boolean) => void;
+    setKeepLineBreaks: (x: boolean) => void;
+  };
+  onConcept: () => void;
+}) {
+  const tr = lang === "tr";
+  const row = <T extends string>(label: string, value: T, opts: { v: T; tr: string; en: string }[], onChange: (x: T) => void) => (
+    <label className="flex items-center justify-between gap-3 text-sm text-foreground">
+      <span>{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as T)}
+        className="h-9 max-w-[58%] rounded-lg border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-accent"
+      >
+        {opts.map((o) => (
+          <option key={o.v} value={o.v}>
+            {o[lang]}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+  return (
+    <div className="space-y-3">
+      <button
+        type="button"
+        onClick={onConcept}
+        className="w-full rounded-lg border border-accent/40 px-3 py-2 text-sm font-semibold text-accent transition hover:bg-accent-soft"
+      >
+        {tr ? "İç tasarım konseptini aç" : "Open interior design concepts"}
+      </button>
+      {row(tr ? "Bölüm başı" : "Chapter opening", v.chapterStyle, CHAPTER_STYLE_OPTIONS, (x) => {
+        set.setChapterStyle(x);
+        // Süslü bölüm başı seçildi ama süs kapalıysa: süs açılır (yoksa boş kalır).
+        if (x === "ornament" && v.ornamentKind === "none") set.setOrnamentKind("fleuron");
+      })}
+      {row(
+        tr ? "Süs" : "Ornament",
+        v.ornamentKind,
+        ORNAMENT_OPTIONS.map((o) => ({ ...o, tr: `${o.glyph} ${o.tr}`, en: `${o.glyph} ${o.en}` })),
+        set.setOrnamentKind,
+      )}
+      {row(tr ? "Sahne ayracı" : "Scene break", v.sceneBreak === "asterism" ? "fleuron" : v.sceneBreak, SCENE_OPTIONS, (x) => {
+        set.setSceneBreak(x);
+        if (x === "fleuron" && v.ornamentKind === "none") set.setOrnamentKind("fleuron");
+      })}
+      {row(tr ? "Ara başlık" : "Subheads", v.subheadStyle, SUBHEAD_OPTIONS, set.setSubheadStyle)}
+      {row(tr ? "Alıntı" : "Quotes", v.quoteStyle, QUOTE_OPTIONS, set.setQuoteStyle)}
+      {row(tr ? "İçindekiler" : "Contents", v.tocStyle, TOC_OPTIONS, set.setTocStyle)}
+      {row(tr ? "Kaynakça" : "Bibliography", v.bibStyle, BIB_OPTIONS, set.setBibStyle)}
+      {row(
+        tr ? "Üst bilgi" : "Running head",
+        v.runningHeadStyle,
+        [
+          { v: "italic" as const, tr: "İtalik", en: "Italic" },
+          { v: "caps" as const, tr: "Büyük harf", en: "Capitals" },
+        ],
+        set.setRunningHeadStyle,
+      )}
+      {row(
+        tr ? "Sayfa numarası" : "Page number",
+        v.folioPosition,
+        [
+          { v: "outer" as const, tr: "Dış kenarda", en: "Outer edge" },
+          { v: "center" as const, tr: "Ortada", en: "Centred" },
+        ],
+        set.setFolioPosition,
+      )}
+      <SwitchRow label={tr ? "Her bölüm yeni sayfadan başlasın" : "Each chapter starts a new page"} checked={v.chapterNewPage} onChange={set.setChapterNewPage} />
+      <SwitchRow label={tr ? "Bölümün ilk kelimeleri büyük harf" : "Capitalise chapter's first words"} checked={v.firstWordsCaps} onChange={set.setFirstWordsCaps} />
+      <SwitchRow
+        label={tr ? "Şiir: dizeleri koru" : "Poetry: keep line breaks"}
+        hint={tr ? "Paragraf içindeki satır sonları kitapta da satır sonu olur." : "Line breaks inside a paragraph stay line breaks in the book."}
+        checked={v.keepLineBreaks}
+        onChange={set.setKeepLineBreaks}
+      />
     </div>
   );
 }

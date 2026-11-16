@@ -8,7 +8,7 @@
 // Yazı tipleri (src/lib/typst/fonts.ts): EB Garamond, Cormorant Garamond, Libre
 // Baskerville, Crimson Pro, Literata, Inter (başlık), Source Serif 4, Vollkorn.
 
-import type { ChapterStyle, SceneBreak } from "./paginate";
+import type { ChapterStyle, SceneBreak, OrnamentKind, TocStyle, BibStyle } from "./paginate";
 import type { ChapterOrnament } from "./themes";
 import { resolveGenreId } from "@/lib/projects/genres";
 
@@ -50,6 +50,10 @@ export type InteriorConcept = {
   // Şiir
   keepLineBreaks: boolean;
   bodyInsetMm: number;
+  // Ayrıntılar (konsept ekranında değiştirilebilir)
+  ornamentKind: OrnamentKind;
+  tocStyle: TocStyle;
+  bibStyle: BibStyle;
 };
 
 export type InteriorStructure = {
@@ -86,6 +90,9 @@ const BASE: Omit<InteriorConcept, "id" | "structure" | "name" | "blurb" | "tags"
   quoteStyle: "indent",
   keepLineBreaks: false,
   bodyInsetMm: 0,
+  ornamentKind: "fleuron",
+  tocStyle: "classic",
+  bibStyle: "hanging",
 };
 
 function c(
@@ -144,6 +151,8 @@ export const INTERIOR_STRUCTURES: InteriorStructure[] = [
         ],
         [["Literata + Inter", "İri numara", "⁂ ayraç"], ["Literata + Inter", "Large numeral", "⁂ break"]],
         {
+          ornamentKind: "asterism",
+          tocStyle: "numbered",
           bodyFontId: "literata",
           headingFontId: "inter",
           bodySizePt: 10.5,
@@ -167,6 +176,8 @@ export const INTERIOR_STRUCTURES: InteriorStructure[] = [
         ],
         [["Crimson Pro", "Geniş satır arası", "Paragraf boşluğu"], ["Crimson Pro", "Generous leading", "Paragraph space"]],
         {
+          ornamentKind: "none",
+          tocStyle: "plain",
           bodyFontId: "crimsonpro",
           headingFontId: "crimsonpro",
           bodySizePt: 12,
@@ -199,6 +210,8 @@ export const INTERIOR_STRUCTURES: InteriorStructure[] = [
         ],
         [["Source Serif", "Şiirler akışta", "Sola yaslı"], ["Source Serif", "Poems flow", "Left aligned"]],
         {
+          ornamentKind: "none",
+          tocStyle: "plain",
           bodyFontId: "sourceserif",
           headingFontId: "sourceserif",
           bodySizePt: 10.5,
@@ -227,6 +240,7 @@ export const INTERIOR_STRUCTURES: InteriorStructure[] = [
         ],
         [["Cormorant", "Her şiir yeni sayfa", "❦ süs"], ["Cormorant", "One poem per page", "❦ ornament"]],
         {
+          tocStyle: "elegant",
           bodyFontId: "cormorant",
           headingFontId: "cormorant",
           bodySizePt: 12.5,
@@ -255,6 +269,8 @@ export const INTERIOR_STRUCTURES: InteriorStructure[] = [
         ],
         [["Literata + Inter", "İri numara", "Kaydırılmış metin"], ["Literata + Inter", "Large numeral", "Offset text"]],
         {
+          ornamentKind: "none",
+          tocStyle: "numbered",
           bodyFontId: "literata",
           headingFontId: "inter",
           bodySizePt: 10.5,
@@ -290,6 +306,8 @@ export const INTERIOR_STRUCTURES: InteriorStructure[] = [
         ],
         [["Literata", "Çizgili başlık", "Sol çizgili alıntı"], ["Literata", "Ruled title", "Bar quote"]],
         {
+          ornamentKind: "none",
+          tocStyle: "plain",
           bodyFontId: "literata",
           headingFontId: "literata",
           bodySizePt: 10.5,
@@ -312,6 +330,8 @@ export const INTERIOR_STRUCTURES: InteriorStructure[] = [
         ],
         [["Source Serif + Inter", "İri numara", "Kutulu alıntı"], ["Source Serif + Inter", "Large numeral", "Boxed quote"]],
         {
+          ornamentKind: "none",
+          tocStyle: "numbered",
           bodyFontId: "sourceserif",
           headingFontId: "inter",
           bodySizePt: 10.5,
@@ -334,6 +354,8 @@ export const INTERIOR_STRUCTURES: InteriorStructure[] = [
         ],
         [["Libre Baskerville + Inter", "Kutulu numara", "Not kutuları"], ["Libre Baskerville + Inter", "Boxed number", "Note boxes"]],
         {
+          ornamentKind: "none",
+          tocStyle: "numbered",
           bodyFontId: "baskerville",
           headingFontId: "inter",
           bodySizePt: 10,
@@ -387,6 +409,9 @@ export const INTERIOR_STRUCTURES: InteriorStructure[] = [
         ],
         [["Source Serif + Inter", "Sola yaslı başlık", "Sol çizgili alıntı"], ["Source Serif + Inter", "Left titles", "Bar quote"]],
         {
+          ornamentKind: "none",
+          tocStyle: "plain",
+          bibStyle: "numbered",
           bodyFontId: "sourceserif",
           headingFontId: "inter",
           bodySizePt: 10,
@@ -458,10 +483,19 @@ export function getStructure(id: InteriorStructureId): InteriorStructure {
 export type ConceptSizeAdjust = -1 | 0 | 1;
 
 /** Konseptin Mizanpaj ayarları (aile adları çözülmüş; boyut ayarı uygulanmış). */
+/** Konsept ekranındaki "Ayrıntılar" seçimleri (boşsa konseptin kendi değeri). */
+export type ConceptDetails = { ornamentKind?: OrnamentKind; tocStyle?: TocStyle; bibStyle?: BibStyle };
+
+/** Konseptte süs kullanılıyor mu (Ayrıntılar'da süs seçimi gösterilsin mi)? */
+export function conceptUsesOrnament(k: InteriorConcept): boolean {
+  return k.chapterOrnament === "fleuron" || k.chapterStyle === "ornament" || k.sceneBreak === "fleuron" || k.sceneBreak === "asterism";
+}
+
 export function conceptLayoutSettings(
   k: InteriorConcept,
   familyOf: (fontId: string) => string,
   adjust: ConceptSizeAdjust = 0,
+  details: ConceptDetails = {},
 ) {
   const dSize = adjust === 1 ? 1 : adjust === -1 ? -0.5 : 0;
   const dLead = adjust === 1 ? 1.5 : adjust === -1 ? -0.8 : 0;
@@ -492,5 +526,66 @@ export function conceptLayoutSettings(
     quoteStyle: k.quoteStyle,
     keepLineBreaks: k.keepLineBreaks,
     bodyInsetMm: k.bodyInsetMm,
+    ornamentKind: details.ornamentKind ?? k.ornamentKind,
+    tocStyle: details.tocStyle ?? k.tocStyle,
+    bibStyle: details.bibStyle ?? k.bibStyle,
   };
 }
+
+// ── Ayrıntı seçenekleri (konsept ekranı + Mizanpaj Yazı paneli ortak) ──
+type Opt<T extends string> = { v: T; tr: string; en: string; glyph?: string };
+
+export const ORNAMENT_OPTIONS: Opt<OrnamentKind>[] = [
+  { v: "fleuron", tr: "Çiçek", en: "Floral", glyph: "❦" },
+  { v: "leaf", tr: "Yaprak", en: "Leaf", glyph: "❧" },
+  { v: "asterism", tr: "Yıldız üçlüsü", en: "Asterism", glyph: "⁂" },
+  { v: "star", tr: "Yıldız", en: "Star", glyph: "✦" },
+  { v: "diamond-rule", tr: "Çizgili elmas", en: "Ruled diamond", glyph: "—◆—" },
+  { v: "none", tr: "Süssüz", en: "None", glyph: "∅" },
+];
+
+export const TOC_OPTIONS: Opt<TocStyle>[] = [
+  { v: "classic", tr: "Klasik (noktalı)", en: "Classic (dotted)" },
+  { v: "plain", tr: "Sade", en: "Plain" },
+  { v: "numbered", tr: "Numaralı", en: "Numbered" },
+  { v: "elegant", tr: "Zarif (ortalı)", en: "Elegant (centred)" },
+];
+
+export const BIB_OPTIONS: Opt<BibStyle>[] = [
+  { v: "hanging", tr: "Asılı girinti", en: "Hanging indent" },
+  { v: "numbered", tr: "Numaralı [1]", en: "Numbered [1]" },
+  { v: "plain", tr: "Sade liste", en: "Plain list" },
+  { v: "none", tr: "Normal paragraf", en: "Normal paragraphs" },
+];
+
+export const CHAPTER_STYLE_OPTIONS: Opt<ChapterStyle>[] = [
+  { v: "centered", tr: "Ortalı kalın", en: "Centred bold" },
+  { v: "spaced-caps", tr: "Aralıklı büyük harf", en: "Spaced capitals" },
+  { v: "ornament", tr: "Süslü (üstte süs)", en: "Ornamented" },
+  { v: "left-rule", tr: "Sola yaslı + çizgi", en: "Left + rule" },
+  { v: "minimal-left", tr: "Sola yaslı, iri ve ince", en: "Left, large & light" },
+  { v: "numeral-left", tr: "İri numara (sola)", en: "Large numeral (left)" },
+  { v: "numeral-center", tr: "İri numara (ortalı)", en: "Large numeral (centred)" },
+  { v: "boxed", tr: "Kutulu numara", en: "Boxed number" },
+  { v: "poem-left", tr: "Şiir başlığı (sola)", en: "Poem title (left)" },
+  { v: "poem-center", tr: "Şiir başlığı (ortalı)", en: "Poem title (centred)" },
+];
+
+export const SCENE_OPTIONS: Opt<SceneBreak>[] = [
+  { v: "stars", tr: "* * *", en: "* * *" },
+  { v: "fleuron", tr: "Seçili süs", en: "Chosen ornament" },
+  { v: "rule", tr: "Kısa çizgi", en: "Short rule" },
+  { v: "space", tr: "Yalnız boşluk", en: "Space only" },
+];
+
+export const QUOTE_OPTIONS: Opt<"indent" | "box" | "bar">[] = [
+  { v: "indent", tr: "Girintili italik", en: "Indented italic" },
+  { v: "box", tr: "Gri kutu", en: "Shaded box" },
+  { v: "bar", tr: "Sol çizgi", en: "Left bar" },
+];
+
+export const SUBHEAD_OPTIONS: Opt<"center" | "left" | "left-caps">[] = [
+  { v: "center", tr: "Ortalı", en: "Centred" },
+  { v: "left", tr: "Sola yaslı", en: "Left" },
+  { v: "left-caps", tr: "Sola, büyük harf", en: "Left, capitals" },
+];

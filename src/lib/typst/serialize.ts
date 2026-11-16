@@ -34,6 +34,7 @@ function chapterOpen(
   s: LayoutSettings,
   contentHeightMm: number,
   num: number | null,
+  label: string,
 ): string {
   const right = s.chapterStartsOnRightPage;
   // Bölüm başında üst boşluk yok (kullanıcı isteği): başlık sayfanın en üstünden.
@@ -53,7 +54,8 @@ function chapterOpen(
   const runs = b.runs;
   // marker (blok jetonu) sayfa kırılışından SONRA, başlığın yanında → konumu bölüm
   // sayfasını verir (kırılıştan önce olsa önceki sayfayı gösterirdi).
-  const title = `${marker}${chup} #heading(level: 1, outlined: true)[${runsToMarkup(runs)}]`;
+  // Etiket: konsept içindekiler düzenleri sayfa numarasını buradan bulur.
+  const title = `${marker}${chup} #heading(level: 1, outlined: true)[${runsToMarkup(runs)}] <${label}>`;
   return `#_chapter(${kick}${numArg}ornament: "${orn}", right: ${right}, top: ${topMm}mm)[${title}]`;
 }
 
@@ -67,6 +69,15 @@ function upperRuns(runs: Run[], lang?: "tr" | "en"): Run[] {
 // "Girişimcilik" eşleşmez).
 const UNNUMBERED =
   /^(önsöz|ön söz|giriş|sunuş|takdim|sonsöz|son söz|sonuç|epilog|prolog|teşekkür|kaynakça|kaynaklar|dizin|ek|ekler|notlar|sözlük|preface|foreword|introduction|epilogue|afterword|acknowledgements?|bibliography|references|index|notes|appendix)(?!\p{L})/u;
+
+// "Kaynakça" bölümü (konsept kaynakça düzeni bu bölümün paragraflarına uygulanır).
+const BIBLIOGRAPHY = /^(kaynakça|kaynaklar|kaynak listesi|bibliyografya|bibliography|references|works cited)(?!\p{L})/u;
+/** Başlık bir kaynakça adı mı? Türkçe ve İngilizce küçük harfe çevirerek
+ *  denenir ("BIBLIOGRAPHY" Türkçe kuralla "bıblıography" olur). */
+export function isBibliographyTitle(text: string): boolean {
+  const t = text.trim();
+  return BIBLIOGRAPHY.test(t.toLocaleLowerCase("tr")) || BIBLIOGRAPHY.test(t.toLocaleLowerCase("en"));
+}
 
 // Kicker'daki bölüm numarası ("BÖLÜM 3", "BÖLÜM XII", "Üçüncü Bölüm") → sayı.
 const ORDINALS: Record<string, number> = {
@@ -220,6 +231,21 @@ function blockToTypst(b: Block, contentWidthMm: number, s?: LayoutSettings): str
   }
 }
 
+/** Bölüm başlıklarının numaraları (yazarın kicker'ı öncelikli; ön söz/giriş
+ *  numarasız) — gövde ve konsept içindekiler AYNI numarayı kullanır. */
+function chapterNumbers(blocks: Block[]): Map<number, number | null> {
+  const out = new Map<number, number | null>();
+  let n = 0;
+  blocks.forEach((b, i) => {
+    if (!(b.type === "heading" && b.level === 1 && !b.subhead)) return;
+    const plain = b.runs.map((r) => r.text).join("").trim();
+    const k = kickerNumber(b.kicker);
+    if (k != null) out.set(i, (n = k));
+    else out.set(i, UNNUMBERED.test(plain.toLocaleLowerCase("tr")) ? null : ++n);
+  });
+  return out;
+}
+
 export function bookToTypst(input: TypstBookInput): string {
   // 1) İçerik hazırlığı (JS motoruyla AYNI) — yoksa tırnak/tire ayrışır.
   const blocks = smartQuoteBlocks(input.blocks);
@@ -257,7 +283,21 @@ export function bookToTypst(input: TypstBookInput): string {
       .filter(Boolean)
       .join("\n\n");
     if (bioParas) out.push(`#_biopage[${bioParas}]`);
-    out.push(`#_toc("İÇİNDEKİLER")`);
+    const tocTitle = input.settings.lang === "en" ? "CONTENTS" : "İÇİNDEKİLER";
+    const tocStyle = input.settings.tocStyle ?? "classic";
+    if (tocStyle === "classic") out.push(`#_toc("${tocTitle}")`);
+    else {
+      // Konsept düzeni: (etiket, numara, özgün başlık) listesi; sayfa no Typst'ten.
+      const nums = chapterNumbers(blocks);
+      const entries = blocks
+        .map((b, i) =>
+          b.type === "heading" && b.level === 1 && !b.subhead
+            ? `("ks-ch-${i}", "${nums.get(i) ?? ""}", [${runsToMarkup(b.runs)}])`
+            : null,
+        )
+        .filter(Boolean);
+      out.push(`#_toc2("${tocTitle}", (${entries.join(", ")}${entries.length === 1 ? "," : ""}))`);
+    }
     out.push("#counter(page).update(1)");
   }
 
@@ -276,7 +316,14 @@ export function bookToTypst(input: TypstBookInput): string {
   // Bölümün ilk paragrafı: ilk kelimeler büyük harf (drop-cap yoksa).
   let pendingLead = false;
   // Bölüm numarası ("iri numara" biçimleri): ön söz/giriş gibi bölümler sayılmaz.
-  let chapterNo = 0;
+  const chapterNums = chapterNumbers(blocks);
+  // Kaynakça bölümündeyiz mi (konsept kaynakça düzeni açıksa)? Giriş sayacı.
+  const bibOn = (input.settings.bibStyle ?? "none") !== "none";
+  let inBib = false;
+  // Kaynakçayı açan başlığın seviyesi: altındaki ara başlıklar ("Kitaplar",
+  // "Makaleler") kaynakçayı bitirmez; aynı/üst seviyeden başlık bitirir.
+  let bibLevel = 0;
+  let bibNo = 0;
   // TİPOGRAFİ kural 6: ardışık akış-içi başlıklar arasında tam önce-boşluğu
   // (_hb) değil dar boşluk (_ht) kullanılır — önceki bloğu serializer bilir.
   let prevInlineHeading = false;
@@ -284,14 +331,14 @@ export function bookToTypst(input: TypstBookInput): string {
     const mk = taggable(b) ? tag(i) + "\n" : "";
     if (b.type === "heading" && b.level === 1 && !b.subhead) {
       const plain = b.runs.map((r) => r.text).join("").trim();
-      // Yazarın numarası (kicker) öncelikli; yoksa sayaç. Ön söz/giriş numarasız.
-      const fromKicker = kickerNumber(b.kicker);
-      let num: number | null;
-      if (fromKicker != null) num = chapterNo = fromKicker;
-      else num = UNNUMBERED.test(plain.toLocaleLowerCase("tr")) ? null : ++chapterNo;
-      out.push(chapterOpen(b, tag(i), input.settings, contentHeightMm, num));
-      pendingDropCap = input.settings.dropCap;
-      pendingLead = !input.settings.dropCap && !!input.settings.firstWordsCaps;
+      const num = chapterNums.get(i) ?? null;
+      inBib = bibOn && isBibliographyTitle(plain);
+      bibLevel = 1;
+      bibNo = 0;
+      out.push(chapterOpen(b, tag(i), input.settings, contentHeightMm, num, `ks-ch-${i}`));
+      // Kaynakça bölümünde ilk girişe büyük baş harf / büyük harf açılış gelmez.
+      pendingDropCap = input.settings.dropCap && !inBib;
+      pendingLead = !input.settings.dropCap && !!input.settings.firstWordsCaps && !inBib;
       prevInlineHeading = false;
       return;
     }
@@ -312,6 +359,20 @@ export function bookToTypst(input: TypstBookInput): string {
       pendingLead = false;
     }
     if (b.type === "heading") {
+      // Kaynakça, kitabın yapısına göre ara başlık da olabilir ("BÖLÜM N"li
+      // kitaplarda bölüm sayılmayan başlıklar ara başlığa iner): başlık bir
+      // kaynakça adıysa bölümden sonraki girişler kaynakça düzenini alır; başka
+      // bir başlık gelince biter.
+      const hPlain = b.runs.map((r) => r.text).join("");
+      // Ara başlık (subhead) kaynakça içinde alt grup sayılır.
+      const hLevel = b.subhead ? 9 : b.level;
+      if (bibOn && isBibliographyTitle(hPlain)) {
+        inBib = true;
+        bibLevel = hLevel;
+        bibNo = 0;
+      } else if (inBib && hLevel <= bibLevel) {
+        inBib = false;
+      }
       // Akış-içi başlık (L2+/ara başlık). _hpre = çapa + alt-bölge kararı +
       // önce-boşluk (kural 1/3/6/7; ardışıkta dar boşluk). Konum işareti (mk)
       // _hpre'den SONRA → sayfa kırılırsa tıkla-düzenle bandı doğru sayfayı
@@ -321,6 +382,16 @@ export function bookToTypst(input: TypstBookInput): string {
       return;
     }
     if (b.type !== "blank" && b.type !== "spacer") prevInlineHeading = false;
+    // Kaynakça girişi: konseptin kaynakça düzeni (asılı girinti / numaralı / sade).
+    if (
+      inBib &&
+      b.type === "paragraph" &&
+      b.runs.some((r) => r.text.trim()) &&
+      !SCENE_BREAK.test(b.runs.map((r) => r.text).join(""))
+    ) {
+      out.push(mk + fmtWrap(b, `#_bib(${++bibNo})[${runsToMarkup(b.runs)}]`));
+      return;
+    }
     out.push(mk + blockToTypst(b, contentWidthMm, input.settings));
   });
   const body = out.filter((s) => s.length > 0).join("\n\n");

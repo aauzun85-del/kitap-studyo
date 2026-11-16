@@ -11,7 +11,7 @@
 import type { Margins } from "./page";
 import type { PrintStandard } from "./standards";
 import type { ChapterOrnament } from "./themes";
-import type { ChapterStyle, SceneBreak } from "./paginate";
+import type { ChapterStyle, SceneBreak, OrnamentKind, TocStyle, BibStyle } from "./paginate";
 
 export const LAYOUT_SETTINGS_VERSION = 1;
 
@@ -66,6 +66,9 @@ export type SavedLayoutSettings = {
   quoteStyle?: "indent" | "box" | "bar";
   keepLineBreaks?: boolean;
   bodyInsetMm?: number;
+  ornamentKind?: OrnamentKind;
+  tocStyle?: TocStyle;
+  bibStyle?: BibStyle;
 };
 
 const STANDARDS: PrintStandard[] = ["kdy", "akademi", "kdp", "ingram", "bnpress", "lulu", "serbest"];
@@ -162,6 +165,9 @@ export function readSavedLayout(slice: unknown): Partial<SavedLayoutSettings> | 
     quoteStyle: oneOf(s.quoteStyle, ["indent", "box", "bar"] as const),
     keepLineBreaks: bool(s.keepLineBreaks),
     bodyInsetMm: num(s.bodyInsetMm, 0, 40),
+    ornamentKind: oneOf(s.ornamentKind, ["fleuron", "leaf", "asterism", "star", "diamond-rule", "none"] as const),
+    tocStyle: oneOf(s.tocStyle, ["classic", "plain", "numbered", "elegant"] as const),
+    bibStyle: oneOf(s.bibStyle, ["none", "hanging", "numbered", "plain"] as const),
   };
   return out;
 }
