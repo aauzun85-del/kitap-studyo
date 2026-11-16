@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
-import { completeWizardStep } from "@/lib/projects/data";
+import { completeWizardStep, markPrintDownloaded } from "@/lib/projects/data";
 import WizardGuide from "@/components/app/WizardGuide";
 import { useEditorSession } from "@/lib/editor/session";
 import { useSaveStatus, formatSavedTime, SAVE_LABELS } from "@/lib/projects/saveStatus";
@@ -916,6 +916,17 @@ export default function LayoutStudio({
     setImportError(false);
   }, []);
 
+  // Baskı PDF'i indirildi → kitap "Tamamlandı" (panoda Son kitapların'a geçer).
+  // Kayıt başarısız olsa da indirme başarılı sayılır.
+  const notePrintDownloaded = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      await markPrintDownloaded(projectId);
+    } catch {
+      // sessiz geç
+    }
+  }, [projectId]);
+
   const handleExportPdf = useCallback(async (): Promise<boolean> => {
     if (pages.length === 0) return false;
     if (!requireExport(canExport, lang)) return false;
@@ -947,6 +958,7 @@ export default function LayoutStudio({
       a.remove();
       // Büyük PDF'te blob okunmadan revoke edilirse indirme kesilir → gecikmeli iptal.
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      await notePrintDownloaded();
       return true;
     } catch {
       setExportError(true);
@@ -954,7 +966,7 @@ export default function LayoutStudio({
     } finally {
       setExporting(false);
     }
-  }, [pages, sizeId, margins, gutter, cropMarks, kerning, fontId, title, standard, bleedOn, canExport, lang]);
+  }, [pages, sizeId, margins, gutter, cropMarks, kerning, fontId, title, standard, bleedOn, canExport, lang, notePrintDownloaded]);
 
   // InDesign IDML dışa aktarma: mizanpajı Adobe InDesign'da açılabilir .idml
   // paketine çevirir (metin + boyut + kenar + stiller). Jeton kapısı PDF ile aynı.
@@ -1046,6 +1058,7 @@ export default function LayoutStudio({
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      await notePrintDownloaded();
       return true;
     } catch (e) {
       if (e instanceof TypstCrashError) setTypstCrash(e);
@@ -1054,7 +1067,7 @@ export default function LayoutStudio({
     } finally {
       setExporting(false);
     }
-  }, [blocks, meta, settings, sizeId, margins, gutter, cropMarks, standard, bleedOn, title, canExport, lang]);
+  }, [blocks, meta, settings, sizeId, margins, gutter, cropMarks, standard, bleedOn, title, canExport, lang, notePrintDownloaded]);
 
   // Baskı denetimi (preflight): Typst PDF'ini üret + yapısal baskı kontrolleri.
   const [preflightReport, setPreflightReport] = useState<PreflightReport | null>(null);

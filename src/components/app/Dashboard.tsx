@@ -252,7 +252,11 @@ export default function Dashboard({
   }
 
   const count = items?.length ?? 0;
-  const recent = items?.[0] ?? null;
+  // Baskı PDF'i indirilmiş kitap "Tamamlandı": "Kaldığın yerden devam et"te
+  // gösterilmez, "Son kitapların"a geçer. Devam edilecek kitap yoksa orada
+  // "Yeni kitap hazırla" bandı çıkar.
+  const finished = (p: ProjectListItem) => !!p.wizard?.printDownloaded;
+  const recent = items?.find((p) => !finished(p)) ?? null;
   const tr = lang === "tr";
   const firstName = user.name.trim().split(/\s+/)[0] || user.name;
 
@@ -267,13 +271,14 @@ export default function Dashboard({
       { key: "editor", label: tr ? "Metin" : "Text", done: e },
       { key: "mizanpaj", label: tr ? "Mizanpaj" : "Layout", done: l },
       { key: "kapak", label: tr ? "Kapak" : "Cover", done: c },
-      { key: "indir", label: tr ? "Baskı" : "Print", done: false },
+      { key: "indir", label: tr ? "Baskı" : "Print", done: !!w.printDownloaded },
     ];
   };
   const nextStep = (p: ProjectListItem): Step => stepsOf(p).find((s) => !s.done) ?? stepsOf(p)[3];
   const statusOf = (p: ProjectListItem): { label: string; cls: string } => {
     const st = stepsOf(p);
     const doneCount = st.filter((s) => s.done).length;
+    if (finished(p)) return { label: tr ? "✓ Tamamlandı" : "✓ Completed", cls: "bg-emerald-50 text-emerald-700" };
     if (doneCount >= 3) return { label: tr ? "Baskıya hazır" : "Print ready", cls: "bg-emerald-50 text-emerald-700" };
     if (doneCount > 0 || Date.now() - new Date(p.updated_at).getTime() < 86400000)
       return { label: tr ? "Düzenleniyor" : "In progress", cls: "bg-[var(--pri-soft)] text-[var(--pri)]" };
@@ -281,6 +286,7 @@ export default function Dashboard({
   };
   const continueLabel = (p: ProjectListItem): string => {
     const n = nextStep(p).key;
+    if (finished(p)) return tr ? "Dosyaları aç" : "Open files";
     if (tr)
       return n === "editor" ? "Metne devam et" : n === "mizanpaj" ? "Mizanpaja devam et" : n === "kapak" ? "Kapağa devam et" : "Dosyaları indir";
     return n === "editor" ? "Continue text" : n === "mizanpaj" ? "Continue layout" : n === "kapak" ? "Continue cover" : "Download files";
@@ -413,9 +419,13 @@ export default function Dashboard({
                 ? tr
                   ? "İlk kitabın için çalışma alanın hazır."
                   : "Your workspace is ready for your first book."
-                : tr
-                  ? "Kitabına kaldığın yerden devam et."
-                  : "Pick up your book where you left off."}
+                : items !== null && !recent
+                  ? tr
+                    ? "Tüm kitapların tamamlandı."
+                    : "All your books are complete."
+                  : tr
+                    ? "Kitabına kaldığın yerden devam et."
+                    : "Pick up your book where you left off."}
             </p>
           </div>
           {!empty && (
@@ -432,14 +442,19 @@ export default function Dashboard({
                   className="tipo-input w-full rounded-xl border border-[#dcdfea] bg-white py-3 pl-10 pr-3 text-[15px] text-[#1d2333]"
                 />
               </label>
-              <button onClick={onNew} disabled={busy} className={btnPrimary}>
-                <Icon name="plus" size={18} sw={2.1} />
-                {busy ? t.creating : tr ? "Yeni kitap" : "New book"}
-              </button>
-              <button onClick={() => wordInputRef.current?.click()} disabled={busy} className={btnOutline} title={tr ? "Bir Word (.docx) dosyasından yeni kitap başlat" : "Start a new book from a Word (.docx) file"}>
-                <WordGlyph />
-                {tr ? "Word yükle" : "Upload Word"}
-              </button>
+              {/* Hepsi tamamlandıysa aşağıdaki "Yeni kitap hazırla" bandı bu düğmeleri taşır. */}
+              {(items === null || !!recent || !!q) && (
+                <>
+                  <button onClick={onNew} disabled={busy} className={btnPrimary}>
+                    <Icon name="plus" size={18} sw={2.1} />
+                    {busy ? t.creating : tr ? "Yeni kitap" : "New book"}
+                  </button>
+                  <button onClick={() => wordInputRef.current?.click()} disabled={busy} className={btnOutline} title={tr ? "Bir Word (.docx) dosyasından yeni kitap başlat" : "Start a new book from a Word (.docx) file"}>
+                    <WordGlyph />
+                    {tr ? "Word yükle" : "Upload Word"}
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -559,6 +574,35 @@ export default function Dashboard({
               </button>
             </div>
           </>
+        )}
+
+        {/* ── YENİ KİTAP BANDI: devam edilecek kitap kalmadı (hepsi tamamlandı) ── */}
+        {!empty && items !== null && !recent && !q && (
+          <div className="flex flex-col gap-5 rounded-2xl border border-[#e3e1fb] bg-[linear-gradient(120deg,#f1f0fe,#f6f2fe)] p-5 sm:flex-row sm:items-center sm:p-7">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center self-start rounded-2xl bg-white text-[var(--pri)] sm:self-auto">
+              <Icon name="plus" size={26} sw={2.1} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[21px] font-extrabold tracking-tight text-[#141827] sm:text-[23px]">
+                {tr ? "Yeni kitap hazırla" : "Prepare a new book"}
+              </div>
+              <p className="mt-1 text-[15px] text-[#5b6273]">
+                {tr
+                  ? "Kitapların tamamlandı. Sıradaki kitabına başlamak için adını yaz ya da Word dosyanı yükle."
+                  : "Your books are complete. Name your next book or upload a Word file to begin."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button onClick={onNew} disabled={busy} className={btnPrimary}>
+                <Icon name="plus" size={18} sw={2.1} />
+                {busy ? t.creating : tr ? "Yeni kitap" : "New book"}
+              </button>
+              <button onClick={() => wordInputRef.current?.click()} disabled={busy} className={btnOutline}>
+                <WordGlyph />
+                {tr ? "Word yükle" : "Upload Word"}
+              </button>
+            </div>
+          </div>
         )}
 
         {/* ── SON KİTAPLARIN ── */}

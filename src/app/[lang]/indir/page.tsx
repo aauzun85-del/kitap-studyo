@@ -130,9 +130,13 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
               </li>
             ))}
             <li className="flex items-center gap-2.5 text-base font-semibold text-accent">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-accent">
-                <span className="h-3 w-3 rounded-full bg-accent" />
-              </span>
+              {wizard.printDownloaded ? (
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-sm font-bold text-white">✓</span>
+              ) : (
+                <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-accent">
+                  <span className="h-3 w-3 rounded-full bg-accent" />
+                </span>
+              )}
               {tr ? "İndir" : "Download"}
             </li>
           </ol>

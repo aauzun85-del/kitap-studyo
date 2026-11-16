@@ -40,6 +40,9 @@ export type WizardState = {
   editorCompleted: boolean;
   layoutCompleted: boolean;
   coverCompleted: boolean;
+  /** Baskı (iç sayfa) PDF'i en az bir kez indirildi → kitap "Tamamlandı";
+   *  panoda "Kaldığın yerden devam et"ten çıkar, "Son kitapların"a geçer. */
+  printDownloaded?: boolean;
 };
 
 // Paylaşılan kitap gövdesi (düz metin — editör/e-kitap/sesli doğrudan kullanır).
@@ -124,6 +127,7 @@ function normalizeWizard(w: unknown): WizardState {
     editorCompleted: !!x.editorCompleted,
     layoutCompleted: !!x.layoutCompleted,
     coverCompleted: !!x.coverCompleted,
+    ...(x.printDownloaded ? { printDownloaded: true } : {}),
   };
 }
 

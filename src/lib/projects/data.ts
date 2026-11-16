@@ -131,6 +131,28 @@ export async function completeWizardStep(id: string, step: WizardStepKey): Promi
   });
 }
 
+/**
+ * Baskı (iç sayfa) PDF'i indirildi → kitap tamamlandı sayılır. Sihirbazın
+ * "active" durumuna dokunmaz (eski/pasif projelerde çubuk açılmasın).
+ */
+export async function markPrintDownloaded(id: string): Promise<void> {
+  return enqueue(id, async () => {
+    const supabase = createClient();
+    const env = envCache.get(id) ?? (await fetchEnvelope(id));
+    const wizard = env.wizard ?? {
+      active: false,
+      editorCompleted: false,
+      layoutCompleted: false,
+      coverCompleted: false,
+    };
+    if (wizard.printDownloaded) return;
+    const merged: ProjectEnvelope = { ...env, wizard: { ...wizard, printDownloaded: true } };
+    const { error } = await supabase.from("projects").update({ data: merged }).eq("id", id);
+    if (error) throw error;
+    envCache.set(id, merged);
+  });
+}
+
 export async function renameProject(id: string, title: string): Promise<void> {
   return enqueue(id, async () => {
     const supabase = createClient();
