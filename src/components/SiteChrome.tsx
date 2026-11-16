@@ -28,6 +28,9 @@ const APPSHELL_SEGMENTS = new Set([
   "indir",
 ]);
 
+// Kendi tam sayfa düzenini çizen giriş/kayıt ekranları (logo + "Ana sayfaya dön").
+const BARE_SEGMENTS = new Set(["giris", "kayit"]);
+
 export default function SiteChrome({
   header,
   footer,
@@ -43,13 +46,13 @@ export default function SiteChrome({
   // Yol: "/tr/kapak" → parçalar ["", "tr", "kapak"]; 2. parça = modül adı.
   const segment = pathname.split("/")[2] ?? "";
   const appShell = APPSHELL_SEGMENTS.has(segment);
-  const fullscreen = appShell || FULLSCREEN_SEGMENTS.has(segment);
+  const fullscreen = appShell || FULLSCREEN_SEGMENTS.has(segment) || BARE_SEGMENTS.has(segment);
 
   return (
     <>
       {/* Proje açıkken modül-geçiş çubuğu (kendi içinde gizlenir); tam ekran
           araçlarda da görünür. AppShell sayfalarında çizilmez (sol menü yerini alır). */}
-      {!appShell && projectBar}
+      {!appShell && !BARE_SEGMENTS.has(segment) && projectBar}
       {!fullscreen && header}
       <main className="flex-1">{children}</main>
       {!fullscreen && footer}

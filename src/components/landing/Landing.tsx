@@ -214,8 +214,9 @@ function LogoMark({ size = 22 }: { size?: number }) {
   );
 }
 
-/** Kitabın iki sayfası (I. bölüm açılışı). Yazı boyu kabın genişliğine bağlıdır. */
-function Spread({ m }: { m: (typeof COPY)[Locale]["mock"] }) {
+/** Kitabın iki sayfası (I. bölüm açılışı). Yazı boyu kabın genişliğine bağlıdır.
+ *  Giriş/kayıt ekranının sağ panelinde de kullanılır (AuthCard). */
+export function Spread({ m }: { m: (typeof COPY)[Locale]["mock"] }) {
   const page = "lp-page relative flex-1 px-[7%] pb-[9%] pt-[11%]";
   const para = "text-justify [hyphens:auto] indent-[1.4em]";
   return (
@@ -405,6 +406,11 @@ function Preview({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
+}
+
+/** Örnek kitabın metinleri (giriş/kayıt ekranındaki maket için). */
+export function landingMock(lang: Locale) {
+  return COPY[lang].mock;
 }
 
 export default function Landing({ lang }: { lang: Locale }) {
