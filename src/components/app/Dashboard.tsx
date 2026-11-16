@@ -526,7 +526,32 @@ export default function Dashboard({
             <h2 className="mb-4 text-[21px] font-extrabold tracking-tight text-[#141827]">
               {tr ? "Kaldığın yerden devam et" : "Pick up where you left off"}
             </h2>
-            <div className={`${card} flex flex-col gap-6 p-5 sm:flex-row sm:items-center sm:p-7`}>
+            <div className={`${card} relative flex flex-col gap-6 p-5 sm:flex-row sm:items-center sm:p-7`}>
+              {/* Kitap seçenekleri: yeniden adlandır / sil (Son kitapların kartlarındakiyle aynı) */}
+              <div className="absolute right-3 top-3">
+                <button
+                  onClick={() => setMenuFor((m) => (m === recent.id ? null : recent.id))}
+                  aria-label={tr ? "Kitap seçenekleri" : "Book options"}
+                  aria-haspopup="menu"
+                  aria-expanded={menuFor === recent.id}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-[#8a90a0] transition hover:bg-[#f1f2f6] hover:text-[#1d2333]"
+                >
+                  <DotsGlyph />
+                </button>
+                {menuFor === recent.id && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setMenuFor(null)} />
+                    <div role="menu" className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-xl border border-[#eceef5] bg-white py-1 shadow-lg">
+                      <button role="menuitem" onClick={() => { setMenuFor(null); void onRename(recent.id, recent.title); }} className="block w-full px-4 py-2.5 text-left text-[14px] text-[#1d2333] hover:bg-[var(--pri-soft)]">
+                        {t.rename}
+                      </button>
+                      <button role="menuitem" onClick={() => { setMenuFor(null); void onDelete(recent.id); }} className="block w-full px-4 py-2.5 text-left text-[14px] text-red-600 hover:bg-red-50">
+                        {t.delete}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
               <button onClick={() => router.push(hrefOf(recent))} className="self-center sm:self-auto" aria-label={recent.title?.trim() || t.untitled}>
                 {cover(recent, 118, 164)}
               </button>
