@@ -2407,8 +2407,8 @@ export default function LayoutStudio({
                       detailsPanel={
                         <ConceptDetailsControls
                           lang={lang}
-                          values={{ chapterStyle, ornamentKind, sceneBreak, subheadStyle, quoteStyle, tocStyle, bibStyle, runningHeadStyle, folioPosition, chapterNewPage, firstWordsCaps, keepLineBreaks }}
-                          set={{ setChapterStyle, setOrnamentKind, setSceneBreak, setSubheadStyle, setQuoteStyle, setTocStyle, setBibStyle, setRunningHeadStyle, setFolioPosition, setChapterNewPage, setFirstWordsCaps, setKeepLineBreaks }}
+                          values={{ chapterStyle, chapterOrnament, ornamentKind, sceneBreak, subheadStyle, quoteStyle, tocStyle, bibStyle, runningHeadStyle, folioPosition, chapterNewPage, firstWordsCaps, keepLineBreaks }}
+                          set={{ setChapterStyle, setChapterOrnament, setOrnamentKind, setSceneBreak, setSubheadStyle, setQuoteStyle, setTocStyle, setBibStyle, setRunningHeadStyle, setFolioPosition, setChapterNewPage, setFirstWordsCaps, setKeepLineBreaks }}
                           onConcept={() => setConceptOpen(true)}
                         />
                       }
@@ -3615,6 +3615,7 @@ function ConceptDetailsControls({
   lang: Locale;
   values: {
     chapterStyle: ChapterStyle;
+    chapterOrnament: ChapterOrnament;
     ornamentKind: OrnamentKind;
     sceneBreak: SceneBreak;
     subheadStyle: "center" | "left" | "left-caps";
@@ -3629,6 +3630,7 @@ function ConceptDetailsControls({
   };
   set: {
     setChapterStyle: (x: ChapterStyle) => void;
+    setChapterOrnament: (x: ChapterOrnament) => void;
     setOrnamentKind: (x: OrnamentKind) => void;
     setSceneBreak: (x: SceneBreak) => void;
     setSubheadStyle: (x: "center" | "left" | "left-caps") => void;
@@ -3678,7 +3680,16 @@ function ConceptDetailsControls({
         tr ? "Süs" : "Ornament",
         v.ornamentKind,
         ORNAMENT_OPTIONS.map((o) => ({ ...o, tr: `${o.glyph} ${o.tr}`, en: `${o.glyph} ${o.en}` })),
-        set.setOrnamentKind,
+        (x) => {
+          set.setOrnamentKind(x);
+          // Kitapta süsün görüneceği bir yer yoksa: başlık altına ve sahne ayracına koy.
+          const shown =
+            v.chapterOrnament === "fleuron" || v.chapterStyle === "ornament" || v.sceneBreak === "fleuron" || v.sceneBreak === "asterism";
+          if (x !== "none" && !shown) {
+            set.setChapterOrnament("fleuron");
+            set.setSceneBreak("fleuron");
+          }
+        },
       )}
       {row(tr ? "Sahne ayracı" : "Scene break", v.sceneBreak === "asterism" ? "fleuron" : v.sceneBreak, SCENE_OPTIONS, (x) => {
         set.setSceneBreak(x);

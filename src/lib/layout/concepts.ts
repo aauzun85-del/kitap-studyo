@@ -498,6 +498,10 @@ export function conceptLayoutSettings(
   details: ConceptDetails = {},
 ) {
   const dSize = adjust === 1 ? 1 : adjust === -1 ? -0.5 : 0;
+  // Süssüz bir konsepte süs seçildiyse süs görünür olsun: bölüm başlığının
+  // altına ve sahne ayracına (konseptin kendi süslü yerleri yoksa).
+  const orn = details.ornamentKind ?? k.ornamentKind;
+  const addOrn = orn !== "none" && !conceptUsesOrnament(k);
   const dLead = adjust === 1 ? 1.5 : adjust === -1 ? -0.8 : 0;
   return {
     conceptId: k.id,
@@ -511,7 +515,7 @@ export function conceptLayoutSettings(
     hyphenate: k.hyphenate,
     lineBreak: k.lineBreak,
     dropCap: k.dropCap,
-    chapterOrnament: k.chapterOrnament,
+    chapterOrnament: addOrn ? ("fleuron" as const) : k.chapterOrnament,
     showChapterKicker: k.showChapterKicker,
     showRunningHeads: k.showRunningHeads,
     showPageNumbers: k.showPageNumbers,
@@ -519,14 +523,14 @@ export function conceptLayoutSettings(
     chapterNewPage: k.chapterNewPage,
     chapterTitleScale: k.chapterTitleScale,
     firstWordsCaps: k.firstWordsCaps,
-    sceneBreak: k.sceneBreak,
+    sceneBreak: addOrn ? ("fleuron" as const) : k.sceneBreak,
     runningHeadStyle: k.runningHeadStyle,
     folioPosition: k.folioPosition,
     subheadStyle: k.subheadStyle,
     quoteStyle: k.quoteStyle,
     keepLineBreaks: k.keepLineBreaks,
     bodyInsetMm: k.bodyInsetMm,
-    ornamentKind: details.ornamentKind ?? k.ornamentKind,
+    ornamentKind: orn,
     tocStyle: details.tocStyle ?? k.tocStyle,
     bibStyle: details.bibStyle ?? k.bibStyle,
   };

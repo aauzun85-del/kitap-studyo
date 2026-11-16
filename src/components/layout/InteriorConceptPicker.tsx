@@ -14,7 +14,6 @@ import { isBibliographyTitle } from "@/lib/typst/serialize";
 import {
   INTERIOR_STRUCTURES,
   conceptLayoutSettings,
-  conceptUsesOrnament,
   structureForGenre,
   ORNAMENT_OPTIONS,
   TOC_OPTIONS,
@@ -466,8 +465,7 @@ export default function InteriorConceptPicker({
             </p>
             <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)]">
               <div className="space-y-5">
-                {conceptUsesOrnament(chosen) && (
-                  <div>
+                <div>
                     <div className="mb-2 text-sm font-semibold text-foreground">{tr ? "Süs" : "Ornament"}</div>
                     <div className="flex flex-wrap gap-2" role="group" aria-label={tr ? "Süs" : "Ornament"}>
                       {ORNAMENT_OPTIONS.map((o) => (
@@ -488,7 +486,6 @@ export default function InteriorConceptPicker({
                       ))}
                     </div>
                   </div>
-                )}
                 <div>
                   <div className="mb-2 text-sm font-semibold text-foreground">{tr ? "İçindekiler" : "Contents page"}</div>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label={tr ? "İçindekiler" : "Contents page"}>
