@@ -14,6 +14,8 @@ import type { ProjectEnvelope } from "@/lib/projects/types";
 import { genreThemeId, genreLayoutSeed } from "@/lib/projects/genres";
 import { requireExport } from "@/lib/credits/exportGate";
 import { useMetaSync, useManuscriptSync, useModuleSync } from "@/lib/projects/useSync";
+import { countFootnotes } from "@/lib/layout/footnotes";
+import { defaultFootnoteSizePt } from "@/lib/typst/template";
 import { readSavedLayout, LAYOUT_SETTINGS_VERSION, type SavedLayoutSettings } from "@/lib/layout/layoutSettings";
 import {
   INTERIOR_SIZES,
@@ -45,6 +47,7 @@ import {
   type ParaAlign,
   type ChapterStyle,
   type SceneBreak,
+  type FootnotePlacement,
   type OrnamentKind,
   type TocStyle,
   type BibStyle,
@@ -337,6 +340,12 @@ export default function LayoutStudio({
   );
   const [tocStyle, setTocStyle] = useState<TocStyle>(saved?.tocStyle ?? "classic");
   const [bibStyle, setBibStyle] = useState<BibStyle>(saved?.bibStyle ?? "none");
+  // Dipnot düzeni (kitapta [^n] dipnotu varsa Yazı panelinde "Dipnotlar").
+  const [footnotePlacement, setFootnotePlacement] = useState<FootnotePlacement>(saved?.footnotePlacement ?? "page");
+  const [footnoteNumbering, setFootnoteNumbering] = useState<"arabic" | "symbols">(saved?.footnoteNumbering ?? "arabic");
+  const [footnoteRestart, setFootnoteRestart] = useState<"book" | "chapter" | undefined>(saved?.footnoteRestart);
+  const [footnoteSeparator, setFootnoteSeparator] = useState<"short" | "full" | "none">(saved?.footnoteSeparator ?? "short");
+  const [footnoteSizePt, setFootnoteSizePt] = useState<number | undefined>(saved?.footnoteSizePt);
 
   const [fontsReady, setFontsReady] = useState(false);
   const measureRef = useRef<HTMLCanvasElement | null>(null);
@@ -377,6 +386,7 @@ export default function LayoutStudio({
       conceptId, chapterStyle, chapterNewPage, chapterTitleScale, firstWordsCaps, sceneBreak,
       runningHeadStyle, folioPosition, subheadStyle, quoteStyle, keepLineBreaks, bodyInsetMm,
       ornamentKind, tocStyle, bibStyle,
+      footnotePlacement, footnoteNumbering, footnoteRestart, footnoteSeparator, footnoteSizePt,
     }),
     [
       standard, bleedOn, sizeId, margins, presetId, gutterAuto, gutterManual, cropMarks,
@@ -388,6 +398,7 @@ export default function LayoutStudio({
       conceptId, chapterStyle, chapterNewPage, chapterTitleScale, firstWordsCaps, sceneBreak,
       runningHeadStyle, folioPosition, subheadStyle, quoteStyle, keepLineBreaks, bodyInsetMm,
       ornamentKind, tocStyle, bibStyle,
+      footnotePlacement, footnoteNumbering, footnoteRestart, footnoteSeparator, footnoteSizePt,
     ],
   );
   useModuleSync(projectId, "layout", layoutSlice, !!autoExport);
@@ -460,6 +471,11 @@ export default function LayoutStudio({
       ornamentKind,
       tocStyle,
       bibStyle,
+      footnotePlacement,
+      footnoteNumbering,
+      footnoteRestart,
+      footnoteSeparator,
+      footnoteSizePt,
     }),
     [
       fontId,
@@ -497,6 +513,11 @@ export default function LayoutStudio({
       ornamentKind,
       tocStyle,
       bibStyle,
+      footnotePlacement,
+      footnoteNumbering,
+      footnoteRestart,
+      footnoteSeparator,
+      footnoteSizePt,
       lang,
     ],
   );
@@ -868,10 +889,12 @@ export default function LayoutStudio({
         setImportMedia(media);
         setImportedBlocks(null);
         setSourceMode("manual");
+        const fnN = (res as { footnoteCount?: number }).footnoteCount ?? 0;
         setImportInfo(
           t.wordImportedInfo
             .replace("{paragraphs}", String(res.paragraphCount))
-            .replace("{headings}", String(res.headingCount)),
+            .replace("{headings}", String(res.headingCount)) +
+            (fnN > 0 ? (lang === "tr" ? ` · ${fnN} dipnot aktarıldı` : ` · ${fnN} footnotes imported`) : ""),
         );
         // Boşsa Word'ün üst verisinden başlık/yazar öner.
         if (res.suggestedTitle) setTitle((cur) => cur.trim() || res.suggestedTitle!);
@@ -974,6 +997,9 @@ export default function LayoutStudio({
   // Yazma görünümünün canlı önizlemesine giden Typst girdisi. Export'la AYNI
   // montaj; yalnız kesim krosları/taşma KAPALI → temiz "kitap sayfası" görünür
   // (yazarken kırpma bandı kafa karıştırmasın; export tam geometriyi kullanır).
+  // Kitaptaki dipnot sayısı ("Dipnotlar" paneli + dipnotlu kitapta PDF hep Typst'le).
+  const footnoteCount = useMemo(() => countFootnotes(blocks), [blocks]);
+
   const typstInput: TypstBookInput = useMemo(
     () => ({
       meta,
@@ -1729,7 +1755,7 @@ export default function LayoutStudio({
             <div className="flex overflow-hidden rounded-xl bg-accent text-white shadow-sm">
               <button
                 type="button"
-                onClick={() => void (previewEngine === "typst" ? handleExportPdfTypst() : handleExportPdf())}
+                onClick={() => void (previewEngine === "typst" || footnoteCount > 0 ? handleExportPdfTypst() : handleExportPdf())}
                 disabled={exporting || isEmpty || blocks.length === 0}
                 title={standard === "kdy" ? t.exportHint : standard === "ingram" ? t.exportHintIngram : t.exportHintKdp}
                 className="whitespace-nowrap px-4 py-2.5 text-sm font-semibold transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
@@ -2404,6 +2430,17 @@ export default function LayoutStudio({
                       themePicker={<ThemePicker t={t} lang={lang} themeId={themeId} onApply={applyTheme} />}
                       tocEditor={frontMatter && chapterTitles.length > 0 ? tocEditor : null}
                       onApplyAll={applyToWholeBook}
+                      footnotePanel={
+                        footnoteCount > 0 ? (
+                          <FootnoteControls
+                            lang={lang}
+                            count={footnoteCount}
+                            bodySizePt={bodySizePt}
+                            values={{ footnotePlacement, footnoteNumbering, footnoteRestart, footnoteSeparator, footnoteSizePt }}
+                            set={{ setFootnotePlacement, setFootnoteNumbering, setFootnoteRestart, setFootnoteSeparator, setFootnoteSizePt }}
+                          />
+                        ) : null
+                      }
                       detailsPanel={
                         <ConceptDetailsControls
                           lang={lang}
@@ -3434,6 +3471,8 @@ function TypeLayoutPanel(props: {
   tocEditor: React.ReactNode;
   /** Konsept ayrıntıları (bölüm başı, süs, içindekiler, kaynakça…). */
   detailsPanel: React.ReactNode;
+  /** Dipnot düzeni — yalnız kitapta dipnot varsa (yoksa null). */
+  footnotePanel: React.ReactNode;
   onApplyAll: () => void;
 }) {
   const { t } = props;
@@ -3567,6 +3606,11 @@ function TypeLayoutPanel(props: {
         >
           {props.detailsPanel}
         </PanelAccordion>
+        {props.footnotePanel && (
+          <PanelAccordion title={tr ? "Dipnotlar" : "Footnotes"} icon={<TextTIcon className="h-5 w-5" />}>
+            {props.footnotePanel}
+          </PanelAccordion>
+        )}
         <PanelAccordion
           title={tr ? "Üstbilgi ve sayfa numarası" : "Running heads & page numbers"}
           icon={<svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden="true"><rect x="3" y="2" width="14" height="16" rx="2" /><path d="M6 6h8M6 9h8M6 12h5" /></svg>}
@@ -3600,6 +3644,103 @@ function TypeLayoutPanel(props: {
       >
         {tr ? "Tüm kitaba uygula" : "Apply to whole book"}
       </button>
+    </div>
+  );
+}
+
+// Dipnot düzeni — Yazı panelinde (kitapta dipnot varsa).
+function FootnoteControls({
+  lang,
+  count,
+  bodySizePt,
+  values: v,
+  set,
+}: {
+  lang: Locale;
+  count: number;
+  bodySizePt: number;
+  values: {
+    footnotePlacement: FootnotePlacement;
+    footnoteNumbering: "arabic" | "symbols";
+    footnoteRestart: "book" | "chapter" | undefined;
+    footnoteSeparator: "short" | "full" | "none";
+    footnoteSizePt: number | undefined;
+  };
+  set: {
+    setFootnotePlacement: (x: FootnotePlacement) => void;
+    setFootnoteNumbering: (x: "arabic" | "symbols") => void;
+    setFootnoteRestart: (x: "book" | "chapter" | undefined) => void;
+    setFootnoteSeparator: (x: "short" | "full" | "none") => void;
+    setFootnoteSizePt: (x: number | undefined) => void;
+  };
+}) {
+  const tr = lang === "tr";
+  // Varsayılanlar şablondakiyle aynı (template.ts): sayfa altı → kitap boyunca,
+  // bölüm/kitap sonu → her bölümde yeniden; punto gövdeden 2 küçük (en az 7).
+  const sym = v.footnoteNumbering === "symbols";
+  const restart = v.footnoteRestart ?? (v.footnotePlacement === "page" ? "book" : "chapter");
+  const size = v.footnoteSizePt ?? defaultFootnoteSizePt(bodySizePt);
+  const sel = "h-9 max-w-[58%] rounded-lg border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-accent";
+  const row = (label: string, control: React.ReactNode) => (
+    <label className="flex items-center justify-between gap-3 text-sm text-foreground">
+      <span>{label}</span>
+      {control}
+    </label>
+  );
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted">
+        {tr ? `Kitapta ${count} dipnot var.` : `This book has ${count} footnotes.`}
+      </p>
+      {row(
+        tr ? "Yeri" : "Placement",
+        <select value={v.footnotePlacement} onChange={(e) => set.setFootnotePlacement(e.target.value as FootnotePlacement)} className={sel}>
+          <option value="page">{tr ? "Sayfa altında" : "Foot of page"}</option>
+          <option value="chapter">{tr ? "Bölüm sonunda" : "End of chapter"}</option>
+          <option value="book">{tr ? "Kitap sonunda (Notlar)" : "End of book (Notes)"}</option>
+        </select>,
+      )}
+      {row(
+        tr ? "Numara" : "Numbering",
+        <select value={v.footnoteNumbering} onChange={(e) => set.setFootnoteNumbering(e.target.value as "arabic" | "symbols")} className={sel}>
+          <option value="arabic">1, 2, 3</option>
+          <option value="symbols">*, †, ‡</option>
+        </select>,
+      )}
+      {sym ? (
+        <p className="text-xs text-muted">
+          {v.footnotePlacement === "page"
+            ? tr ? "Simgeler her sayfada * ile yeniden başlar." : "Symbols restart with * on every page."
+            : tr ? "Simgeler her bölümde * ile yeniden başlar." : "Symbols restart with * in every chapter."}
+        </p>
+      ) : (
+        row(
+          tr ? "Numaralama" : "Restart",
+          <select value={restart} onChange={(e) => set.setFootnoteRestart(e.target.value as "book" | "chapter")} className={sel}>
+            <option value="book">{tr ? "Kitap boyunca sürer" : "Continuous"}</option>
+            <option value="chapter">{tr ? "Her bölümde 1'den" : "Restart each chapter"}</option>
+          </select>,
+        )
+      )}
+      {v.footnotePlacement === "page" &&
+        row(
+          tr ? "Ayırıcı çizgi" : "Separator",
+          <select value={v.footnoteSeparator} onChange={(e) => set.setFootnoteSeparator(e.target.value as "short" | "full" | "none")} className={sel}>
+            <option value="short">{tr ? "Kısa çizgi" : "Short rule"}</option>
+            <option value="full">{tr ? "Tam genişlik" : "Full width"}</option>
+            <option value="none">{tr ? "Çizgisiz" : "None"}</option>
+          </select>,
+        )}
+      {row(
+        tr ? "Punto" : "Size",
+        <select value={String(size)} onChange={(e) => set.setFootnoteSizePt(Number(e.target.value))} className={sel}>
+          {[7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11].map((n) => (
+            <option key={n} value={String(n)}>
+              {String(n).replace(".", ",")} pt
+            </option>
+          ))}
+        </select>,
+      )}
     </div>
   );
 }
@@ -3768,13 +3909,15 @@ function splitRunsAt(runs: Run[], offset: number): { before: Run[]; after: Run[]
     }
     pos += len;
   }
-  return { before: before.filter((r) => r.text.length > 0), after: after.filter((r) => r.text.length > 0) };
+  const keep = (r: Run) => r.text.length > 0 || !!r.fn;
+  return { before: before.filter(keep), after: after.filter(keep) };
 }
 
 function runsEqual(a: Run[], b: Run[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
     if (a[i].text !== b[i].text || a[i].bold !== b[i].bold || a[i].italic !== b[i].italic) return false;
+    if (JSON.stringify(a[i].fn ?? null) !== JSON.stringify(b[i].fn ?? null)) return false;
   }
   return true;
 }
@@ -3788,8 +3931,15 @@ function escapeHtml(s: string): string {
 // (execCommand) buna ekleme/çıkarma yapabilir.
 function runsToHtml(runs: Run[]): string {
   if (runs.length === 0) return "";
+  let fnNo = 0;
   return runs
     .map((r) => {
+      // Dipnot işareti: düzenlenemez küçük üst simge; dipnotun kendisi data-fn'de
+      // taşınır (domToRuns geri okur) → kutuda düzenlemek dipnotu silmez.
+      if (r.fn) {
+        fnNo++;
+        return `<sup contenteditable="false" data-fn="${escapeHtml(JSON.stringify(r.fn))}" title="${escapeHtml(r.fn.runs.map((x) => x.text).join(""))}" style="color:#6d5dfc;font-weight:600;font-style:normal;cursor:help">${fnNo}</sup>`;
+      }
       const style = `font-weight:${r.bold ? "bold" : "normal"};font-style:${r.italic ? "italic" : "normal"}`;
       return `<span style="${style}">${escapeHtml(r.text)}</span>`;
     })
@@ -3805,7 +3955,7 @@ function domToRuns(root: HTMLElement): Run[] {
   const push = (text: string, bold: boolean, italic: boolean) => {
     if (!text) return;
     const prev = runs[runs.length - 1];
-    if (prev && prev.bold === bold && prev.italic === italic) prev.text += text;
+    if (prev && !prev.fn && prev.bold === bold && prev.italic === italic) prev.text += text;
     else runs.push({ text, bold, italic });
   };
   const walk = (node: Node, bold: boolean, italic: boolean) => {
@@ -3815,6 +3965,14 @@ function domToRuns(root: HTMLElement): Run[] {
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const el = node as HTMLElement;
+    if (el.dataset?.fn) {
+      try {
+        runs.push({ text: "", bold: false, italic: false, fn: JSON.parse(el.dataset.fn) });
+      } catch {
+        /* bozuk işaret → yok say */
+      }
+      return;
+    }
     if (el.tagName === "BR") {
       push(" ", bold, italic);
       return;
@@ -3830,7 +3988,7 @@ function domToRuns(root: HTMLElement): Run[] {
     for (const child of Array.from(el.childNodes)) walk(child, b, i);
   };
   for (const child of Array.from(root.childNodes)) walk(child, false, false);
-  return runs.filter((r) => r.text.length > 0);
+  return runs.filter((r) => r.text.length > 0 || r.fn);
 }
 
 function LineView({

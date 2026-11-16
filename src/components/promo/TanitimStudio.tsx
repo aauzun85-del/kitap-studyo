@@ -6,6 +6,7 @@ import type { Dictionary } from "@/i18n/dictionaries";
 import type { ProjectEnvelope } from "@/lib/projects/types";
 import { useMetaSync } from "@/lib/projects/useSync";
 import CreditNotice, { creditProblemFrom, type CreditProblem } from "@/components/credits/CreditNotice";
+import { stripFootnotesFromRaw } from "@/lib/layout/footnoteText";
 import {
   MegaphoneIcon,
   BookIcon,
@@ -119,7 +120,8 @@ export default function TanitimStudio({
 
   // Kitaptan özet taslağı: metnin başını cümle sonunda kesip getirir (kapak deseni).
   function summaryFromManuscript(text: string): string {
-    const clean = text.trim().replace(/\s+/g, " ");
+    // Dipnot işaretleri/tanımları yapay zekâ özetine girmesin.
+    const clean = stripFootnotesFromRaw(text).trim().replace(/\s+/g, " ");
     if (clean.length <= 1200) return clean;
     const cut = clean.slice(0, 1200);
     const lastStop = Math.max(

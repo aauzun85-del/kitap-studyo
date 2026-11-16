@@ -1,12 +1,24 @@
 // Bölümlere ayrılmış kitap metninden geçerli bir EPUB 3 dosyası (.epub) üretir.
 // Tamamen tarayıcıda çalışır (JSZip); sunucu/servis gerekmez. EPUB 3 nav.xhtml
 // ile birlikte EPUB 2 toc.ncx de yazılır — Amazon KDP ve eski okuyucularla
-// uyum için. Bu dosya bilerek proje içi bir şeye bağlı değildir (yalnız jszip),
-// böylece bağımsız olarak da test edilebilir.
+// uyum için. Bu dosya bilerek proje içi bir şeye bağlı değildir (yalnız jszip +
+// bağımsız dipnot işareti yardımcısı), böylece bağımsız olarak da test edilebilir.
+//
+// Dipnotlar: notes doluysa paragraphs içindeki noteMark(n) işaretleri
+// <a epub:type="noteref"> başvurusuna, notlar da bölüm sonunda
+// <aside epub:type="footnote"> öğelerine dönüşür (Kindle/Apple Books açılır not;
+// diğer okuyucularda bölüm sonu "Notlar"). Numara her bölümde 1'den başlar.
 
 import JSZip from "jszip";
+import { NOTE_MARK_RE, hasNoteMark, stripNoteMarks } from "@/lib/layout/footnoteText";
 
-export type EpubChapter = { title: string; paragraphs: string[] };
+export type EpubNoteRun = { text: string; bold: boolean; italic: boolean };
+export type EpubChapter = {
+  title: string;
+  paragraphs: string[];
+  notes?: { runs: EpubNoteRun[] }[]; // n. dipnot = notes[n-1]
+  heading?: string; // işaretli başlık (başlıkta dipnot varsa); yoksa title
+};
 
 // Kapak görseli: ham bayt + MIME türü. mime'den dosya uzantısı türetilir.
 export type EpubCover = { bytes: ArrayBuffer; mime: string };
@@ -18,6 +30,7 @@ export type EpubBook = {
   tocTitle: string; // "İçindekiler" / "Table of Contents"
   chapters: EpubChapter[];
   cover?: EpubCover; // opsiyonel kapak görseli
+  notesTitle?: string; // bölüm sonu notlar başlığı ("Notlar" / "Notes")
 };
 
 // MIME türünden EPUB içindeki kapak dosyasının adını üretir.
@@ -51,20 +64,70 @@ export function suggestFilename(title: string): string {
   return (base || "kitap") + ".epub";
 }
 
-function chapterXhtml(ch: EpubChapter, lang: string): string {
-  const body = ch.paragraphs.map((p) => `    <p>${esc(p)}</p>`).join("\n");
+// Dipnot başvurusu/notu kimlikleri: bölüm (c) + bölüm içi numara (n).
+const fnId = (c: number, n: number) => `fn-${c}-${n}`;
+const fnRefId = (c: number, n: number) => `fnref-${c}-${n}`;
+
+// Kaçışlı metindeki noteMark işaretlerini başvuru bağlantısına çevirir (notu
+// olmayan işaret sessizce silinir).
+function withNoteRefs(escaped: string, c: number, noteCount: number): string {
+  if (!hasNoteMark(escaped)) return escaped;
+  return escaped.replace(NOTE_MARK_RE, (_m, d: string) => {
+    const n = Number(d);
+    if (!(n >= 1 && n <= noteCount)) return "";
+    return `<a epub:type="noteref" class="fn-ref" href="#${fnId(c, n)}" id="${fnRefId(c, n)}"><sup>${n}</sup></a>`;
+  });
+}
+
+function noteRunsXhtml(runs: EpubNoteRun[]): string {
+  return runs
+    .map((r) => {
+      let t = esc(stripNoteMarks(r.text));
+      if (!t) return "";
+      if (r.italic) t = `<em>${t}</em>`;
+      if (r.bold) t = `<strong>${t}</strong>`;
+      return t;
+    })
+    .join("")
+    .trim();
+}
+
+function notesXhtml(ch: EpubChapter, c: number, notesTitle: string): string {
+  const notes = ch.notes ?? [];
+  if (!notes.length) return "";
+  const items = notes
+    .map((note, i) => {
+      const n = i + 1;
+      return `      <aside epub:type="footnote" class="fn" id="${fnId(c, n)}">
+        <p><a class="fn-num" href="#${fnRefId(c, n)}">${n}.</a> ${noteRunsXhtml(note.runs)} <a class="fn-back" href="#${fnRefId(c, n)}">\u21A9\uFE0E</a></p>
+      </aside>`;
+    })
+    .join("\n");
+  return `
+    <section class="fn-notes" epub:type="footnotes">
+      <h2 class="fn-title">${esc(notesTitle)}</h2>
+${items}
+    </section>`;
+}
+
+function chapterXhtml(ch: EpubChapter, lang: string, c: number, notesTitle: string): string {
+  const noteCount = ch.notes?.length ?? 0;
+  const body = ch.paragraphs
+    .map((p) => `    <p>${noteCount ? withNoteRefs(esc(p), c, noteCount) : esc(stripNoteMarks(p))}</p>`)
+    .join("\n");
+  const heading = noteCount && ch.heading ? withNoteRefs(esc(ch.heading), c, noteCount) : esc(stripNoteMarks(ch.title));
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${esc(lang)}" lang="${esc(lang)}">
 <head>
   <meta charset="utf-8"/>
-  <title>${esc(ch.title)}</title>
+  <title>${esc(stripNoteMarks(ch.title))}</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
 </head>
 <body>
   <section epub:type="chapter" xmlns:epub="http://www.idpf.org/2007/ops">
-    <h1>${esc(ch.title)}</h1>
-${body}
+    <h1>${heading}</h1>
+${body}${notesXhtml(ch, c, notesTitle)}
   </section>
 </body>
 </html>`;
@@ -112,7 +175,7 @@ function titleXhtml(book: EpubBook): string {
 
 function navXhtml(book: EpubBook, files: string[]): string {
   const items = book.chapters
-    .map((ch, i) => `      <li><a href="${files[i]}">${esc(ch.title)}</a></li>`)
+    .map((ch, i) => `      <li><a href="${files[i]}">${esc(stripNoteMarks(ch.title))}</a></li>`)
     .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
@@ -137,7 +200,7 @@ function tocNcx(book: EpubBook, uuid: string, files: string[]): string {
     .map(
       (ch, i) =>
         `    <navPoint id="navPoint-${i + 1}" playOrder="${i + 1}">
-      <navLabel><text>${esc(ch.title)}</text></navLabel>
+      <navLabel><text>${esc(stripNoteMarks(ch.title))}</text></navLabel>
       <content src="${files[i]}"/>
     </navPoint>`,
     )
@@ -215,6 +278,15 @@ p:first-of-type, h1 + p { text-indent: 0; }
 .bookauthor { font-size: 1.1em; margin-top: 1em; text-indent: 0; }
 `;
 
+// Yalnız dipnotlu kitaplarda style.css'e eklenir (dipnotsuz çıktı aynen kalsın).
+const NOTES_CSS = `a.fn-ref { text-decoration: none; }
+sup { font-size: 0.7em; line-height: 0; vertical-align: super; }
+.fn-notes { margin-top: 2em; border-top: 1px solid #999; padding-top: 0.5em; }
+.fn-title { font-size: 1em; margin: 0.5em 0; }
+aside.fn p { font-size: 0.85em; text-indent: 0; text-align: left; margin: 0 0 0.4em; }
+a.fn-num, a.fn-back { text-decoration: none; }
+`;
+
 const CONTAINER_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles>
@@ -234,7 +306,8 @@ export async function buildEpubBlob(book: EpubBook): Promise<Blob> {
   zip.file("OEBPS/content.opf", contentOpf(book, uuid, modified, files));
   zip.file("OEBPS/nav.xhtml", navXhtml(book, files));
   zip.file("OEBPS/toc.ncx", tocNcx(book, uuid, files));
-  zip.file("OEBPS/style.css", STYLE_CSS);
+  const hasNotes = book.chapters.some((ch) => (ch.notes?.length ?? 0) > 0);
+  zip.file("OEBPS/style.css", hasNotes ? STYLE_CSS + NOTES_CSS : STYLE_CSS);
   zip.file("OEBPS/title.xhtml", titleXhtml(book));
   if (book.cover) {
     const coverFile = coverFileName(book.cover.mime);
@@ -242,7 +315,7 @@ export async function buildEpubBlob(book: EpubBook): Promise<Blob> {
     zip.file("OEBPS/cover.xhtml", coverXhtml(book, coverFile));
   }
   book.chapters.forEach((ch, i) => {
-    zip.file(`OEBPS/${files[i]}`, chapterXhtml(ch, book.lang));
+    zip.file(`OEBPS/${files[i]}`, chapterXhtml(ch, book.lang, i + 1, book.notesTitle || "Notlar"));
   });
 
   return zip.generateAsync({ type: "blob", mimeType: "application/epub+zip" });

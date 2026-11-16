@@ -10,6 +10,7 @@ import CreditNotice, { creditProblemFrom, type CreditProblem } from "@/component
 import { useMetaSync, useManuscriptSync } from "@/lib/projects/useSync";
 import { docxToText } from "@/lib/editor/docxText";
 import { splitChapters } from "@/lib/publish/chapters";
+import { stripFootnotesFromRaw } from "@/lib/layout/footnoteText";
 import { suggestFilename } from "@/lib/publish/epub";
 import {
   TextTIcon,
@@ -100,7 +101,11 @@ export default function SesliKitapStudio({
     [chapters],
   );
   const stats = useMemo(
-    () => ({ words: raw.trim() ? raw.trim().split(/\s+/).length : 0, chars: raw.length }),
+    () => {
+      // Dipnot işaretleri/tanımları kelime sayısına girmesin (dipnotsuz metinde aynı).
+      const body = stripFootnotesFromRaw(raw).trim();
+      return { words: body ? body.split(/\s+/).length : 0, chars: raw.length };
+    },
     [raw],
   );
   const hasText = raw.trim().length > 0;
@@ -132,9 +137,14 @@ export default function SesliKitapStudio({
     resetAudio();
     try {
       const buffer = await file.arrayBuffer();
-      const { text, paragraphCount } = docxToText(buffer);
+      const { text, paragraphCount, footnoteCount } = docxToText(buffer);
       setRaw(text);
-      setImportInfo(t.wordImportedInfo.replace("{paragraphs}", String(paragraphCount)));
+      const info = t.wordImportedInfo.replace("{paragraphs}", String(paragraphCount));
+      setImportInfo(
+        footnoteCount > 0
+          ? info.replace(/\.$/, "") + t.wordImportedFootnotes.replace("{n}", String(footnoteCount))
+          : info,
+      );
     } catch {
       setImportError(true);
     } finally {
@@ -205,7 +215,9 @@ export default function SesliKitapStudio({
   async function handleNarrate(i: number) {
     setGenIdx(i);
     const ch = chapters[i];
-    const text = [ch.title, ...ch.paragraphs].filter(Boolean).join("\n\n");
+    // Dipnotlar okunmaz: başvurular paragraflarda zaten yok; çözülmemiş "[^x]"
+    // ve kullanılmayan "[^x]: …" tanım paragrafları da burada ayıklanır.
+    const text = stripFootnotesFromRaw([ch.title, ...ch.paragraphs].filter(Boolean).join("\n\n")).trim();
     const url = await callTts(text);
     if (url) setChapterAudio((prev) => ({ ...prev, [i]: url }));
     setGenIdx(null);

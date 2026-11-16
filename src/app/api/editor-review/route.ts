@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { chargeCredits } from "@/lib/credits/server";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { FOOTNOTE_FIELD_NOTE, FOOTNOTE_PROMPT_RULE } from "@/lib/editor/footnotePrompt";
 import { buildRulesBlock, buildMetaBlock } from "@/lib/editor/editorRules";
 
 // AI Editör — Aşama 3: editöryal kalite + akıcı Türkçe üslup. Yazım/dilbilgisi
@@ -21,7 +22,7 @@ const Note = z.object({
   excerpt: z
     .string()
     .describe(
-      "İlgili kısa pasaj, metinden BİREBİR kopyalanmış (3-12 kelime); sorunun yerini göstermek için.",
+      "İlgili kısa pasaj, metinden BİREBİR kopyalanmış (3-12 kelime); sorunun yerini göstermek için." + FOOTNOTE_FIELD_NOTE,
     ),
   category: z
     .enum([
@@ -54,7 +55,7 @@ const Note = z.object({
   rewrite: z
     .string()
     .describe(
-      "Pasajın (excerpt) yerine BİREBİR konacak düzeltilmiş hâli: excerpt'le aynı kapsamda (aynı yerden başlar, aynı yerde biter), öncesi ve sonrasıyla uyumlu, yalnız düz metin (açıklama, tırnak işareti, not YOK). Düzeltme metne doğrudan yazılamıyorsa (ör. 'kaynak ekleyin', 'yazardan izin alın') ya da emin değilsen boş bırak.",
+      "Pasajın (excerpt) yerine BİREBİR konacak düzeltilmiş hâli: excerpt'le aynı kapsamda (aynı yerden başlar, aynı yerde biter), öncesi ve sonrasıyla uyumlu, yalnız düz metin (açıklama, tırnak işareti, not YOK). Düzeltme metne doğrudan yazılamıyorsa (ör. 'kaynak ekleyin', 'yazardan izin alın') ya da emin değilsen boş bırak." + FOOTNOTE_FIELD_NOTE,
     ),
 });
 
@@ -104,6 +105,8 @@ function systemPrompt(language: "tr" | "en"): string {
     "7) Yalnız okunurluğu veya kaliteyi gerçekten artıracak, önemli noktalara",
     "   değin. Zorlama gözlem üretme.",
     "8) Belirgin bir sorun yoksa boş bir 'notes' listesi döndür.",
+    "",
+    FOOTNOTE_PROMPT_RULE,
   ].join("\n");
 }
 

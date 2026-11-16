@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { chargeCredits } from "@/lib/credits/server";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { FOOTNOTE_FIELD_NOTE, FOOTNOTE_PROMPT_RULE } from "@/lib/editor/footnotePrompt";
 
 // AI Editör — Aşama 2: yazım ve dilbilgisi kontrolü.
 // Metni Claude'a gönderir; her öneri için "eski ifade + düzeltme + neden"
@@ -20,8 +21,8 @@ const MAX_CHARS = 15000;
 const Suggestion = z.object({
   original: z
     .string()
-    .describe("Metinden BİREBİR kopyalanmış, hatayı içeren kısa ifade (1-8 kelime)."),
-  suggestion: z.string().describe("Aynı ifadenin düzeltilmiş hâli."),
+    .describe("Metinden BİREBİR kopyalanmış, hatayı içeren kısa ifade (1-8 kelime)." + FOOTNOTE_FIELD_NOTE),
+  suggestion: z.string().describe("Aynı ifadenin düzeltilmiş hâli." + FOOTNOTE_FIELD_NOTE),
   category: z
     .enum(["spelling", "grammar"])
     .describe("Hatanın türü: spelling = yazım, grammar = dilbilgisi."),
@@ -71,6 +72,8 @@ function systemPrompt(language: "tr" | "en"): string {
     "  değiştirip tutarsızlık yaratma; kalıbın bütünü doğruysa hiç önerme.",
     "- Her öneriden önce kendine sor: bu %100 nesnel bir hata mı, yoksa tercih mi?",
     "  Tercihse listeye ALMA. Az ama kesin öneri, çok ama tartışmalı öneriden iyidir.",
+    "",
+    FOOTNOTE_PROMPT_RULE,
   ].join("\n");
 }
 

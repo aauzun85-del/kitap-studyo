@@ -16,6 +16,10 @@
 //
 // Enter = yeni paragraf (araya boş satır), Shift+Enter = ekranda alt satır
 // (kitapta aynı paragraf içinde akar). Yapıştırılan düz metin satırlarıyla korunur.
+//
+// DİPNOT: gövdede "kelime[^1]" (üst simge gibi gösterilir), tanım kendi
+// satırında "[^1]: Not metni." (küçük, gri). Baskı motoru tanım satırını
+// metinden ayıkladığı için tanım satırı paragraf bağlamını DEĞİŞTİRMEZ.
 
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import { Extension, Node } from "@tiptap/core";
@@ -25,6 +29,8 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { Fragment, Slice, type Node as PMNode, type Schema } from "@tiptap/pm/model";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { INLINE_MARK_RE } from "@/lib/layout/paginate";
+import { FN_DEF_RE } from "@/lib/layout/footnotes";
+import { planFootnote, refRanges, snapOutOfRefs } from "@/lib/editor/footnoteEdit";
 
 /** Metinde işaretlenecek öneri. `id` = öneri dizini (kartla eşleşir). */
 export type ManuscriptMark = { id: number; needle: string; kind: "fix" | "notice" };
@@ -43,6 +49,8 @@ export type ManuscriptApi = {
   /** Tüm eşleşmeleri değiştirir (tek adımda geri alınabilir). Değişen sayısı. */
   replaceAll: (query: string, replacement: string) => number;
   clearFind: () => void;
+  /** İmlecin olduğu yere dipnot ekler (bkz. insertFootnote). */
+  insertFootnote: () => boolean;
 };
 
 export type BlockStyle = "paragraph" | "h1" | "h2" | "h3" | "h4" | "quote";
@@ -110,7 +118,7 @@ const FMT_LINE = /^\[\[stil:[^\]]*\]\]$/;
 const TOKEN_LINE = /^(\[\[sayfa-sonu\]\]|\[\[bosluk:[^\]]*\]\]|!\[[^\]]*\]\(kitap-gorsel:[^)]+\))$/;
 const MARKER = /^(\s*)(#{1,4}\s+|>\s?)?/;
 
-type LineKind = "blank" | "space" | "code" | "fmt" | "token" | "heading" | "quote" | "p";
+type LineKind = "blank" | "space" | "code" | "fmt" | "token" | "fnDef" | "heading" | "quote" | "p";
 type LineInfo = {
   index: number;
   start: number; // satır düğümünün konumu
@@ -147,6 +155,10 @@ function classifyLines(doc: PMNode, i0: number, i1: number): LineInfo[] {
     } else if (!trimmed) {
       info.kind = "space"; // yalnız boşluk: paragrafı bölmez (baskıda da)
       info.first = first < 0 ? i : first;
+    } else if (FN_DEF_RE.test(trimmed)) {
+      // Dipnot tanımı: baskıda metinden ayıklanır → önceki paragrafı sürdürmez,
+      // kendisi de başlık/alıntı olmaz; paragraf bağlamı olduğu gibi kalır.
+      info.kind = "fnDef";
     } else if (chunkStart && trimmed.startsWith("```kitap-tablo")) {
       info.kind = "code";
       chunkKind = trimmed.length > 15 && trimmed.endsWith("```") ? "p" : "code";
@@ -223,6 +235,20 @@ function decorateLines(infos: LineInfo[]): Decoration[] {
       continue;
     }
     if (L.kind === "space") continue;
+    if (L.kind === "fnDef") {
+      node("ks-fndef");
+      const d = /^\s*\[\^[^\]\s]+\]:\s*/.exec(L.text);
+      const body = d ? d[0].length : 0;
+      mk(0, body);
+      for (const h of inlineHits(L.text.slice(body))) {
+        const a = body + h.start;
+        const b = body + h.end;
+        mk(a, a + h.mark);
+        decos.push(Decoration.inline(from + 1 + a + h.mark, from + 1 + b - h.mark, { class: h.mark === 3 ? "ks-b ks-i" : h.mark === 2 ? "ks-b" : "ks-i" }));
+        mk(b - h.mark, b);
+      }
+      continue;
+    }
     let body = 0;
     if (L.kind === "heading") {
       node(`ks-h${L.level}`);
@@ -246,6 +272,14 @@ function decorateLines(infos: LineInfo[]): Decoration[] {
       mk(a, a + h.mark);
       decos.push(Decoration.inline(from + 1 + a + h.mark, from + 1 + b - h.mark, { class: cls }));
       mk(b - h.mark, b);
+    }
+    // Dipnot başvuruları: üst simge görünümü; "[^" ve "]" soluk (karakterler
+    // DOM'da kalır → imleç hareketi bozulmaz).
+    for (const r of refRanges(L.text)) {
+      if (r.start < body) continue;
+      decos.push(Decoration.inline(from + 1 + r.start, from + 1 + r.end, { class: "ks-fnref" }));
+      mk(r.start, r.start + 2);
+      mk(r.end - 1, r.end);
     }
   }
   return decos;
@@ -450,6 +484,8 @@ export function toggleInline(editor: Editor, mark: "**" | "*") {
   const text = doc.child(i).textContent;
   let a = Math.max(0, from - base);
   let z = Math.max(a, Math.min(text.length, to - base));
+  // Dipnot başvurusunun ([^1]) ortasından asla kesme: kenarları dışarı it.
+  ({ a, z } = snapOutOfRefs(text, a, z));
   const want = mark === "**" ? 2 : 1;
   const tr = state.tr;
   const hit = inlineHits(text).find((h) => a >= h.start && z <= h.end);
@@ -512,6 +548,40 @@ export function insertTokenLine(editor: Editor, token: string) {
   editor.view.focus();
 }
 
+/**
+ * Dipnot ekler (tek adımda geri alınır): imlecin kelimesinin sonuna (seçim
+ * varsa seçimin sonuna) "[^n]", paragraftan sonra (varsa mevcut tanımların
+ * arkasına) boş satır + "[^n]: " satırı; imleç not metnine geçer.
+ * n = metindeki en büyük sayısal dipnot + 1. Tablo/jeton/biçim/tanım
+ * satırlarında çalışmaz (false döner).
+ */
+export function insertFootnote(editor: Editor): boolean {
+  const { state } = editor;
+  const doc = state.doc;
+  const { from, to } = state.selection;
+  const i = lineIndexAt(doc, to);
+  const infos = classifyLines(doc, chunkFreshStart(doc, i), i + 1);
+  const info = infos[infos.length - 1];
+  if (!info || (info.kind !== "p" && info.kind !== "heading" && info.kind !== "quote")) return false;
+  const base = info.start + 1;
+  const len = info.text.length;
+  const zOff = Math.max(0, Math.min(len, to - base));
+  const aOff = from >= base ? Math.min(zOff, from - base) : 0;
+  const lines: string[] = [];
+  doc.forEach((l) => lines.push(l.textContent));
+  const plan = planFootnote(lines, i, aOff, zOff);
+  const ref = `[^${plan.id}]`;
+  const def = `${ref}: `;
+  const tr = state.tr.insertText(ref, base + plan.refAt);
+  const end = lineStart(tr.doc, plan.afterLine) + tr.doc.child(plan.afterLine).nodeSize;
+  const nodes = linesToNodes(state.schema, plan.trailingBlank ? ["", def, ""] : ["", def]);
+  tr.insert(end, Fragment.from(nodes));
+  tr.setSelection(TextSelection.create(tr.doc, end + nodes[0].nodeSize + 1 + def.length));
+  editor.view.dispatch(tr.scrollIntoView());
+  editor.view.focus();
+  return true;
+}
+
 function readState(editor: Editor): ManuscriptState {
   const { state } = editor;
   const info = currentInfo(state);
@@ -559,6 +629,10 @@ const KsKeys = Extension.create({
       },
       "Mod-Enter": ({ editor }) => {
         insertTokenLine(editor, "[[sayfa-sonu]]");
+        return true;
+      },
+      "Mod-Alt-f": ({ editor }) => {
+        insertFootnote(editor);
         return true;
       },
     };
@@ -898,6 +972,7 @@ export function ManuscriptEditor({
         findState.current = { query: "", doc: null, hits: [], cur: -1 };
         if (alive()) editor.view.dispatch(editor.state.tr.setMeta(findKey, DecorationSet.empty).setMeta("addToHistory", false));
       },
+      insertFootnote: () => alive() && insertFootnote(editor),
     };
     onReady?.(api);
     return () => onReady?.(null);
@@ -934,6 +1009,9 @@ export function ManuscriptEditor({
         .tiptap-book .ks-note { background: #fdf0c4; border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; cursor: pointer; }
         .tiptap-book .ks-active { background: #ece7ff; box-shadow: 0 0 0 2px #ece7ff; border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
         .tiptap-book .ks-find { background: #fde68a; border-radius: 2px; }
+        .tiptap-book .ks-fnref { vertical-align: super; font-size: 0.68em; line-height: 0; font-weight: 600; font-style: normal; color: var(--color-accent, #4f46e5); }
+        .tiptap-book .ks-fnref .ks-mk { color: #c9c4dc; font-weight: 400; }
+        .tiptap-book .ks-fndef { font-size: 0.82em; line-height: 1.6; color: #5b5b66; padding-left: 0.9em; border-left: 2px solid #e4e0f2; }
         .tiptap-book .ks-find-cur { background: #f59e0b; color: #fff; }
       `}</style>
     </div>

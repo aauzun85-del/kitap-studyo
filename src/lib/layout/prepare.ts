@@ -36,19 +36,23 @@ const OPENS_BEFORE_QUOTE = "([{‘“<«—–-/"; // bu karakterlerden sonra t�
 // Türkçe dizgide cümle/ara çizgisi ARALIKLI em dash (" — ") ile yazılır. Kaynak
 // metindeki karışık kullanım tek kurala bağlanır. KORUNANLAR: kelime içi tire
 // (ara-sıra) ve sayı aralıklarındaki bitişik en dash (1914–1918).
-export function normalizeDashesText(text: string): string {
+export function normalizeDashesText(text: string, atStart = true): string {
   let s = text;
   s = s.replace(/-{2,}/g, "—");          // çift/çoklu tire → em dash
   s = s.replace(/ +[-–] +/g, " — ");     // aralıklı kısa tire / en dash → aralıklı em dash
   s = s.replace(/\s*—\s*/g, " — ");      // tüm em dash'leri tek boşlukla aç (bitişik dahil)
-  s = s.replace(/^\s*—\s/, "— ");        // satır/paragraf başı diyalog tiresi: önünde boşluk yok
+  // Satır/paragraf başı diyalog tiresi: önünde boşluk yok. Yalnız bloğun GERÇEK
+  // başında (dipnot/biçim yüzünden bölünmüş run'ın başı paragraf başı değildir).
+  if (atStart) s = s.replace(/^\s*—\s/, "— ");
   return s;
 }
 
 export function applySmartQuotesToRuns(runs: Run[], prevRef: { prev: string }): Run[] {
   return runs.map((r) => {
+    // Dipnot: kendi bağlamında akıllı tırnak; gövdenin bağlamını bozmaz.
+    if (r.fn) return { ...r, fn: { ...r.fn, runs: applySmartQuotesToRuns(r.fn.runs, { prev: "" }) } };
     let s = "";
-    for (const ch of normalizeDashesText(r.text)) {
+    for (const ch of normalizeDashesText(r.text, prevRef.prev === "")) {
       const prev = prevRef.prev;
       if (ch === '"') {
         const open = prev === "" || /\s/.test(prev) || OPENS_BEFORE_QUOTE.includes(prev);

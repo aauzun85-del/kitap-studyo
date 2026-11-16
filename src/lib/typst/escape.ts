@@ -32,10 +32,22 @@ function styledWrap(r: Run, m: string): string {
   return m;
 }
 
-export function runsToMarkup(runs: Run[]): string {
+// Dipnot run'ı (fn) → #_fn[...] (şablon: sayfa altı / bölüm / kitap sonu).
+// noFn: dipnotlar atlanır (içindekiler, koşu başlığı gibi KOPYA yerler için —
+// aynı dipnot iki kez basılmasın).
+export function runsToMarkup(runs: Run[], opts?: { noFn?: boolean }): string {
   let out = "";
   let prevStyled = false;
   for (const r of runs) {
+    if (r.fn) {
+      if (opts?.noFn) continue;
+      // İşaret kelimeye yapışık: önündeki boşluk satır kırılma fırsatı olmasın.
+      // (Typst satır kırılması "\ " ya da kaçışlı boşluk korunur.)
+      out = out.replace(/(?<!\\)[ \t]+$/, "");
+      out += `#_fn[${runsToMarkup(r.fn.runs, { noFn: true })}]`;
+      prevStyled = true; // "]" sonrası ( ; . kaçırılsın
+      continue;
+    }
     let m = escapeTypst(r.text);
     // Önceki run #strong/#emph ile bittiyse, bu run'ın baş ( ; . karakterini
     // kaçır → "]" sonrası kod-devamı (çağrı/alan/yutma) olmasın.

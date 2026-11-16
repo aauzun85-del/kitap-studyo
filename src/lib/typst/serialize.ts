@@ -9,6 +9,7 @@
 import type { Block, BookMeta, LayoutSettings, Run } from "@/lib/layout/paginate";
 import type { BookSize, Margins } from "@/lib/layout/page";
 import { smartQuoteBlocks, prepareMeta } from "@/lib/layout/prepare";
+import { countFootnotes } from "@/lib/layout/footnotes";
 import { KDY_RULES } from "@/lib/layout/kdy";
 import { runsToMarkup, escapeTypst } from "./escape";
 import { buildPreamble, typstStr, upperTr } from "./template";
@@ -47,15 +48,20 @@ function chapterOpen(
   // Bölüm adının Türkçe BÜYÜK HARF hâli (JS'te): "aralıklı büyük harf" başlık
   // biçimi ve "büyük harf" koşu başlığı bunu gösterir. Başlığın kendisi (içindekiler)
   // özgün yazımıyla kalır.
+  const plainTitle = b.runs.map((r) => r.text).join("");
+  // Aralıklı büyük harf başlık <chup>'ı GÖSTERİR (dipnot işareti dahil — başlığın
+  // kendisi gösterilmez, dipnot bir kez basılır).
   const chup =
-    s.runningHeadStyle === "caps" || s.chapterStyle === "spaced-caps"
-      ? ` #metadata(${typstStr(upperTr(b.runs.map((r) => r.text).join(""), s.lang))}) <chup>`
+    s.chapterStyle === "spaced-caps"
+      ? ` #metadata([${runsToMarkup(upperRuns(b.runs, s.lang))}]) <chup>`
       : "";
+  // Koşu başlığı kaydı: dipnotsuz düz + büyük harf hâli. Bölüm adı (sonnot grupları).
+  const chrh = ` #metadata((plain: [${runsToMarkup(b.runs, { noFn: true })}], up: ${typstStr(upperTr(plainTitle, s.lang))})) <chrh> #_chs.update(${typstStr(plainTitle.trim())})`;
   const runs = b.runs;
   // marker (blok jetonu) sayfa kırılışından SONRA, başlığın yanında → konumu bölüm
   // sayfasını verir (kırılıştan önce olsa önceki sayfayı gösterirdi).
   // Etiket: konsept içindekiler düzenleri sayfa numarasını buradan bulur.
-  const title = `${marker}${chup} #heading(level: 1, outlined: true)[${runsToMarkup(runs)}] <${label}>`;
+  const title = `${marker}${chup}${chrh} #heading(level: 1, outlined: true)[${runsToMarkup(runs)}] <${label}>`;
   return `#_chapter(${kick}${numArg}ornament: "${orn}", right: ${right}, top: ${topMm}mm)[${title}]`;
 }
 
@@ -137,6 +143,11 @@ function leadCapsPara(runs: Run[], lang?: "tr" | "en"): string {
   const rest: Run[] = [];
   let used = 0;
   for (const r of runs) {
+    if (r.fn) {
+      // Dipnot işareti yerinde kalır (baş kısmın içindeyse başla birlikte).
+      (used >= leadLen ? rest : lead).push(r);
+      continue;
+    }
     if (used >= leadLen) {
       rest.push(r);
       continue;
@@ -155,6 +166,9 @@ function leadCapsPara(runs: Run[], lang?: "tr" | "en"): string {
 // Bölümün İLK paragrafı: drop-cap. İlk grafem büyük baş harf; kalanı düz metin
 // (drop-cap paragrafında satır-içi kalın/italik ender → düşürülür, v1).
 function dropCapPara(b: Extract<Block, { type: "paragraph" }>): string {
+  // Dipnotlu paragrafta büyük baş harf yapılmaz (baş harf düz metinle çizilir,
+  // dipnot kaybolurdu).
+  if (b.runs.some((r) => r.fn)) return runsToMarkup(b.runs);
   const plain = b.runs.map((r) => r.text).join("");
   const cap = [...plain][0] ?? "";
   if (!cap.trim()) return runsToMarkup(b.runs);
@@ -264,6 +278,32 @@ export function bookToTypst(input: TypstBookInput): string {
 
   const out: string[] = [];
 
+  // Dipnotlar: kitap sonu "Notlar" bölümü (varsa kaynakçadan ÖNCE).
+  const fnPlace = input.settings.footnotePlacement ?? "page";
+  const hasNotes = countFootnotes(blocks) > 0;
+  const notesChapter = hasNotes && fnPlace === "book";
+  const notesTitle = input.settings.lang === "en" ? "Notes" : "Notlar";
+  // Kitabın SONUNDAKİ kaynakça bölüm(ler)inden önce; sonda kaynakça yoksa en sona.
+  let notesAt = -1;
+  if (notesChapter) {
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const b = blocks[i];
+      if (b.type !== "heading" || b.level !== 1 || b.subhead) continue;
+      if (isBibliographyTitle(b.runs.map((r) => r.text).join(""))) notesAt = i;
+      else break;
+    }
+  }
+  // Notlar bölümü sıradan bir bölüm gibi açılır (başlık biçimi, koşu başlığı kaydı).
+  const notesOpen = () =>
+    chapterOpen(
+      { type: "heading", level: 1, runs: [{ text: notesTitle, bold: false, italic: false }] },
+      "",
+      input.settings,
+      contentHeightMm,
+      null,
+      "ks-notes",
+    ) + "\n#_endnotesAll()";
+
   // Ön sayfa (showFrontMatter): başlık sayfası + biyografi + İÇİNDEKİLER. KDY ilk
   // 2 sayfayı (logo+künye) kendi ekler → iç PDF başlık sayfasıyla başlar. Sayfa
   // numarası ön sayfada gizli; gövdede 1'den başlasın diye sayaç sıfırlanır.
@@ -285,17 +325,22 @@ export function bookToTypst(input: TypstBookInput): string {
     if (bioParas) out.push(`#_biopage[${bioParas}]`);
     const tocTitle = input.settings.lang === "en" ? "CONTENTS" : "İÇİNDEKİLER";
     const tocStyle = input.settings.tocStyle ?? "classic";
-    if (tocStyle === "classic") out.push(`#_toc("${tocTitle}")`);
+    // Başlıkta dipnot varsa veya "Notlar" bölümü eklenecekse klasik içindekiler
+    // de liste ile çizilir (Typst outline'ı dipnotu ikinci kez basardı).
+    const headFn = blocks.some((b) => b.type === "heading" && b.level === 1 && b.runs.some((r) => r.fn));
+    if (tocStyle === "classic" && !headFn && !notesChapter) out.push(`#_toc("${tocTitle}")`);
     else {
       // Konsept düzeni: (etiket, numara, özgün başlık) listesi; sayfa no Typst'ten.
       const nums = chapterNumbers(blocks);
       const entries = blocks
         .map((b, i) =>
           b.type === "heading" && b.level === 1 && !b.subhead
-            ? `("ks-ch-${i}", "${nums.get(i) ?? ""}", [${runsToMarkup(b.runs)}])`
+            ? (i === notesAt ? `("ks-notes", "", [${notesTitle}]), ` : "") +
+              `("ks-ch-${i}", "${nums.get(i) ?? ""}", [${runsToMarkup(b.runs, { noFn: true })}])`
             : null,
         )
         .filter(Boolean);
+      if (notesChapter && notesAt === -1) entries.push(`("ks-notes", "", [${notesTitle}])`);
       out.push(`#_toc2("${tocTitle}", (${entries.join(", ")}${entries.length === 1 ? "," : ""}))`);
     }
     out.push("#counter(page).update(1)");
@@ -330,6 +375,9 @@ export function bookToTypst(input: TypstBookInput): string {
   blocks.forEach((b, i) => {
     const mk = taggable(b) ? tag(i) + "\n" : "";
     if (b.type === "heading" && b.level === 1 && !b.subhead) {
+      // Bölüm sonu notları: önceki bölümün notları yeni bölüm açılmadan basılır.
+      if (hasNotes && fnPlace === "chapter") out.push(`#_endnotes(${typstStr(notesTitle)})`);
+      if (notesChapter && i === notesAt) out.push(notesOpen());
       const plain = b.runs.map((r) => r.text).join("").trim();
       const num = chapterNums.get(i) ?? null;
       inBib = bibOn && isBibliographyTitle(plain);
@@ -394,6 +442,8 @@ export function bookToTypst(input: TypstBookInput): string {
     }
     out.push(mk + blockToTypst(b, contentWidthMm, input.settings));
   });
+  if (hasNotes && fnPlace === "chapter") out.push(`#_endnotes(${typstStr(notesTitle)})`);
+  if (notesChapter && notesAt === -1) out.push(notesOpen());
   const body = out.filter((s) => s.length > 0).join("\n\n");
 
   return `${preamble}\n${body}\n`;

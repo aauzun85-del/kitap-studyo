@@ -11,7 +11,7 @@
 import type { Margins } from "./page";
 import type { PrintStandard } from "./standards";
 import type { ChapterOrnament } from "./themes";
-import type { ChapterStyle, SceneBreak, OrnamentKind, TocStyle, BibStyle } from "./paginate";
+import type { ChapterStyle, SceneBreak, OrnamentKind, TocStyle, BibStyle, FootnotePlacement } from "./paginate";
 
 export const LAYOUT_SETTINGS_VERSION = 1;
 
@@ -69,6 +69,11 @@ export type SavedLayoutSettings = {
   ornamentKind?: OrnamentKind;
   tocStyle?: TocStyle;
   bibStyle?: BibStyle;
+  footnotePlacement?: FootnotePlacement;
+  footnoteNumbering?: "arabic" | "symbols";
+  footnoteRestart?: "book" | "chapter";
+  footnoteSeparator?: "short" | "full" | "none";
+  footnoteSizePt?: number;
 };
 
 const STANDARDS: PrintStandard[] = ["kdy", "akademi", "kdp", "ingram", "bnpress", "lulu", "serbest"];
@@ -168,6 +173,11 @@ export function readSavedLayout(slice: unknown): Partial<SavedLayoutSettings> | 
     ornamentKind: oneOf(s.ornamentKind, ["fleuron", "leaf", "asterism", "star", "diamond-rule", "none"] as const),
     tocStyle: oneOf(s.tocStyle, ["classic", "plain", "numbered", "elegant"] as const),
     bibStyle: oneOf(s.bibStyle, ["none", "hanging", "numbered", "plain"] as const),
+    footnotePlacement: oneOf(s.footnotePlacement, ["page", "chapter", "book"] as const),
+    footnoteNumbering: oneOf(s.footnoteNumbering, ["arabic", "symbols"] as const),
+    footnoteRestart: oneOf(s.footnoteRestart, ["book", "chapter"] as const),
+    footnoteSeparator: oneOf(s.footnoteSeparator, ["short", "full", "none"] as const),
+    footnoteSizePt: num(s.footnoteSizePt, 5, 14),
   };
   return out;
 }

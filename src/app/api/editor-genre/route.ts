@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { chargeCredits } from "@/lib/credits/server";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { FOOTNOTE_FIELD_NOTE, FOOTNOTE_PROMPT_RULE } from "@/lib/editor/footnotePrompt";
 
 // AI Editör — Aşama 7: türe göre özel kontrol. Seçilen türe (roman, kişisel
 // gelişim, akademik) göre farklı tutarlılık/kalite başlıkları. Her gözlem
@@ -19,7 +20,7 @@ const Note = z.object({
   excerpt: z
     .string()
     .describe(
-      "İlgili kısa pasaj, metinden BİREBİR kopyalanmış (3-12 kelime); sorunun yerini göstermek için.",
+      "İlgili kısa pasaj, metinden BİREBİR kopyalanmış (3-12 kelime); sorunun yerini göstermek için." + FOOTNOTE_FIELD_NOTE,
     ),
   category: z
     .enum([
@@ -47,7 +48,7 @@ const Note = z.object({
   rewrite: z
     .string()
     .describe(
-      "Pasajın (excerpt) yerine BİREBİR konacak düzeltilmiş hâli: excerpt'le aynı kapsamda (aynı yerden başlar, aynı yerde biter), öncesi ve sonrasıyla uyumlu, yalnız düz metin (açıklama, tırnak işareti, not YOK). Düzeltme metne doğrudan yazılamıyorsa (ör. 'kaynak ekleyin', 'yazardan izin alın') ya da emin değilsen boş bırak.",
+      "Pasajın (excerpt) yerine BİREBİR konacak düzeltilmiş hâli: excerpt'le aynı kapsamda (aynı yerden başlar, aynı yerde biter), öncesi ve sonrasıyla uyumlu, yalnız düz metin (açıklama, tırnak işareti, not YOK). Düzeltme metne doğrudan yazılamıyorsa (ör. 'kaynak ekleyin', 'yazardan izin alın') ya da emin değilsen boş bırak." + FOOTNOTE_FIELD_NOTE,
     ),
 });
 
@@ -88,6 +89,7 @@ function systemPrompt(language: "tr" | "en", genre: Genre): string {
       "- citation: kaynak/atıf gerektiren ama desteklenmemiş iddia.",
       "- definition: kavram tutarsızlığı veya tanımsız teknik terim.",
       "- objectivity: öznel, desteksiz genelleme.",
+      "Arkasında dipnot işareti ([^1]) olan iddia kaynaklı sayılır; onu 'citation' diye bildirme.",
       "category yalnız: citation, definition veya objectivity.",
     ].join("\n");
   }
@@ -111,6 +113,8 @@ function systemPrompt(language: "tr" | "en", genre: Genre): string {
     "4) Yazarın üslubuna saygı göster; öznel zevk meselelerini sorun gibi gösterme.",
     "5) Yalnız gerçekten önemli, türe özgü noktalara değin. Zorlama gözlem üretme.",
     "6) Belirgin bir sorun yoksa boş bir 'notes' listesi döndür.",
+    "",
+    FOOTNOTE_PROMPT_RULE,
   ].join("\n");
 }
 

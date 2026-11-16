@@ -34,10 +34,12 @@ import {
   matchSpacer,
   matchFmtLine,
 } from "./mediaTokens";
+import { extractFootnotes, splitFootnoteRuns, FN_PH_RE, FN_DEF_RE } from "./footnotes";
 import { COVER_FONTS } from "@/lib/cover/fonts";
 
 // ── Biçimlendirme parçaları ────────────────────────────────────────────────
-export type Run = { text: string; bold: boolean; italic: boolean };
+// fn: dipnot başvurusu (metni BOŞ run; dipnotun kendisi fn.runs). Bkz. footnotes.ts.
+export type Run = { text: string; bold: boolean; italic: boolean; fn?: { id: string; runs: Run[] } };
 export type Segment = { text: string; bold: boolean; italic: boolean };
 export type ParaAlign = "left" | "center" | "right" | "justify";
 
@@ -107,11 +109,19 @@ export type LayoutSettings = {
   tocStyle?: TocStyle;
   /** "Kaynakça" bölümünün düzeni (vars. "none" = düz paragraf, bugünkü). */
   bibStyle?: BibStyle;
+  // Dipnotlar (kitapta [^n] varsa): yer / numara / yeniden başlama / ayırıcı / punto.
+  footnotePlacement?: FootnotePlacement;
+  footnoteNumbering?: "arabic" | "symbols";
+  footnoteRestart?: "book" | "chapter";
+  footnoteSeparator?: "short" | "full" | "none";
+  footnoteSizePt?: number;
 };
 
 export type OrnamentKind = "fleuron" | "leaf" | "asterism" | "star" | "diamond-rule" | "none";
 export type TocStyle = "classic" | "plain" | "numbered" | "elegant";
 export type BibStyle = "none" | "hanging" | "numbered" | "plain";
+/** Dipnotun yeri: sayfa altı / bölüm sonu / kitap sonu ("Notlar"). */
+export type FootnotePlacement = "page" | "chapter" | "book";
 
 /** Bölüm açılış biçimleri (Typst _chapter). */
 export type ChapterStyle =
@@ -213,6 +223,8 @@ function headingLevel(line: string): 1 | 2 | 3 | 4 | null {
 }
 
 export function looksLikeHeading(line: string): boolean {
+  // Kullanılmayan dipnot tanımı ("[^3]: TDK.") başlık sanılmasın.
+  if (FN_DEF_RE.test(line.trim())) return false;
   const t = line.trim();
   if (!t || t.length > 60) return false;
   if (HEADING_KEYWORDS.test(t)) return true;
@@ -277,7 +289,7 @@ const plainOf = (runs: Run[]): string => runs.map((r) => r.text).join("").trim()
 // Satır-içi ***kalın italik*** / **kalın** / *italik* / _italik_ → Run[].
 // (AI Editör aynı ifadeyle ekranda biçimi gösterir: INLINE_MARK_RE.)
 export const INLINE_MARK_RE = /(\*\*\*([^*]+)\*\*\*|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_)/g;
-export function inlineRuns(text: string): Run[] {
+export function inlineRuns(text: string, fn?: { notes: Run[][]; ids: string[] }): Run[] {
   const runs: Run[] = [];
   const re = new RegExp(INLINE_MARK_RE.source, "g");
   let last = 0;
@@ -294,7 +306,9 @@ export function inlineRuns(text: string): Run[] {
     last = re.lastIndex;
   }
   if (last < text.length) runs.push({ text: text.slice(last), bold: false, italic: false });
-  return runs.filter((r) => r.text.length > 0);
+  // Dipnot yer tutucuları (parseBlocks ön geçişi) → boş metinli dipnot run'ları.
+  const out = fn ? splitFootnoteRuns(runs, fn.notes, fn.ids) : runs;
+  return out.filter((r) => r.text.length > 0 || r.fn);
 }
 
 // Canvas düzenlemesinde eski biçimi (kalın/italik) düzenlenmiş yeni düz metne
@@ -362,7 +376,8 @@ function normalizeParagraphBreaks(raw: string): string {
   // Yalnız GERÇEK paragraf sınırlarını (satır cümleyle biter + sonraki satır
   // büyük harf/tırnak/rakamla başlar) boş satıra yükselt; hard-wrap'e dokunma.
   return text.replace(
-    /([.!?…:]["'”’»)\]]*)\n(?!\n)(?=["'“‘«([\p{Lu}\p{N}])/gu,
+    // (Cümle sonundaki dipnot yer tutucusu — footnotes.ts — kapanış sayılır.)
+    /([.!?…:](?:["'”’»)\]]|\uE000[\uE100-\uF8FF])*)\n(?!\n)(?=["'“‘«([\p{Lu}\p{N}])/gu,
     "$1\n\n",
   );
 }
@@ -389,6 +404,15 @@ export function parseBlocks(
   // satırlarını yeni paragrafa yükseltme yapılmaz (dizeler kıtadan kopmasın).
   const keepLines = !!opts?.keepLineBreaks;
   const J = keepLines ? LINE_SEP : " ";
+  // Dipnotlar: tanım satırları ayıklanır, başvurular yer tutucuya döner (footnotes.ts).
+  const fx = extractFootnotes(raw);
+  raw = fx.text;
+  const fnCtx = fx.notes.length
+    ? { notes: fx.notes.map((n) => inlineRuns(n.text)), ids: fx.notes.map((n) => n.id) }
+    : undefined;
+  const IR = (t: string) => inlineRuns(t, fnCtx);
+  // Başlık sezgileri yer tutucusuz metne bakar ("GİRİŞ[^1]" yine başlıktır).
+  const T = (t: string) => t.replace(FN_PH_RE, "");
   // Bozuk kaynak onarımı: noktalamadan sonra boşluksuz birleşmiş kelimeleri ayır.
   // Bu boşluksuz birleşmeler tek DEV/BÖLÜNEMEZ parça oluşturup yaslamada (Knuth-
   // Plass) çılgın boşluklara yol açıyordu. lookbehind/lookahead → harfler tüketilmez,
@@ -434,6 +458,7 @@ export function parseBlocks(
     // Word'den taşınan resim/tablo jetonları — normalize EDİLMEDEN tanınır.
     const table = matchTableFence(rawChunk);
     if (table) {
+      if (fnCtx) table.rows = table.rows.map((row) => row.map((cell) => splitFootnoteRuns(cell, fnCtx.notes, fnCtx.ids)));
       blocks.push(table);
       continue;
     }
@@ -450,43 +475,43 @@ export function parseBlocks(
 
     if (first.startsWith(">")) {
       const text = rawLines.map((l) => l.replace(/^>\s?/, "")).join(J);
-      blocks.push({ type: "blockquote", runs: inlineRuns(text) });
+      blocks.push({ type: "blockquote", runs: IR(text) });
       continue;
     }
 
     if (detectHeadings) {
-      const lvl = headingLevel(first);
+      const lvl = headingLevel(T(first));
       if (lvl) {
-        blocks.push({ type: "heading", level: lvl, runs: inlineRuns(first.replace(/^#{1,4}\s*/, "").trim()) });
+        blocks.push({ type: "heading", level: lvl, runs: IR(first.replace(/^#{1,4}\s*/, "").trim()) });
         const rest = rawLines.slice(1).join(J);
-        if (rest) blocks.push({ type: "paragraph", runs: inlineRuns(rest) });
+        if (rest) blocks.push({ type: "paragraph", runs: IR(rest) });
         continue;
       }
-      if (looksLikeHeading(first)) {
+      if (looksLikeHeading(T(first))) {
         // Çok satırlı başlık: ardışık başlık-benzeri satırları tek bölüm
         // başlığında birleştir (örn. "BÖLÜM III" / "EGZOTERİK NEFES" /
         // "TEORİSİ" → tek ana bölüm). Aksi halde başlık paragraf sanılır ve
         // bölüm yeni (tek) sayfadan başlamaz.
         let i = 1;
-        while (i < rawLines.length && looksLikeHeading(rawLines[i])) i++;
+        while (i < rawLines.length && looksLikeHeading(T(rawLines[i]))) i++;
         const headingText = rawLines.slice(0, i).join(" ");
-        if (isClosingWord(headingText)) {
+        if (isClosingWord(T(headingText))) {
           // Kapanış vinyeti: ortalı, gövde puntosunda; bölüm değil (TOC'a girmez).
-          blocks.push({ type: "paragraph", runs: inlineRuns(headingText), align: "center" });
+          blocks.push({ type: "paragraph", runs: IR(headingText), align: "center" });
         } else {
           // Numaralı/sıralı küçük başlıklar (EGZERSİZ I, "(1) ...") AYRI SAYFA
           // AÇMAZ → level 2 (akış içinde kalın ara başlık). Diğerleri tentatif
           // ana bölüm (level 1); kesin hiyerarşi restructureHeadings'te belirlenir.
-          const lvl = looksLikeSubsection(headingText) ? 2 : 1;
-          blocks.push({ type: "heading", level: lvl, runs: inlineRuns(headingText) });
+          const lvl = looksLikeSubsection(T(headingText)) ? 2 : 1;
+          blocks.push({ type: "heading", level: lvl, runs: IR(headingText) });
         }
         const rest = rawLines.slice(i).join(J);
-        if (rest) blocks.push({ type: "paragraph", runs: inlineRuns(rest) });
+        if (rest) blocks.push({ type: "paragraph", runs: IR(rest) });
         continue;
       }
       // Kalın + kısa + tek satır → ara başlık (subhead).
       if (rawLines.length === 1) {
-        const sruns = inlineRuns(first);
+        const sruns = IR(first);
         if (looksLikeSubhead(sruns)) {
           blocks.push({ type: "heading", level: 2, runs: sruns, align: "center", subhead: true });
           continue;
@@ -494,7 +519,7 @@ export function parseBlocks(
       }
     }
 
-    blocks.push({ type: "paragraph", runs: inlineRuns(rawLines.join(J)) });
+    blocks.push({ type: "paragraph", runs: IR(rawLines.join(J)) });
   }
 
   // Stil işaretlerini bloklara uygula (font id → aile adı). restructureHeadings
@@ -577,6 +602,9 @@ export function restructureHeadings(input: Block[]): Block[] {
       const next = blocks[i + 1];
       if (next && next.type === "heading") {
         next.kicker = plainOf(b.runs);
+        // İşaretteki dipnot ("BÖLÜM I[^1]") kaybolmasın: başlığın sonuna taşınır.
+        const fns = b.runs.filter((r) => r.fn);
+        if (fns.length) next.runs = [...next.runs, ...fns];
         next.level = 1;
         next.subhead = false;
         continue; // işaret bloğunu at (kicker'a taşındı)

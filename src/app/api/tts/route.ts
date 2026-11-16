@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { chargeCredits } from "@/lib/credits/server";
 import { createClient } from "@/lib/supabase/server";
+import { stripFootnotesFromRaw } from "@/lib/layout/footnoteText";
 
 // Metni sese çeviren rota (sesli kitap — yapay zekâ sesi). İKİ MOTOR desteklenir,
 // ikisi de AYNI Replicate anahtarıyla (REPLICATE_API_TOKEN) çalışır:
@@ -165,7 +166,9 @@ export async function POST(request: Request) {
   }
   const preview = body.preview === true;
   // Denemede istemci metni hiç kullanılmaz (bedava seslendirme kapısı olmasın).
-  const text = preview ? PREVIEW_TEXT : (body.text ?? "").trim();
+  // Yedek önlem: dipnot başvuruları ("[^1]") ve tanım satırları ("[^1]: …")
+  // hiçbir istemciden gelse de seslendirilmez (dipnotsuz metin aynen kalır).
+  const text = preview ? PREVIEW_TEXT : stripFootnotesFromRaw(body.text ?? "").trim();
   if (!text) return NextResponse.json({ error: "no-text" }, { status: 400 });
   if (text.length > HARD_CAP) return NextResponse.json({ error: "too-long" }, { status: 413 });
 

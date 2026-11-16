@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { chargeCredits } from "@/lib/credits/server";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { FOOTNOTE_FIELD_NOTE, FOOTNOTE_PROMPT_RULE } from "@/lib/editor/footnotePrompt";
 
 // AI Editör — Aşama 6: riskli içerik. Yazım/üslup DEĞİL; yalnız YAYIN/HUKUK
 // açısından ciddi riskler. Her gözlem advisory bir "notice" — düzeltme yok,
@@ -19,7 +20,7 @@ const Note = z.object({
   excerpt: z
     .string()
     .describe(
-      "İlgili kısa pasaj, metinden BİREBİR kopyalanmış (3-12 kelime); riskin yerini göstermek için.",
+      "İlgili kısa pasaj, metinden BİREBİR kopyalanmış (3-12 kelime); riskin yerini göstermek için." + FOOTNOTE_FIELD_NOTE,
     ),
   category: z
     .enum(["defamation", "privacy", "copyright", "claim", "misinfo"])
@@ -37,7 +38,7 @@ const Note = z.object({
   rewrite: z
     .string()
     .describe(
-      "Pasajın (excerpt) yerine BİREBİR konacak düzeltilmiş hâli: excerpt'le aynı kapsamda (aynı yerden başlar, aynı yerde biter), öncesi ve sonrasıyla uyumlu, yalnız düz metin (açıklama, tırnak işareti, not YOK). Düzeltme metne doğrudan yazılamıyorsa (ör. 'kaynak ekleyin', 'yazardan izin alın') ya da emin değilsen boş bırak.",
+      "Pasajın (excerpt) yerine BİREBİR konacak düzeltilmiş hâli: excerpt'le aynı kapsamda (aynı yerden başlar, aynı yerde biter), öncesi ve sonrasıyla uyumlu, yalnız düz metin (açıklama, tırnak işareti, not YOK). Düzeltme metne doğrudan yazılamıyorsa (ör. 'kaynak ekleyin', 'yazardan izin alın') ya da emin değilsen boş bırak." + FOOTNOTE_FIELD_NOTE,
     ),
 });
 
@@ -82,6 +83,8 @@ function systemPrompt(language: "tr" | "en"): string {
     "   yalnız düz metin. Yazarın sesini koru; yalnız gereken kadar değiştir.",
     "   Metne doğrudan yazılamayan öneride (kaynak ekle, izin al vb.) boş bırak.",
     "5) Belirgin bir risk yoksa boş bir 'notes' listesi döndür.",
+    "",
+    FOOTNOTE_PROMPT_RULE,
   ].join("\n");
 }
 

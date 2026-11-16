@@ -8,6 +8,7 @@ import { requireExport } from "@/lib/credits/exportGate";
 import { useMetaSync, useManuscriptSync } from "@/lib/projects/useSync";
 import { docxToText } from "@/lib/editor/docxText";
 import { splitChapters } from "@/lib/publish/chapters";
+import { stripFootnotesFromRaw } from "@/lib/layout/footnoteText";
 import { buildEpubBlob, suggestFilename } from "@/lib/publish/epub";
 import { buildPdfBlob } from "@/lib/publish/pdf";
 import {
@@ -84,7 +85,11 @@ export default function EkitapStudio({
     [chapters],
   );
   const stats = useMemo(
-    () => ({ words: raw.trim() ? raw.trim().split(/\s+/).length : 0, chars: raw.length }),
+    () => {
+      // Dipnot işaretleri/tanımları kelime sayısına girmesin (dipnotsuz metinde aynı).
+      const body = stripFootnotesFromRaw(raw).trim();
+      return { words: body ? body.split(/\s+/).length : 0, chars: raw.length };
+    },
     [raw],
   );
   const hasText = raw.trim().length > 0;
@@ -101,9 +106,14 @@ export default function EkitapStudio({
     resetBuild();
     try {
       const buffer = await file.arrayBuffer();
-      const { text, paragraphCount } = docxToText(buffer);
+      const { text, paragraphCount, footnoteCount } = docxToText(buffer);
       setRaw(text);
-      setImportInfo(t.wordImportedInfo.replace("{paragraphs}", String(paragraphCount)));
+      const info = t.wordImportedInfo.replace("{paragraphs}", String(paragraphCount));
+      setImportInfo(
+        footnoteCount > 0
+          ? info.replace(/\.$/, "") + t.wordImportedFootnotes.replace("{n}", String(footnoteCount))
+          : info,
+      );
     } catch {
       setImportError(true);
     } finally {
@@ -160,10 +170,21 @@ export default function EkitapStudio({
     setBuilding(true);
     resetBuild();
     try {
-      const pubChapters = chapters.map((c) => ({
-        title: c.title || t.chapterUntitled,
-        paragraphs: c.paragraphs,
-      }));
+      // Dipnotlu bölümde işaretli paragraflar + bölüm sonu notları geçer.
+      const pubChapters = chapters.map((c) =>
+        c.notes?.length
+          ? {
+              title: c.title || t.chapterUntitled,
+              paragraphs: c.noteParagraphs ?? c.paragraphs,
+              notes: c.notes,
+              heading: c.noteTitle,
+            }
+          : {
+              title: c.title || t.chapterUntitled,
+              paragraphs: c.paragraphs,
+            },
+      );
+      const notesTitle = lang === "en" ? "Notes" : "Notlar";
       const title = bookTitle.trim() || t.untitledBook;
       const author = bookAuthor.trim();
       const base = suggestFilename(title).replace(/\.epub$/, "");
@@ -174,15 +195,15 @@ export default function EkitapStudio({
         : undefined;
 
       if (formats.epub) {
-        const blob = await buildEpubBlob({ title, author, lang, tocTitle: t.tocTitle, chapters: pubChapters, cover });
+        const blob = await buildEpubBlob({ title, author, lang, tocTitle: t.tocTitle, chapters: pubChapters, cover, notesTitle });
         download(blob, `${base}.epub`);
       }
       if (formats.kindle) {
-        const blob = await buildEpubBlob({ title, author, lang, tocTitle: t.tocTitle, chapters: pubChapters, cover });
+        const blob = await buildEpubBlob({ title, author, lang, tocTitle: t.tocTitle, chapters: pubChapters, cover, notesTitle });
         download(blob, `${base}-kdp.epub`);
       }
       if (formats.pdf) {
-        const blob = await buildPdfBlob({ title, author, chapters: pubChapters });
+        const blob = await buildPdfBlob({ title, author, chapters: pubChapters, notesTitle });
         download(blob, `${base}.pdf`);
       }
       setEpubDone(true);

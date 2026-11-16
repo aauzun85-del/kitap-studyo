@@ -4,12 +4,24 @@
 // içindekiler önizlemesi hem de ileride EPUB/PDF/sesli kitap üretimi için ortak
 // kaynaktır.
 
-import { parseBlocks } from "@/lib/layout/paginate";
+import { parseBlocks, type Run } from "@/lib/layout/paginate";
+import { withoutFootnotes } from "@/lib/layout/footnotes";
+import { noteMark } from "@/lib/layout/footnoteText";
+
+/** Bölüm sonu dipnotu (numarası = notes dizisindeki sırası + 1; her bölümde 1'den başlar). */
+export type PublishNote = { runs: Run[] };
 
 export type PublishChapter = {
   title: string; // boş = başlıksız giriş bloğu
-  paragraphs: string[]; // düz metin paragrafları (biçim işaretleri ayıklanmış)
+  paragraphs: string[]; // düz metin paragrafları (biçim işaretleri ayıklanmış; dipnotsuz)
   words: number;
+  // Yalnız bölümde dipnot varsa dolu (dipnotsuz metinde alanlar hiç yoktur):
+  notes?: PublishNote[];
+  // paragraphs ile AYNI sırada/uzunlukta; dipnot başvurusunun yerinde noteMark(n)
+  // işareti taşır (EPUB/PDF üreticileri için — sesli okuma paragraphs'ı kullanır).
+  noteParagraphs?: string[];
+  // Başlığın kendisinde dipnot başvurusu varsa işaretli başlık (EPUB/PDF h1 için).
+  noteTitle?: string;
 };
 
 function runsToText(runs: { text: string }[]): string {
@@ -19,6 +31,21 @@ function runsToText(runs: { text: string }[]): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+// Dipnot başvurularını noteMark işaretiyle yazar; notları bölüme ekler.
+function runsToMarked(runs: Run[], notes: PublishNote[]): string {
+  return runs
+    .map((r) => {
+      if (!r.fn) return r.text;
+      notes.push({ runs: withoutFootnotes(r.fn.runs) });
+      return noteMark(notes.length);
+    })
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const hasFn = (runs: Run[]) => runs.some((r) => r.fn);
 
 function countWords(text: string): number {
   const trimmed = text.trim();
@@ -55,10 +82,18 @@ export function splitChapters(raw: string): PublishChapter[] {
   const blocks = parseBlocks(raw, true);
   const chapters: PublishChapter[] = [];
   let current: PublishChapter | null = null;
+  // Bölüm başına işaretli paragraflar (yalnız dipnotlu bölümlere eklenir).
+  const marked = new Map<PublishChapter, string[]>();
+  const notesOf = new Map<PublishChapter, PublishNote[]>();
 
-  const open = (title: string) => {
-    current = { title, paragraphs: [], words: 0 };
-    chapters.push(current);
+  const open = (title: string, runs?: Run[]) => {
+    // Başlıktaki dipnot run'larının metni boştur → başlık zaten dipnotsuz.
+    const ch: PublishChapter = { title, paragraphs: [], words: 0 };
+    current = ch;
+    chapters.push(ch);
+    marked.set(ch, []);
+    notesOf.set(ch, []);
+    if (runs && hasFn(runs)) ch.noteTitle = runsToMarked(runs, notesOf.get(ch)!);
   };
 
   for (const block of blocks) {
@@ -67,7 +102,7 @@ export function splitChapters(raw: string): PublishChapter[] {
     // Yalnız ana başlıklar (1. düzey) yeni bölüm açar; alt başlıklar gövdeye
     // metin olarak girer ki içindekiler sade kalsın.
     if (block.type === "heading" && block.level === 1) {
-      open(runsToText(block.runs));
+      open(runsToText(block.runs), block.runs);
       continue;
     }
 
@@ -78,13 +113,23 @@ export function splitChapters(raw: string): PublishChapter[] {
     // parseBlocks'un başlık saymadığı ama kullanıcının bölüm başlığı olarak
     // yazdığı kısa satırlar (sıra sayılı / numaralı) da yeni bölüm açar.
     if (looksLikeChapterTitle(text)) {
-      open(text);
+      open(text, block.runs);
       continue;
     }
 
     if (!current) open(""); // başlıksız giriş
-    current!.paragraphs.push(text);
-    current!.words += countWords(text);
+    const ch: PublishChapter = current!;
+    ch.paragraphs.push(text);
+    ch.words += countWords(text);
+    marked.get(ch)!.push(hasFn(block.runs) ? runsToMarked(block.runs, notesOf.get(ch)!) : text);
+  }
+
+  // Dipnotlu bölümlere notları ve işaretli paragrafları ekle.
+  for (const ch of chapters) {
+    const notes = notesOf.get(ch)!;
+    if (!notes.length) continue;
+    ch.notes = notes;
+    ch.noteParagraphs = marked.get(ch)!;
   }
 
   return chapters.filter((c) => c.title || c.paragraphs.length > 0);

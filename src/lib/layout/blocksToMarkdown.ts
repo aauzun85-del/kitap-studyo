@@ -24,6 +24,8 @@ function fmtPrefix(b: Extract<Block, { type: "paragraph" | "heading" | "blockquo
 function runsToMarkdown(runs: Run[]): string {
   return runs
     .map((r) => {
+      // Dipnot başvurusu: biçim işaretlerinin DIŞINDA "[^id]" (tanımı blok sonrası).
+      if (r.fn) return `[^${r.fn.id}]`;
       const t = r.text;
       if (!t) return "";
       const mark = r.bold && r.italic ? "***" : r.bold ? "**" : r.italic ? "*" : "";
@@ -35,11 +37,28 @@ function runsToMarkdown(runs: Run[]): string {
     .join("");
 }
 
+// Bloğun dipnotları → "[^id]: metin" satırları (bloğun hemen ardına, her biri
+// kendi paragrafı). Dipnot metni tek satıra iner (dize sonu/satır sonu → boşluk).
+function footnoteDefs(b: Block): string[] {
+  const runs =
+    b.type === "paragraph" || b.type === "heading" || b.type === "blockquote"
+      ? b.runs
+      : [];
+  return runs
+    .filter((r) => r.fn)
+    .map((r) => `[^${r.fn!.id}]: ${runsToMarkdown(r.fn!.runs).replace(/[\u2028\n]+/g, " ").trim()}`);
+}
+
 export function blocksToMarkdown(blocks: Block[]): { markdown: string; media: MediaMap } {
   const media: MediaMap = new Map();
   const parts: string[] = [];
 
   blocks.forEach((b, i) => {
+    pushBlock(b, i);
+    parts.push(...footnoteDefs(b));
+  });
+
+  function pushBlock(b: Block, i: number) {
     switch (b.type) {
       case "heading": {
         const lvl = Math.min(b.level, 4);
@@ -77,7 +96,7 @@ export function blocksToMarkdown(blocks: Block[]): { markdown: string; media: Me
         parts.push(spacerToken(b.mm));
         break;
     }
-  });
+  }
 
   // Bloklar boş satırla ayrılır (parseBlocks \n{2,} ile böler).
   return { markdown: parts.join("\n\n").replace(/\n{3,}/g, "\n\n").trim(), media };

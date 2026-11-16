@@ -108,6 +108,7 @@ import type { ProjectEnvelope } from "@/lib/projects/types";
 import { genreAiStyleId } from "@/lib/projects/genres";
 import { requireExport } from "@/lib/credits/exportGate";
 import { creditCost } from "@/lib/credits/pricing";
+import { stripFootnotesFromRaw } from "@/lib/layout/footnoteText";
 import CreditNotice, {
   creditProblemFrom,
   type CreditProblem,
@@ -2132,7 +2133,7 @@ export default function CoverStudio({
     setWizardChoice("run");
     void (async () => {
       const genre = initialProject?.data.meta.genre ?? "";
-      const summary = (initialProject?.data.manuscript.text ?? "").slice(0, 1500);
+      const summary = stripFootnotesFromRaw(initialProject?.data.manuscript.text ?? "").slice(0, 1500);
       let desc = "";
       let styleId = aiStyle;
       let blurb = "";
@@ -2255,7 +2256,7 @@ export default function CoverStudio({
         setPhotoRect(null);
       }
       const genre = initialProject?.data.meta.genre ?? "";
-      const summary = (initialProject?.data.manuscript.text ?? "").slice(0, 1500);
+      const summary = stripFootnotesFromRaw(initialProject?.data.manuscript.text ?? "").slice(0, 1500);
       let desc = "";
       let blurb = "";
       const ctrl = new AbortController();

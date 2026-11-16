@@ -429,6 +429,8 @@ type LayoutStudioCopy = {
   wordClearCta: string;
   wordImporting: string;
   wordImportedInfo: string;
+  /** Dipnot sayısı eki (yalnız >0): "{n}" yer tutucu; bilgi metninin sonuna eklenir. */
+  wordImportedFootnotes: string;
   wordError: string;
   wordHint: string;
   // Sayfa paneli.
@@ -634,6 +636,8 @@ type EditorStudioCopy = {
   wordCta: string;
   wordImporting: string;
   wordImportedInfo: string;
+  /** Dipnot sayısı eki (yalnız >0): "{n}" yer tutucu; bilgi metninin sonuna eklenir. */
+  wordImportedFootnotes: string;
   wordError: string;
   wordHint: string;
   // Word (.docx) dışa aktarma (düzenlenmiş metni indir).
@@ -800,6 +804,8 @@ type PublishStudioCopy = {
   wordCta: string;
   wordImporting: string;
   wordImportedInfo: string;
+  /** Dipnot sayısı eki (yalnız >0): "{n}" yer tutucu; bilgi metninin sonuna eklenir. */
+  wordImportedFootnotes: string;
   wordError: string;
   transferHint: string;
   formatsHeading: string;
@@ -1596,6 +1602,7 @@ const tr: Dictionary = {
     wordClearCta: "Aktarımı kaldır",
     wordImporting: "Aktarılıyor…",
     wordImportedInfo: "{paragraphs} paragraf · {headings} başlık aktarıldı.",
+    wordImportedFootnotes: " · {n} dipnot aktarıldı.",
     wordError: "Belge okunamadı. Geçerli bir .docx dosyası mı?",
     wordHint:
       "Yalnızca .docx desteklenir (eski .doc değil). Word'de Farklı Kaydet → .docx ile dönüştürebilirsiniz.",
@@ -1826,6 +1833,7 @@ const tr: Dictionary = {
     wordCta: "Word'den al (.docx)",
     wordImporting: "Aktarılıyor…",
     wordImportedInfo: "{paragraphs} paragraf metne aktarıldı.",
+    wordImportedFootnotes: " · {n} dipnot aktarıldı.",
     wordError: "Belge okunamadı. Geçerli bir .docx dosyası mı?",
     wordHint:
       "Yalnızca .docx desteklenir (eski .doc değil). Word'de Farklı Kaydet → .docx ile dönüştürebilirsiniz. Yalnız metin alınır; biçim, başlık vb. korunmaz.",
@@ -1986,6 +1994,7 @@ const tr: Dictionary = {
     wordCta: "Word'den al (.docx)",
     wordImporting: "Aktarılıyor…",
     wordImportedInfo: "Word belgesi aktarıldı: {paragraphs} paragraf.",
+    wordImportedFootnotes: " · {n} dipnot aktarıldı.",
     wordError: "Belge okunamadı. Dosyanın .docx olduğundan emin olun.",
     transferHint: "İpucu: Editör veya mizanpajda hazırladığınız metni aktarma özelliği yakında eklenecek.",
     formatsHeading: "E-kitap formatları",
@@ -2785,6 +2794,7 @@ const en: Dictionary = {
     wordClearCta: "Remove import",
     wordImporting: "Importing…",
     wordImportedInfo: "Imported {paragraphs} paragraphs · {headings} headings.",
+    wordImportedFootnotes: " · {n} footnotes imported.",
     wordError: "Could not read the document. Is it a valid .docx file?",
     wordHint:
       "Only .docx is supported (not the old .doc). In Word use Save As → .docx to convert.",
@@ -3015,6 +3025,7 @@ const en: Dictionary = {
     wordCta: "Import from Word (.docx)",
     wordImporting: "Importing…",
     wordImportedInfo: "Imported {paragraphs} paragraphs into the text.",
+    wordImportedFootnotes: " · {n} footnotes imported.",
     wordError: "Could not read the document. Is it a valid .docx file?",
     wordHint:
       "Only .docx is supported (not the old .doc). In Word use Save As → .docx to convert. Only the text is imported; formatting and headings aren't preserved.",
@@ -3175,6 +3186,7 @@ const en: Dictionary = {
     wordCta: "Import from Word (.docx)",
     wordImporting: "Importing…",
     wordImportedInfo: "Word document imported: {paragraphs} paragraphs.",
+    wordImportedFootnotes: " · {n} footnotes imported.",
     wordError: "Couldn't read the document. Make sure it's a .docx file.",
     transferHint: "Tip: importing text prepared in the editor or layout module is coming soon.",
     formatsHeading: "E-book formats",

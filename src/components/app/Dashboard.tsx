@@ -168,7 +168,7 @@ export default function Dashboard({
   // "Word yükle": dosya önce okunur, kitap formu adıyla açılır; kitap oluşunca
   // metin kitaba yazılır ve AI Editör'de açılır (orijinal .docx biçimiyle).
   const wordInputRef = useRef<HTMLInputElement>(null);
-  const [wordDoc, setWordDoc] = useState<{ name: string; text: string; buffer: ArrayBuffer; paragraphs: number } | null>(null);
+  const [wordDoc, setWordDoc] = useState<{ name: string; text: string; buffer: ArrayBuffer; paragraphs: number; footnotes: number } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -193,10 +193,10 @@ export default function Dashboard({
     setError(null);
     try {
       const buffer = await file.arrayBuffer();
-      const { text, paragraphCount } = docxToText(buffer);
+      const { text, paragraphCount, footnoteCount } = docxToText(buffer);
       if (!text.trim()) throw new Error("empty");
       onNew();
-      setWordDoc({ name: file.name, text, buffer, paragraphs: paragraphCount });
+      setWordDoc({ name: file.name, text, buffer, paragraphs: paragraphCount, footnotes: footnoteCount });
       setNTitle(file.name.replace(/\.docx$/i, "").replace(/[_-]+/g, " ").trim());
     } catch {
       setError(lang === "tr" ? "Word dosyası okunamadı. .docx biçiminde, metin içeren bir dosya seç." : "Couldn't read the Word file. Choose a .docx file with text.");
@@ -747,7 +747,7 @@ export default function Dashboard({
             <div style={{ fontSize: 14, color: "#6b7280", marginTop: 4, marginBottom: 16, lineHeight: 1.5 }}>{t.newSub}</div>
             {wordDoc && (
               <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 11, background: "var(--pri-soft)", color: "#1d2333", fontSize: 13.5, lineHeight: 1.45 }}>
-                <b>{wordDoc.name}</b> · {lang === "tr" ? `${wordDoc.paragraphs} paragraf okundu. Kitap oluşunca metin AI Editör'de açılır.` : `${wordDoc.paragraphs} paragraphs read. The text opens in the AI Editor once the book is created.`}
+                <b>{wordDoc.name}</b> · {lang === "tr" ? `${wordDoc.paragraphs} paragraf okundu${wordDoc.footnotes > 0 ? ` · ${wordDoc.footnotes} dipnot aktarıldı` : ""}. Kitap oluşunca metin AI Editör'de açılır.` : `${wordDoc.paragraphs} paragraphs read${wordDoc.footnotes > 0 ? ` · ${wordDoc.footnotes} footnotes imported` : ""}. The text opens in the AI Editor once the book is created.`}
               </div>
             )}
 

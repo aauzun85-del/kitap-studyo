@@ -105,9 +105,61 @@ const HELPERS = String.raw`#set heading(numbering: none)
   }
   else { text(font: _orn, size: sz, fill: ink)[❦] }
 }
+// ── Dipnotlar ──
+// Sayfa altı: Typst'in kendi #footnote'u. Bölüm/kitap sonu: işaret (üst simge)
+// + metadata kaydı; _endnotes() bölüm sonunda, _endnotesAll() "Notlar"da dizer.
+#let _chc = counter("ks-chc")
+#let _chs = state("ks-chs", none)
+#let _enc = counter("ks-en")
+#let _fnnum(n) = numbering(if _cfg.fnnum == "symbols" { "*" } else { "1" }, n)
+#let _fn(body) = {
+  if _cfg.fn == "page" { footnote(body) } else {
+    _enc.step()
+    context {
+      let n = _enc.get().first()
+      super(_fnnum(n))
+      [#metadata((n: n, ch: _chc.get().first(), title: _chs.get(), body: body))<ks-en>]
+    }
+  }
+}
+#let _enentry(m) = block(above: 0.45em, below: 0.45em, {
+  set par(first-line-indent: 0pt, hanging-indent: 1.6em, justify: _cfg.fnjust)
+  set text(size: _cfg.fnsize, style: "normal", weight: "regular", tracking: 0pt)
+  box(width: 1.6em, _fnnum(m.value.n) + if _cfg.fnnum == "symbols" { [] } else { [.] })
+  m.value.body
+})
+#let _enhead(t) = block(above: 2em, below: 0.9em, sticky: true, width: 100%, {
+  set par(first-line-indent: 0pt, justify: false)
+  align(center, text(font: _hf, size: 10pt, weight: 600, tracking: 0.12em, t))
+})
+// Bölüm sonu notları (bu bölümün işaretleri).
+#let _endnotes(title) = context {
+  let ch = _chc.get().first()
+  let ns = query(<ks-en>).filter(m => m.value.ch == ch)
+  if ns.len() > 0 {
+    block(above: 1.6em, below: 0pt, line(length: 22%, stroke: 0.4pt))
+    _enhead(title)
+    for m in ns { _enentry(m) }
+  }
+}
+// Kitap sonu "Notlar": numara bölümde yeniden başlıyorsa bölüm adlarıyla gruplanır.
+#let _endnotesAll() = context {
+  let ns = query(<ks-en>)
+  let last = -1
+  for m in ns {
+    if _cfg.fnreset == "chapter" and m.value.ch != last {
+      last = m.value.ch
+      if m.value.title != none { block(above: 1.4em, below: 0.6em, sticky: true, text(font: _hf, size: 9.5pt, weight: 700, m.value.title)) }
+    }
+    _enentry(m)
+  }
+}
 #let _chapter(kicker: none, ornament: "none", right: true, top: 30mm, num: none, body) = {
   let st = _cfg.chapter
   if _cfg.newpage { if right { pagebreak(to: "odd", weak: true) } else { pagebreak(weak: true) } } else { v(2.2em, weak: true) }
+  // Dipnot: bölüm sayacı (sonnotlar bölüme göre toplanır) + bölümde yeniden başlama.
+  _chc.step()
+  if _cfg.fnreset == "chapter" { counter(footnote).update(0); _enc.update(0) }
   v(top)
   let al = if _chleft { left } else { center }
   let head = {
@@ -192,8 +244,9 @@ const HELPERS = String.raw`#set heading(numbering: none)
   if calc.odd(here().page()) {
     let bs = query(heading.where(level: 1)).filter(h => h.location().page() <= here().page())
     if bs.len() > 0 {
-      let ups = if caps { query(<chup>).filter(m => m.location().page() <= here().page()) } else { () }
-      align(right, if ups.len() > 0 { ups.last().value } else { bs.last().body })
+      // Dipnotsuz başlık kaydı (<chrh>): başlıktaki dipnot koşu başlığında tekrar çıkmasın.
+      let rh = query(<chrh>).filter(m => m.location().page() <= here().page())
+      align(right, if rh.len() > 0 { if caps { rh.last().value.up } else { rh.last().value.plain } } else { bs.last().body })
     }
   } else { align(left, bookTitle) }
 }
@@ -250,6 +303,8 @@ const HELPERS = String.raw`#set heading(numbering: none)
           text(font: _hf, fill: luma(110), e.at(1)), e.at(2), pg)))
       } else if st == "elegant" {
         block(above: 1.1em, below: 1.1em, width: 100%, link(loc, align(center, [#e.at(2) \ #text(size: 0.82em, style: "italic", fill: luma(90), pg)])))
+      } else if st == "classic" {
+        block(above: 0.55em, below: 0.55em, link(loc, [#e.at(2) #box(width: 1fr, repeat(gap: 2.5pt)[.]) #pg]))
       } else {
         block(above: 0.8em, below: 0.8em, link(loc, [#e.at(2) #h(1fr) #pg]))
       }
@@ -288,8 +343,22 @@ export function buildPreamble(input: TypstBookInput): string {
   const fontExpr = typstFontExpr(s.bodyFontFamily);
   // Başlık yazı tipi (bölüm/ara başlık, kapak sayfası). Boşsa gövdeninki.
   const headFontExpr = typstFontExpr(s.headingFontFamily || s.bodyFontFamily);
+  // Dipnot ayarları: bölüm/kitap sonu notlar varsayılan olarak bölümde yeniden başlar.
+  const fnPlace = s.footnotePlacement ?? "page";
+  // Simge numarası (*, †, ‡…) uzayıp gitmesin: sayfa altında HER SAYFADA, sonnotta
+  // her bölümde yeniden başlar.
+  const fnSym = s.footnoteNumbering === "symbols";
+  const fnReset = fnSym && fnPlace !== "page" ? "chapter" : (s.footnoteRestart ?? (fnPlace === "page" ? "book" : "chapter"));
+  const fnPerPage = fnSym && fnPlace === "page";
+  const fnSize = (s.footnoteSizePt ?? defaultFootnoteSizePt(s.bodySizePt)).toFixed(1);
+  const fnSep =
+    s.footnoteSeparator === "none"
+      ? "none"
+      : s.footnoteSeparator === "full"
+        ? "line(length: 100%, stroke: 0.4pt)"
+        : "line(length: 22%, stroke: 0.4pt)";
   const cfg = `#let _hf = ${headFontExpr}
-#let _cfg = (chapter: "${s.chapterStyle ?? "centered"}", scale: ${(s.chapterTitleScale ?? 1).toFixed(2)}, newpage: ${s.chapterNewPage !== false}, sub: "${s.subheadStyle ?? "center"}", quote: "${s.quoteStyle ?? "indent"}", rh: "${s.runningHeadStyle ?? "italic"}", folio: "${s.folioPosition ?? "outer"}", scene: "${s.sceneBreak ?? "stars"}", foliopen: ${!!s.keepLineBreaks}, orn: "${s.ornamentKind ?? "fleuron"}", toc: "${s.tocStyle ?? "classic"}", bib: "${s.bibStyle ?? "none"}")`;
+#let _cfg = (chapter: "${s.chapterStyle ?? "centered"}", scale: ${(s.chapterTitleScale ?? 1).toFixed(2)}, newpage: ${s.chapterNewPage !== false}, sub: "${s.subheadStyle ?? "center"}", quote: "${s.quoteStyle ?? "indent"}", rh: "${s.runningHeadStyle ?? "italic"}", folio: "${s.folioPosition ?? "outer"}", scene: "${s.sceneBreak ?? "stars"}", foliopen: ${!!s.keepLineBreaks}, orn: "${s.ornamentKind ?? "fleuron"}", toc: "${s.tocStyle ?? "classic"}", bib: "${s.bibStyle ?? "none"}", fn: "${fnPlace}", fnnum: "${s.footnoteNumbering ?? "arabic"}", fnreset: "${fnReset}", fnsize: ${fnSize}pt, fnjust: ${s.align === "justify"})`;
   // Koşu başlığında kitap adı: "caps" biçiminde Türkçe kuralıyla büyük harf.
   const headTitle = s.runningHeadStyle === "caps" ? upperTr(meta.title, s.lang) : meta.title;
   // Tireleme/dil işleme kitabın diline göre (EN kitap → İngilizce desenler).
@@ -343,14 +412,34 @@ ${HELPERS}
   margin: (top: ${mTop}mm, bottom: ${mBot}mm, inside: ${mIn}mm, outside: ${mOut}mm),
   binding: left,
   numbering: none,
-  header: ${s.showRunningHeads ? `_runHead(${typstStr(headTitle)})` : "none"},
+  header: ${
+    fnPerPage
+      ? `[#counter(footnote).update(0)${s.showRunningHeads ? `#_runHead(${typstStr(headTitle)})` : ""}]`
+      : s.showRunningHeads
+        ? `_runHead(${typstStr(headTitle)})`
+        : "none"
+  },
   footer: ${s.showPageNumbers ? "_pageFoot()" : "none"},
   background: ${background},
 )
 #set text(font: ${fontExpr}, size: ${s.bodySizePt}pt, lang: "${lang}", region: "${region}", hyphenate: ${s.hyphenate}, costs: (widow: ${s.widowControl === false ? 0 : 100}%, orphan: ${s.widowControl === false ? 0 : 100}%), overhang: ${s.opticalMargins !== false}, ligatures: true, discretionary-ligatures: false)
 #set par(justify: ${justify}, leading: ${leading}, first-line-indent: (amount: ${indent}mm, all: true), spacing: ${leading} + ${paraSpacing}mm, linebreaks: ${linebreaks})
 #set smartquote(enabled: false)
+#set footnote(numbering: ${s.footnoteNumbering === "symbols" ? '"*"' : '"1"'})
+#set footnote.entry(separator: ${fnSep}, clearance: 1em, gap: 0.5em, indent: 0pt)
+#show footnote.entry: it => {
+  set par(first-line-indent: 0pt, hanging-indent: 0pt, justify: ${justify}, leading: 0.5em, spacing: 0.5em)
+  set text(font: ${fontExpr}, size: ${fnSize}pt, style: "normal", weight: "regular", tracking: 0pt, fill: black)
+  // Numara + ince boşluk + not (Typst varsayılanında numara metne yapışık).
+  let loc = it.note.location()
+  par[#super(numbering(it.note.numbering, ..counter(footnote).at(loc)))#h(0.3em)#it.note.body]
+}
 `;
+}
+
+/** Dipnot puntosu varsayılanı: gövdeden 2 küçük, 7–11 pt arası (panel de bunu gösterir). */
+export function defaultFootnoteSizePt(bodySizePt: number): number {
+  return Math.min(11, Math.max(7, Math.round((bodySizePt - 2) * 2) / 2));
 }
 
 /** Kitabın diline göre BÜYÜK HARF (Türkçe: i → İ, ı → I). */

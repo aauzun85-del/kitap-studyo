@@ -11,6 +11,7 @@ import {
   setBlockStyle,
   toggleInline,
   insertTokenLine,
+  insertFootnote,
   type BlockStyle,
   type ManuscriptApi,
   type ManuscriptMark,
@@ -34,6 +35,9 @@ import { chunkText } from "@/lib/editor/chunk";
 import { docxToText } from "@/lib/editor/docxText";
 import { textToDocx, suggestDocxName } from "@/lib/editor/textToDocx";
 import { applyEditsToDocx, type DocxEdit } from "@/lib/editor/docxEdit";
+/** Dipnot tanımı satırına düşen düzeltme (Word gövdesine işlenmez). */
+type DocxEditNote = DocxEdit & { inNote?: boolean };
+import { isFnDefLine, preserveFootnoteRefs, refRanges, stripRefs, withoutDefLines } from "@/lib/editor/footnoteEdit";
 import {
   useEditorSession,
   patchSession,
@@ -237,13 +241,14 @@ function cleanWhitespace(text: string): string {
 
 // Metni cümlelere bölüp uzun olanları "notice" önerisi olarak döndürür.
 function findLongSentences(text: string): Suggestion[] {
-  const parts = text.split(/(?<=[.!?…])\s+|\n+/);
+  // Dipnot tanım satırları ölçülmez; [^1] işaretleri kelime sayılmaz.
+  const parts = withoutDefLines(text).split(/(?<=[.!?…])\s+|\n+/);
   const out: Suggestion[] = [];
   const seen = new Set<string>();
   for (const part of parts) {
     const sentence = part.trim();
     if (!sentence || seen.has(sentence)) continue;
-    const words = sentence.split(/\s+/).length;
+    const words = stripRefs(sentence).trim().split(/\s+/).length;
     if (words < LONG_SENTENCE_WORDS) continue;
     seen.add(sentence);
     out.push({
@@ -377,7 +382,10 @@ function parseStructure(text: string): StructureReport {
   };
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    // Dipnot tanımı ("[^1]: …") başlık sayılmaz, bölüm kelimesine katılmaz;
+    // [^1] işaretleri ölçmeden önce silinir.
+    if (isFnDefLine(lines[i])) continue;
+    const line = stripRefs(lines[i]);
     const prevBlank = i === 0 || lines[i - 1].trim() === "";
     const nextBlank = i === lines.length - 1 || lines[i + 1].trim() === "";
     // Sayfa görünümünde "Bölüm başlığı / Alt başlık" ile işaretlenen başlıklar.
@@ -491,10 +499,12 @@ function splitDiff(a: string, b: string): { pre: string; aMid: string; bMid: str
 // bağlıdır (aynı kelime başka cümlede doğru olabilir) → toplu sunulmaz.
 function bulkPair(s: Suggestion): { from: string; to: string } | null {
   if (s.kind !== "fix" || s.category !== "spelling" || !s.suggestion) return null;
-  const d = splitDiff(s.original, s.suggestion);
+  // Dipnot işaretleri ([^1]) farka girmez: toplu değiştirme yalnız kelimeye dokunur.
+  const d = splitDiff(stripRefs(s.original), stripRefs(s.suggestion));
   const from = d.aMid.trim();
   const to = d.bMid.trim();
   if (from.length < 3 || /\s/.test(from) || !/\p{L}/u.test(from) || !to || from === to) return null;
+  if (from.includes("[^") || to.includes("[^")) return null;
   return { from, to };
 }
 
@@ -876,17 +886,20 @@ function classBody(chars: string): string {
 // Pasajı, karakter farklarına toleranslı bir düzenli ifadeye çevirir.
 function buildFuzzyRegex(needle: string): RegExp | null {
   const n = needle.trim();
+  // AI pasajı dipnot işaretini ([^1]) atlamış olabilir: kelime sonlarında
+  // isteğe bağlı işarete izin ver (metinde işaret yoksa eşleşme aynıdır).
+  const ref = n.includes("[^") ? "" : "(?:\\[\\^[^\\]\\s]+\\])?";
   let out = "";
   let i = 0;
   while (i < n.length) {
     const ch = n[i];
     if (/\s/.test(ch)) {
-      out += "\\s+";
+      out += ref + "\\s+";
       while (i < n.length && /\s/.test(n[i])) i++;
       continue;
     }
     if (QUOTE_CHARS.includes(ch)) {
-      out += `[${classBody(QUOTE_CHARS)}]`;
+      out += ref + `[${classBody(QUOTE_CHARS)}]`;
       i++;
       continue;
     }
@@ -904,12 +917,14 @@ function buildFuzzyRegex(needle: string): RegExp | null {
         else dots++;
         i++;
       }
-      out += hasEllipsisChar || dots >= 2 ? "(?:\\u2026|\\.{2,})" : "\\.";
+      out += ref + (hasEllipsisChar || dots >= 2 ? "(?:\\u2026|\\.{2,})" : "\\.");
       continue;
     }
+    if (/[,;:!?)]/.test(ch)) out += ref;
     out += escapeReChar(ch);
     i++;
   }
+  out += ref;
   try {
     return new RegExp(out);
   } catch {
@@ -1173,12 +1188,17 @@ export default function EditorStudio({
     resetResults();
     try {
       const buffer = await file.arrayBuffer();
-      const { text, paragraphCount } = docxToText(buffer);
+      const res = docxToText(buffer);
+      const { text, paragraphCount } = res;
+      const footnoteCount = (res as { footnoteCount?: number }).footnoteCount ?? 0;
       setRaw(text);
       setManualEdit(false);
       // Orijinali sakla: dışa aktarırken biçimi koruyup düzeltmeleri içine işleriz.
       patch({ originalDocx: buffer, docxEdits: [] });
-      setImportInfo(t.wordImportedInfo.replace("{paragraphs}", String(paragraphCount)));
+      setImportInfo(
+        t.wordImportedInfo.replace("{paragraphs}", String(paragraphCount)) +
+          (footnoteCount > 0 ? (isTr ? ` ${footnoteCount} dipnot da alındı.` : ` ${footnoteCount} footnotes imported too.`) : ""),
+      );
     } catch {
       setImportError(true);
     } finally {
@@ -1612,9 +1632,9 @@ export default function EditorStudio({
   function acceptSuggestion(index: number, override?: string) {
     const s = suggestions?.[index];
     if (!s) return;
-    const replacement = override ?? (s.kind === "fix" ? s.suggestion : s.rewrite);
-    if (replacement == null) return;
-    if (replacement === s.original) {
+    const proposed = override ?? (s.kind === "fix" ? s.suggestion : s.rewrite);
+    if (proposed == null) return;
+    if (proposed === s.original) {
       // Değişiklik yok: kartı "atlandı" say.
       rejectSuggestion(index);
       return;
@@ -1633,12 +1653,27 @@ export default function EditorStudio({
       return;
     }
     const from = raw.slice(hit.at, hit.at + hit.len);
+    // Öneri dipnot işaretini ([^1]) düşürdüyse aynı kelimenin arkasına geri koy
+    // (metin, geri alma kaydı ve Word düzeltmesi aynı son metni kullanır).
+    const replacement = preserveFootnoteRefs(from, proposed);
+    if (replacement === from) {
+      rejectSuggestion(index); // öneri yalnız dipnot işaretini siliyordu → değişiklik yok
+      return;
+    }
     setRaw(raw.slice(0, hit.at) + replacement + raw.slice(hit.at + hit.len));
     action.changes.push({ at: hit.at, from, to: replacement });
     setDecisions((prev) => ({ ...prev, [index]: "accepted" }));
     // Yüklenen docx'e de işlenebilmesi için kabul edilen metin düzeltmesini sakla.
+    // [^n] işaretleri KORUNUR: docxEdit bunları Word'ün dipnot başvurularına
+    // eşleyip işaretleri yerinde bırakır. Dokunulan satır(lar)dan biri dipnot
+    // tanımıysa ("[^1]: …", metni Word'de ayrı dosyada) düzeltme inNote
+    // olarak işaretlenir ve gövdeye işlenmez.
     if (originalDocx) {
-      const edit = { original: from, suggestion: replacement };
+      const lineFrom = raw.lastIndexOf("\n", hit.at - 1) + 1;
+      const nl = raw.indexOf("\n", hit.at + hit.len);
+      const lineTo = nl === -1 ? raw.length : nl;
+      const inNote = raw.slice(lineFrom, lineTo).split("\n").some(isFnDefLine);
+      const edit: DocxEditNote = { original: from, suggestion: replacement, ...(inNote ? { inNote: true } : {}) };
       action.docx.push(edit);
       setDocxEdits((prev) => [...prev, edit]);
     }
@@ -1655,14 +1690,24 @@ export default function EditorStudio({
     let out = "";
     let last = 0;
     let shift = 0;
+    const refs = refRanges(raw);
     for (const m of raw.matchAll(wordRegex(pair.from))) {
       const from = m[0];
+      // Dipnot işaretinin ([^…]) içindeki eşleşmeye asla dokunma.
+      if (refs.some((r) => m.index < r.end && m.index + from.length > r.start)) continue;
       const to = isUpperTr(from.charAt(0)) ? capTr(pair.to) : pair.to;
       out += raw.slice(last, m.index) + to;
       changes.push({ at: m.index + shift, from, to });
       shift += to.length - from.length;
       last = m.index + from.length;
-      if (originalDocx) docx.push({ original: from, suggestion: to });
+      if (originalDocx) {
+        // Dipnot tanımı satırındaki eşleşme Word gövdesinde değil (notlar ayrı dosyada).
+        const ls = raw.lastIndexOf("\n", m.index - 1) + 1;
+        const le = raw.indexOf("\n", m.index);
+        const inNote = isFnDefLine(raw.slice(ls, le === -1 ? raw.length : le));
+        const edit: DocxEditNote = { original: from, suggestion: to, ...(inNote ? { inNote: true } : {}) };
+        docx.push(edit);
+      }
     }
     if (changes.length === 0) return;
     setRaw(out + raw.slice(last));
@@ -2710,8 +2755,8 @@ export default function EditorStudio({
           <h3 className="text-sm font-semibold text-foreground">{isTr ? "Sayfadaki işaretler" : "Marks on the page"}</h3>
           <p className="mt-1 text-xs leading-relaxed text-muted">
             {isTr
-              ? "Sayfada gördüğün metin, kitabın kaydedilen metninin birebir aynısıdır. Soluk renkli işaretler kitapta görünmez, yalnız biçimi belirler: # bölüm başlığı, ## alt başlık, > alıntı/şiir, **kalın**, *italik*, [[sayfa-sonu]] yeni sayfa. Enter yeni paragraf açar. Shift+Enter yalnız ekranda alt satıra geçer; kitapta satırlar aynı paragraf içinde akar."
-              : "The page shows the book's saved text exactly. Faint marks don't print; they set the format: # chapter title, ## subtitle, > quote/verse, **bold**, *italic*, [[sayfa-sonu]] page break. Enter starts a new paragraph. Shift+Enter breaks the line on screen only; in the book the lines flow on in the same paragraph."}
+              ? "Sayfada gördüğün metin, kitabın kaydedilen metninin birebir aynısıdır. Soluk renkli işaretler kitapta görünmez, yalnız biçimi belirler: # bölüm başlığı, ## alt başlık, > alıntı/şiir, **kalın**, *italik*, [[sayfa-sonu]] yeni sayfa, kelime[^1] dipnot işareti; [^1]: ile başlayan satır o dipnotun metnidir (kitapta sayfa altına iner). Enter yeni paragraf açar. Shift+Enter yalnız ekranda alt satıra geçer; kitapta satırlar aynı paragraf içinde akar."
+              : "The page shows the book's saved text exactly. Faint marks don't print; they set the format: # chapter title, ## subtitle, > quote/verse, **bold**, *italic*, [[sayfa-sonu]] page break, word[^1] footnote mark; a line starting with [^1]: is that footnote's text (printed at the foot of the page). Enter starts a new paragraph. Shift+Enter breaks the line on screen only; in the book the lines flow on in the same paragraph."}
           </p>
         </section>
 
@@ -3223,6 +3268,16 @@ export default function EditorStudio({
                   className={`${tbBtn} ${tbIdle} hidden md:flex`}
                 >
                   {isTr ? "␣ Boşluk" : "␣ Space"}
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => api && insertFootnote(api.editor)}
+                  disabled={!canFormat}
+                  title={isTr ? "İmlecin olduğu kelimeye dipnot ekle; not metnini altına yaz (⌘⌥F)" : "Add a footnote to the word at the cursor; type the note below it (⌘⌥F)"}
+                  className={`${tbBtn} ${tbIdle} hidden md:flex`}
+                >
+                  {isTr ? "¹ Dipnot" : "¹ Footnote"}
                 </button>
                 <button
                   type="button"

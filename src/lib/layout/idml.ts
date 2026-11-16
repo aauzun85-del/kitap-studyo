@@ -68,19 +68,51 @@ function justificationOf(align: ParaAlign | "left" | "justify" | undefined, fall
 type ParaStyle = "Govde" | "Baslik1" | "Baslik2" | "Alinti";
 
 // Ardışık aynı-biçimli run'ları birleştir (gereksiz CharacterStyleRange şişmesini
-// önler); boş metinli run'ları at.
+// önler); boş metinli run'ları at. Dipnot run'ları (fn; metni boş) AYRI öğe
+// olarak korunur, hiçbir şeyle birleştirilmez.
 function mergeRuns(runs: Run[]): Run[] {
   const out: Run[] = [];
   for (const r of runs) {
+    if (r.fn) {
+      out.push({ text: "", bold: false, italic: false, fn: r.fn });
+      continue;
+    }
     if (!r.text) continue;
     const last = out[out.length - 1];
-    if (last && last.bold === r.bold && last.italic === r.italic) {
+    if (last && !last.fn && last.bold === r.bold && last.italic === r.italic) {
       last.text += r.text;
     } else {
       out.push({ text: r.text, bold: r.bold, italic: r.italic });
     }
   }
   return out;
+}
+
+// InDesign yerel dipnotu (gerçek InDesign IDML'iyle aynı yapı): başvuru,
+// DipnotNo karakter stilli kendi CharacterStyleRange'inde bir <Footnote>; notun
+// metni Dipnot paragraf stilinde, başında otomatik numara (<?ACE 4?>).
+function footnoteRangeXml(note: Run[], br: string): string {
+  const ranges = mergeRuns(note.filter((r) => !r.fn));
+  const inner = ranges
+    .map(
+      (r) =>
+        `\t\t\t\t\t\t<CharacterStyleRange AppliedCharacterStyle="${charStyleOf(r)}">\n` +
+        `\t\t\t\t\t\t\t<Content>${xmlEscape(r.text)}</Content>\n` +
+        `\t\t\t\t\t\t</CharacterStyleRange>`,
+    )
+    .join("\n");
+  return (
+    `\t\t\t<CharacterStyleRange AppliedCharacterStyle="CharacterStyle/DipnotNo">\n` +
+    `\t\t\t\t<Footnote>\n` +
+    `\t\t\t\t\t<ParagraphStyleRange AppliedParagraphStyle="ParagraphStyle/Dipnot">\n` +
+    `\t\t\t\t\t\t<CharacterStyleRange AppliedCharacterStyle="CharacterStyle/$ID/[No character style]">\n` +
+    `\t\t\t\t\t\t\t<Content><?ACE 4?> </Content>\n` +
+    `\t\t\t\t\t\t</CharacterStyleRange>` +
+    (inner ? "\n" + inner : "") +
+    `\n\t\t\t\t\t</ParagraphStyleRange>\n` +
+    `\t\t\t\t</Footnote>${br}\n` +
+    `\t\t\t</CharacterStyleRange>`
+  );
 }
 
 function charStyleOf(r: Run): string {
@@ -115,7 +147,9 @@ function paragraphXml(
   ranges.forEach((r, i) => {
     const isLastRange = i === ranges.length - 1;
     const br = !isLast && isLastRange ? "\n\t\t\t\t<Br />" : "";
-    if (r.text) {
+    if (r.fn) {
+      parts.push(footnoteRangeXml(r.fn.runs, br));
+    } else if (r.text) {
       parts.push(
         `\t\t\t<CharacterStyleRange AppliedCharacterStyle="${charStyleOf(r)}"${ovAttr}>${ovFont}\n` +
         `\t\t\t\t<Content>${xmlEscape(r.text)}</Content>${br}\n` +
@@ -354,7 +388,84 @@ function geomOf(input: IdmlBookInput): Geom {
 
 // ── Kaynak dosyaları (Styles/Preferences/Fonts/Graphic/Master) ──────────────
 
-function stylesXml(s: LayoutSettings): string {
+// Dipnot stilleri (yalnız dipnotlu kitapta eklenir → dipnotsuz çıktı aynen kalır).
+function footnoteCharStyleXml(): string {
+  return `
+\t\t<CharacterStyle Self="CharacterStyle/DipnotNo" Name="DipnotNo" Position="Superscript">
+\t\t\t<Properties><BasedOn type="string">$ID/[No character style]</BasedOn></Properties>
+\t\t</CharacterStyle>`;
+}
+
+// Dipnot punto: Typst/JS motoruyla AYNI formül (ayar yoksa gövde − 2, yarım
+// puntoya yuvarlanmış, en az 7).
+function footnoteSizeOf(s: LayoutSettings): number {
+  const set = s.footnoteSizePt;
+  if (typeof set === "number" && Number.isFinite(set) && set > 0) return set;
+  return Math.max(7, Math.round((s.bodySizePt - 2) * 2) / 2);
+}
+
+function footnoteParaStyleXml(s: LayoutSettings): string {
+  const bodyFont = xmlEscape(s.bodyFontFamily || "Source Serif 4");
+  const pt = footnoteSizeOf(s);
+  const just = s.align === "justify" ? "LeftJustified" : "LeftAlign";
+  return `
+\t\t<ParagraphStyle Self="ParagraphStyle/Dipnot" Name="Dipnot" NextStyle="ParagraphStyle/Dipnot" PointSize="${ptStr(pt)}" LeftIndent="0" FirstLineIndent="0" SpaceBefore="0" SpaceAfter="${ptStr(mm2pt(1))}" Hyphenation="${s.hyphenate ? "true" : "false"}" Justification="${just}">
+\t\t\t<Properties>
+\t\t\t\t<BasedOn type="string">$ID/[No paragraph style]</BasedOn>
+\t\t\t\t<Leading type="enumeration">Auto</Leading>
+\t\t\t\t<AppliedFont type="string">${bodyFont}</AppliedFont>
+\t\t\t</Properties>
+\t\t</ParagraphStyle>`;
+}
+
+// Preferences.xml dipnot seçenekleri (gerçek InDesign dışa aktarımından): numara
+// üst simge, ayraç çizgisi ayara göre, belge boyunca sürekli numara.
+//
+// Ayar eşlemesi (LayoutSettings → InDesign FootnoteOption):
+// - footnoteNumbering: "arabic" → Arabic; "symbols" → Symbols (*, †, ‡, §, ¶…,
+//   Typst'in "*" numaralandırmasıyla aynı dizi).
+// - footnoteSeparator: "short" → metin genişliğinin %22'si (Typst ile aynı);
+//   "full" → tam metin genişliği; "none" → RuleOn/ContinuingRuleOn="false".
+//   Çizgi kalınlığı Typst'teki gibi 0,4 pt.
+// - footnoteRestart: dışa aktarım TEK Section + TEK Story üretir (bölümlerin hangi
+//   sayfada başladığı InDesign akıtana dek bilinmez), bu yüzden "chapter" yeniden
+//   başlatma (SectionRestart) burada hiçbir şey değiştirmezdi → her zaman
+//   DontRestart (kitap boyu sürekli numara). Bölümde sıfırlama gerekiyorsa kullanıcı
+//   InDesign'da bölüm başlarına Section ekleyip "Her bölümde yeniden başlat"ı seçer.
+// - footnotePlacement "chapter"/"book" (sonnot): InDesign'ın sonnot yapısı ayrı bir
+//   sonnot Story'si + çerçeve gerektirir; tahmin edilmiş XML üretmek yerine notlar
+//   IDML'de SAYFA DİPNOTU olarak kalır (PDF/Typst çıktısı sonnotu yine uygular).
+function footnoteOptionXml(s: LayoutSettings, g: Geom): string {
+  const numbering = s.footnoteNumbering === "symbols" ? "Symbols" : "Arabic";
+  const sep = s.footnoteSeparator ?? "short";
+  const ruleOn = sep === "none" ? "false" : "true";
+  const ruleWidth = ptStr(sep === "full" ? g.frameWpt : g.frameWpt * 0.22);
+  const contWidth = ptStr(g.frameWpt);
+  return `
+\t<FootnoteOption StartAt="1" Prefix="" Suffix="" FootnoteTextStyle="ParagraphStyle/Dipnot" FootnoteMarkerStyle="CharacterStyle/DipnotNo" SeparatorText=" " SpaceBetween="0" Spacer="5.669291338582678" FootnoteFirstBaselineOffset="LeadingOffset" FootnoteMinimumFirstBaselineOffset="0" EosPlacement="false" NoSplitting="false" RuleOn="${ruleOn}" RuleLineWeight="0.4" RuleTint="100" RuleGapTint="100" RuleGapOverprint="false" RuleOverprint="false" RuleLeftIndent="0" RuleWidth="${ruleWidth}" RuleOffset="0" ContinuingRuleOn="${ruleOn}" ContinuingRuleLineWeight="0.4" ContinuingRuleTint="100" ContinuingRuleGapTint="100" ContinuingRuleOverprint="false" ContinuingRuleGapOverprint="false" ContinuingRuleLeftIndent="0" ContinuingRuleWidth="${contWidth}" ContinuingRuleOffset="0" EnableStraddling="false">
+\t\t<Properties>
+\t\t\t<FootnoteNumberingStyle type="enumeration">${numbering}</FootnoteNumberingStyle>
+\t\t\t<RestartNumbering type="enumeration">DontRestart</RestartNumbering>
+\t\t\t<ShowPrefixSuffix type="enumeration">PrefixSuffixReference</ShowPrefixSuffix>
+\t\t\t<MarkerPositioning type="enumeration">SuperscriptMarker</MarkerPositioning>
+\t\t\t<RuleType type="object">StrokeStyle/$ID/Solid</RuleType>
+\t\t\t<RuleColor type="object">Color/Black</RuleColor>
+\t\t\t<RuleGapColor type="object">Swatch/None</RuleGapColor>
+\t\t\t<ContinuingRuleType type="object">StrokeStyle/$ID/Solid</ContinuingRuleType>
+\t\t\t<ContinuingRuleColor type="object">Color/Black</ContinuingRuleColor>
+\t\t\t<ContinuingRuleGapColor type="object">Swatch/None</ContinuingRuleGapColor>
+\t\t</Properties>
+\t</FootnoteOption>`;
+}
+
+// Kitapta dipnot var mı (paragraf/başlık/alıntı run'ları).
+function blocksHaveFootnotes(blocks: Block[]): boolean {
+  return blocks.some(
+    (b) => (b.type === "paragraph" || b.type === "heading" || b.type === "blockquote") && b.runs.some((r) => r.fn),
+  );
+}
+
+function stylesXml(s: LayoutSettings, withFootnotes = false): string {
   const bodyPt = ptStr(s.bodySizePt);
   const firstIndent = ptStr(mm2pt(s.firstLineIndentMm));
   const spaceAfter = ptStr(mm2pt(s.paragraphSpacingMm));
@@ -383,7 +494,7 @@ function stylesXml(s: LayoutSettings): string {
 \t\t</CharacterStyle>
 \t\t<CharacterStyle Self="CharacterStyle/KalinItalik" Name="KalinItalik" FontStyle="Bold Italic">
 \t\t\t<Properties><BasedOn type="string">$ID/[No character style]</BasedOn></Properties>
-\t\t</CharacterStyle>
+\t\t</CharacterStyle>${withFootnotes ? footnoteCharStyleXml() : ""}
 \t</RootCharacterStyleGroup>
 \t<RootParagraphStyleGroup Self="uParaGroup">
 \t\t<ParagraphStyle Self="ParagraphStyle/$ID/[No paragraph style]" Name="$ID/[No paragraph style]" Imported="false" PointSize="${bodyPt}" HorizontalScale="100" VerticalScale="100" LeftIndent="0" RightIndent="0" FirstLineIndent="0" SpaceBefore="0" SpaceAfter="0" Hyphenation="${hyphen}" Justification="LeftAlign">
@@ -421,7 +532,7 @@ function stylesXml(s: LayoutSettings): string {
 \t\t\t\t<Leading type="unit">28</Leading>
 \t\t\t\t<AppliedFont type="string">${headFont}</AppliedFont>
 \t\t\t</Properties>
-\t\t</ParagraphStyle>
+\t\t</ParagraphStyle>${withFootnotes ? footnoteParaStyleXml(s) : ""}
 \t</RootParagraphStyleGroup>${IDML_BUILTIN_STYLE_DEFS}</idPkg:Styles>`;
 }
 
@@ -457,7 +568,9 @@ const GRAPHIC_XML = `${XML_HEAD}
 // physicalPages: GERÇEK üretilen sayfa sayısı (= frameCount). InDesign'ın
 // "belge onarıldı" uyarısını önlemek için Section Length + PagesPerDocument
 // input.pageCount değil bu değere eşit olmalı (referans şablon böyle).
-function preferencesXml(input: IdmlBookInput, g: Geom, physicalPages: number): string {
+// withFootnotes: dipnotlar sayfada yer kapladığından JS sayfa tahmini kısa kalır →
+// InDesign'ın akıllı metin akışı açılır (taşan metne kendisi sayfa ekler).
+function preferencesXml(input: IdmlBookInput, g: Geom, physicalPages: number, withFootnotes = false): string {
   const s = input.settings;
   const bodyFont = xmlEscape(s.bodyFontFamily || "Source Serif 4");
   const leading =
@@ -467,13 +580,13 @@ function preferencesXml(input: IdmlBookInput, g: Geom, physicalPages: number): s
   return `${XML_HEAD}
 <idPkg:Preferences ${PKG_NS} DOMVersion="15.0">
 \t<PageItemDefault FillColor="Swatch/None" FillTint="-1" StrokeWeight="1" MiterLimit="4" EndCap="ButtEndCap" EndJoin="MiterEndJoin" StrokeType="StrokeStyle/$ID/Solid" LeftLineEnd="None" RightLineEnd="None" StrokeColor="Swatch/None" StrokeTint="-1" GradientFillAngle="0" GradientStrokeAngle="0" GapColor="Swatch/None" GapTint="-1" StrokeAlignment="CenterAlignment" Nonprinting="false" />
-\t<TextPreference TypographersQuotes="true" SmartTextReflow="false" AddPages="EndOfStory" LimitToMasterTextFrames="true" PreserveFacingPageSpreads="false" DeleteEmptyPages="false" />
+\t<TextPreference TypographersQuotes="true" SmartTextReflow="${withFootnotes ? "true" : "false"}" AddPages="EndOfStory" LimitToMasterTextFrames="${withFootnotes ? "false" : "true"}" PreserveFacingPageSpreads="false" DeleteEmptyPages="false" />
 \t<TextDefault AppliedParagraphStyle="ParagraphStyle/$ID/[No paragraph style]" PointSize="${ptStr(s.bodySizePt)}" FillColor="Color/Black" StrokeColor="Swatch/None" Justification="${s.align === "justify" ? "LeftJustified" : "LeftAlign"}" Hyphenation="${s.hyphenate ? "true" : "false"}">
 \t\t<Properties>
 \t\t\t<AppliedFont type="string">${bodyFont}</AppliedFont>
 \t\t\t${leading}
 \t\t</Properties>
-\t</TextDefault>
+\t</TextDefault>${withFootnotes ? footnoteOptionXml(s, g) : ""}
 \t<DocumentPreference PageHeight="${ptStr(g.pageHpt)}" PageWidth="${ptStr(g.pageWpt)}" PagesPerDocument="${physicalPages}" FacingPages="true" DocumentBleedTopOffset="0" DocumentBleedBottomOffset="0" DocumentBleedInsideOrLeftOffset="0" DocumentBleedOutsideOrRightOffset="0" DocumentBleedUniformSize="true" PreserveLayoutWhenShuffling="true" AllowPageShuffle="true" OverprintBlack="true" PageBinding="LeftToRight" ColumnDirection="Horizontal" Intent="PrintIntent" CreatePrimaryTextFrame="false" MasterTextFrame="false" />
 \t<MarginPreference ColumnCount="1" ColumnGutter="0" Top="${ptStr(mm2pt(g.marginTop))}" Bottom="${ptStr(mm2pt(g.marginBottom))}" Left="${ptStr(mm2pt(g.marginInside + g.gutter))}" Right="${ptStr(mm2pt(g.marginOutside))}" ColumnDirection="Horizontal" />
 \t<ViewPreference HorizontalMeasurementUnits="Millimeters" VerticalMeasurementUnits="Millimeters" PointsPerInch="72" RulerOrigin="SpreadOrigin" />
@@ -587,6 +700,7 @@ ${spreadRefs}
 export async function exportBookIdml(input: IdmlBookInput): Promise<Uint8Array> {
   // 1) İçerik normalizasyonu (diğer motorlarla AYNI).
   const blocks = smartQuoteBlocks(input.blocks);
+  const withFootnotes = blocksHaveFootnotes(blocks);
   const gen = makeIdGen();
   const g = geomOf(input);
 
@@ -621,8 +735,8 @@ export async function exportBookIdml(input: IdmlBookInput): Promise<Uint8Array> 
   zip.file("META-INF/metadata.xml", METADATA_XML);
   zip.file("Resources/Graphic.xml", GRAPHIC_XML);
   zip.file("Resources/Fonts.xml", fontsXml(input.settings));
-  zip.file("Resources/Styles.xml", stylesXml(input.settings));
-  zip.file("Resources/Preferences.xml", preferencesXml(input, g, pages.length));
+  zip.file("Resources/Styles.xml", stylesXml(input.settings, withFootnotes));
+  zip.file("Resources/Preferences.xml", preferencesXml(input, g, pages.length, withFootnotes));
   zip.file("XML/Tags.xml", TAGS_XML);
   zip.file("XML/BackingStory.xml", backingStoryXml(backingId, rootElemId));
   zip.file(`MasterSpreads/MasterSpread_${masterId}.xml`, masterSpreadXml(masterId, g));
