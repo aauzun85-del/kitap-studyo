@@ -97,6 +97,130 @@ export function defaultPaperId(platform?: string | null, sizeId?: string | null)
   return resolveCoverSize(sizeId).category === "kdp" ? "kdp-white" : "enso-60";
 }
 
+/**
+ * Baskıdaki sayfa sayısı (sırt bunun üzerinden hesaplanır): iç sayfa PDF'i +
+ * KDY/KDY Akademi'nin kendi eklediği 2 künye sayfası, çift sayıya tamamlanmış
+ * (bir yaprak = 2 sayfa).
+ */
+export const KDY_EXTRA_PAGES = 2;
+export function printedPageCount(pdfPages: number, platform?: string | null): number {
+  const extra = platform === "kdy" || platform === "akademi" ? KDY_EXTRA_PAGES : 0;
+  const n = Math.max(1, Math.round(pdfPages)) + extra;
+  return n % 2 ? n + 1 : n;
+}
+
+/** Ölçüyü kullanıcıya cm olarak yaz: "1,9 cm" / "1.9 cm". */
+export function formatCm(mm: number, lang: "tr" | "en" = "tr"): string {
+  // 0,1 mm duyarlılık (en çok 2 ondalık; sondaki sıfırlar atılır): 26,3 mm → "2,63 cm".
+  const s = String(Math.round(mm * 10) / 100);
+  return `${lang === "tr" ? s.replace(".", ",") : s} cm`;
+}
+
+/** Sırta yazı basılabilmesi için gereken en az kalınlık (kapak şablonu kuralı). */
+export const SPINE_TEXT_MIN_MM = 10;
+
+/**
+ * Kitabın sırt özeti — kapak, kapak kurgusu ve İndir ekranı AYNI sonucu alsın.
+ * Sayfa: Mizanpajın kaydettiği baskı sayısı (kapakta elle girilmediyse) →
+ * kapak taslağındaki sayı → 200. Kâğıt: kitap düzeyi seçim → kapak taslağı →
+ * platform varsayılanı.
+ */
+export type SpineInfo = {
+  pages: number;
+  /** Sayfa sayısı Mizanpajdan mı geldi? */
+  fromLayout: boolean;
+  /** Mizanpajdaki iç sayfa PDF'inin sayfa sayısı (biliniyorsa). */
+  pdfPages: number | null;
+  paperId: PaperId;
+  spineMm: number;
+  manual: boolean;
+};
+
+type MetaLike = {
+  platform?: string | null;
+  sizeId?: string | null;
+  paperId?: unknown;
+  pdfPageCount?: unknown;
+  printPageCount?: unknown;
+};
+type CoverLike = {
+  pageCount?: unknown;
+  pageCountManual?: unknown;
+  paperId?: unknown;
+  paperGsm?: unknown;
+  binding?: unknown;
+  spineManualOn?: unknown;
+  spineManualValue?: unknown;
+};
+
+export function layoutPrintPages(meta: MetaLike | null | undefined): number | null {
+  const n = meta?.printPageCount;
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export function resolveBookPaper(meta: MetaLike | null | undefined, cover: CoverLike | null | undefined): PaperId {
+  return resolvePaperId(
+    { paperId: meta?.paperId ?? cover?.paperId, paperGsm: cover?.paperGsm },
+    defaultPaperId(meta?.platform, meta?.sizeId),
+  );
+}
+
+export function resolveBookPages(
+  meta: MetaLike | null | undefined,
+  cover: CoverLike | null | undefined,
+): { pages: number; fromLayout: boolean } {
+  const fromLayout = layoutPrintPages(meta);
+  if (fromLayout && cover?.pageCountManual !== true) return { pages: fromLayout, fromLayout: true };
+  const own = typeof cover?.pageCount === "number" && cover.pageCount > 0 ? cover.pageCount : null;
+  return { pages: own ?? fromLayout ?? 200, fromLayout: !own && !!fromLayout };
+}
+
+export function bookSpineInfo(meta: MetaLike | null | undefined, cover: CoverLike | null | undefined): SpineInfo {
+  const { pages, fromLayout } = resolveBookPages(meta, cover);
+  const paperId = resolveBookPaper(meta, cover);
+  const manualVal =
+    cover?.spineManualOn === true && typeof cover.spineManualValue === "number" ? cover.spineManualValue : null;
+  const binding: BindingType = cover?.binding === "hard" ? "hard" : "soft";
+  const pdf = meta?.pdfPageCount;
+  return {
+    pages,
+    fromLayout,
+    pdfPages: typeof pdf === "number" && pdf > 0 ? pdf : null,
+    paperId,
+    spineMm: calcSpineWidth(pages, paperId, binding, manualVal),
+    manual: manualVal !== null,
+  };
+}
+
+/**
+ * Sırt kalınlığı değişince (Mizanpajda sayfa sayısı değişti, kâğıt değişti)
+ * elle yerleştirilmiş öğeleri kaydır: konumlar tuvalin sol kenarından mm olarak
+ * saklanır → ön kapaktakiler sırt farkı kadar, sırttakiler yarısı kadar
+ * kayar; arka kapak yerinde kalır. Böylece tasarım ön kapağa göre korunur.
+ */
+export function shiftForSpine<T extends { leftMm: number }>(
+  positions: Record<string, T> | undefined,
+  photoRect: { x: number; y: number; w: number; h: number } | null | undefined,
+  from: { spineStart: number; spineEnd: number; spine: number },
+  to: { spine: number },
+): {
+  positions: Record<string, T> | undefined;
+  photoRect: { x: number; y: number; w: number; h: number } | null | undefined;
+} {
+  const delta = to.spine - from.spine;
+  if (!delta || Math.abs(delta) < 0.05) return { positions, photoRect };
+  const move = (x: number) => (x >= from.spineEnd ? x + delta : x >= from.spineStart ? x + delta / 2 : x);
+  const nextPos = positions
+    ? Object.fromEntries(Object.entries(positions).map(([k, v]) => [k, { ...v, leftMm: move(v.leftMm) }]))
+    : positions;
+  let nextRect = photoRect;
+  if (photoRect) {
+    if (photoRect.x >= from.spineEnd) nextRect = { ...photoRect, x: photoRect.x + delta };
+    else if (photoRect.x + photoRect.w > from.spineEnd) nextRect = { ...photoRect, w: Math.max(1, photoRect.w + delta) };
+  }
+  return { positions: nextPos, photoRect: nextRect };
+}
+
 /** Kayıtlı kapak ayarından kâğıdı çöz: yeni alan → eski gramaj → varsayılan. */
 export function resolvePaperId(
   saved: { paperId?: unknown; paperGsm?: unknown } | null | undefined,

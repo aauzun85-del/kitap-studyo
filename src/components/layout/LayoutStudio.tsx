@@ -4,7 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
-import { completeWizardStep, markPrintDownloaded } from "@/lib/projects/data";
+import { completeWizardStep, markPrintDownloaded, setBookPrintSpec } from "@/lib/projects/data";
+import {
+  calcSpineWidth,
+  defaultPaperId,
+  formatCm,
+  getPaper,
+  printedPageCount,
+  resolveBookPaper,
+  type PaperId,
+} from "@/lib/cover/spread";
 import WizardGuide from "@/components/app/WizardGuide";
 import { useEditorSession } from "@/lib/editor/session";
 import { useSaveStatus, formatSavedTime, SAVE_LABELS } from "@/lib/projects/saveStatus";
@@ -229,6 +238,18 @@ export default function LayoutStudio({
       : seedProfile.defaultSizeId;
   const [sizeId, setSizeId] = useState(
     saved?.sizeId && ALL_SIZES.some((s) => s.id === saved.sizeId) ? saved.sizeId : seedSizeId,
+  );
+  // İç sayfa kâğıdı (kitap düzeyi; sırt hesabı). Konsept ekranında seçilir,
+  // Kapak'la ortaktır (meta.paperId). Seçilmemişse baskı standardının varsayılanı.
+  const [paperId, setPaperId] = useState<PaperId>(() =>
+    seed ? resolveBookPaper(seed.meta, seed.cover) : defaultPaperId(seedPlatform, seedSizeId),
+  );
+  const changePaper = useCallback(
+    (id: PaperId) => {
+      setPaperId(id);
+      if (projectId) setBookPrintSpec(projectId, { paperId: id }).catch(() => {});
+    },
+    [projectId],
   );
   const [margins, setMargins] = useState<Margins>(saved?.margins ?? { ...seedProfile.defaultMargins });
   const [presetId, setPresetId] = useState<string>(saved?.presetId ?? seedPlatform);
@@ -1354,6 +1375,34 @@ export default function LayoutStudio({
     [sourceMode, importedBlocks, raw, detectHeadings, importMedia],
   );
 
+  // Konsept ekranı için YAKLAŞIK sayfa sayısı: hızlı sayfalama (tarayıcıda
+  // ölçüm) konseptin tipografisiyle. Gerçek dizgi (Typst) sayısı biliniyorsa
+  // oranla düzeltilir (iki motor arasındaki fark).
+  const realPagesRef = useRef<number>(seed?.meta.pdfPageCount ?? 0);
+  const estimateConceptPages = useCallback(
+    (patch: Partial<LayoutSettings>, keep: boolean): number | null => {
+      if (!fontsReady) return null;
+      if (!measureRef.current) measureRef.current = document.createElement("canvas");
+      const ctx = measureRef.current.getContext("2d");
+      if (!ctx) return null;
+      const geo = pageGeometry(size, margins, gutter, true);
+      const n = paginate({
+        meta,
+        blocks: conceptBlocksFor(keep),
+        contentWidthMm: geo.contentWidth,
+        contentHeightMm: geo.contentHeight,
+        settings: { ...settings, ...patch },
+        ctx,
+        dpi: PAGINATE_DPI,
+        tocOverrides,
+      }).length;
+      const real = realPagesRef.current;
+      const ratio = real > 0 && pages.length > 0 ? Math.min(1.4, Math.max(0.7, real / pages.length)) : 1;
+      return Math.max(1, Math.round(n * ratio));
+    },
+    [fontsReady, size, margins, gutter, meta, conceptBlocksFor, settings, tocOverrides, pages.length],
+  );
+
   const tr = lang === "tr";
   const router = useRouter();
   const docTitle = title.trim() || (tr ? "Mizanpaj çalışması" : "Layout draft");
@@ -1398,6 +1447,8 @@ export default function LayoutStudio({
     if (!projectId || wizardBusy) return;
     setWizardBusy(true);
     try {
+      // Sırt için son sayfa sayısı kapağa geçmeden yazılsın.
+      await flushPrintSpecRef.current();
       await completeWizardStep(projectId, "layout");
     } catch {
       // kaydedilemese de ilerle
@@ -1455,7 +1506,45 @@ export default function LayoutStudio({
   const handleDocInfo = useCallback((info: { pageCount: number; positions: BlockPos[] }) => {
     setDocPageCount(info.pageCount);
     setDocPositions(info.positions);
+    if (info.pageCount > 0) realPagesRef.current = info.pageCount;
   }, []);
+
+  // Sırt: iç sayfa sayısı (gerçek dizgi; hızlı motorda yaklaşık) → baskı
+  // sayfası (KDY'nin 2 künye sayfası + çift) → seçili kâğıt. Kapak ve İndir
+  // ekranı aynı sayıyı kullansın diye projeye (meta) yazılır.
+  const pdfPagesNow = previewEngine === "typst" ? docPageCount : pages.length;
+  const printPagesNow = pdfPagesNow > 0 ? printedPageCount(pdfPagesNow, standard) : 0;
+  // Kapakta elle girilmiş sırt/cilt varsa üst çubuk da onu göstersin (kapakla aynı sayı).
+  const seedCover = seed?.cover;
+  const spineMmNow =
+    printPagesNow > 0
+      ? calcSpineWidth(
+          printPagesNow,
+          paperId,
+          seedCover?.binding === "hard" ? "hard" : "soft",
+          seedCover?.spineManualOn && typeof seedCover.spineManualValue === "number" ? seedCover.spineManualValue : null,
+        )
+      : 0;
+  // Yalnız GERÇEK dizgi (Typst) sayısı kaydedilir: baskı PDF'i her zaman Typst
+  // ile çıkar; hızlı (yaklaşık) önizlemenin sayısı sırtı yanıltır.
+  const pendingSpecRef = useRef<{ pdfPageCount: number; printPageCount: number } | null>(null);
+  const flushPrintSpec = useCallback(() => {
+    const s = pendingSpecRef.current;
+    pendingSpecRef.current = null;
+    return projectId && s ? setBookPrintSpec(projectId, s).catch(() => {}) : Promise.resolve();
+  }, [projectId]);
+  useEffect(() => {
+    if (!projectId || conceptOpen || isEmpty || previewEngine !== "typst" || docPageCount <= 0) return;
+    pendingSpecRef.current = { pdfPageCount: docPageCount, printPageCount: printedPageCount(docPageCount, standard) };
+    const h = window.setTimeout(() => void flushPrintSpec(), 1500);
+    return () => window.clearTimeout(h);
+  }, [projectId, conceptOpen, isEmpty, previewEngine, docPageCount, standard, flushPrintSpec]);
+  // Sayfadan çıkarken bekleyen sayıyı yaz (kapağa hemen geçilse de kaybolmasın).
+  const flushPrintSpecRef = useRef(flushPrintSpec);
+  useEffect(() => {
+    flushPrintSpecRef.current = flushPrintSpec;
+  }, [flushPrintSpec]);
+  useEffect(() => () => void flushPrintSpecRef.current(), []);
   const handleViewInfo = useCallback((info: { realPercent: number }) => {
     setRealPercent(info.realPercent);
   }, []);
@@ -1595,6 +1684,7 @@ export default function LayoutStudio({
             setConceptOpen(false);
           }}
           onClose={() => setConceptOpen(false)}
+          print={{ paperId, standard, onPaperChange: changePaper, estimatePages: fontsReady ? estimateConceptPages : undefined }}
         />
       )}
       {autoExport && (
@@ -1979,6 +2069,20 @@ export default function LayoutStudio({
                 {previewEngine === "typst" && docPageCount === 0 && !isEmpty ? "…" : (previewEngine === "typst" ? docPageCount : pages.length) || 0}{" "}
                 {tr ? "sayfa" : "pages"}
               </span>
+              {spineMmNow > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setConceptOpen(true)}
+                  title={
+                    tr
+                      ? `${getPaper(paperId).label.tr} · baskıda ${printPagesNow} sayfa${printPagesNow - pdfPagesNow >= 2 ? " (KDY'nin 2 künye sayfası dahil)" : ""}. Kâğıdı değiştirmek için tıkla.`
+                      : `${getPaper(paperId).label.en} · ${printPagesNow} printed pages. Click to change the paper.`
+                  }
+                  className="whitespace-nowrap rounded-md px-1.5 py-0.5 text-sm text-muted transition hover:bg-accent-soft hover:text-foreground"
+                >
+                  · {tr ? "sırt" : "spine"} {formatCm(spineMmNow, tr ? "tr" : "en")}
+                </button>
+              )}
               {!isEmpty && (
                 <button
                   type="button"

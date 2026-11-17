@@ -9,6 +9,7 @@ import { signOutAction } from "@/app/[lang]/auth-actions";
 import AppShell, { type AppShellContext } from "@/components/app/AppShell";
 import WizardBar from "@/components/app/WizardBar";
 import CoverBriefStudio from "@/components/cover/CoverBriefStudio";
+import { bookSpineInfo, formatCm, getPaper } from "@/lib/cover/spread";
 
 // Kapak kurgusu: tuvalden önceki seçim adımı. Proje şart (seçimler projeye yazılır).
 export default async function CoverBriefPage({ params, searchParams }: PageProps<"/[lang]/kapak/kurgu">) {
@@ -63,6 +64,14 @@ export default async function CoverBriefPage({ params, searchParams }: PageProps
         title={meta.title ?? ""}
         author={meta.author ?? ""}
         genre={meta.genre ?? undefined}
+        spineNote={(() => {
+          // Sırt özeti (kapak tuvaliyle aynı kural): sarmal görsel bu ölçüye göre üretilir.
+          const s = bookSpineInfo(meta, initialProject.data.cover);
+          const paper = getPaper(s.paperId).label[isTr ? "tr" : "en"];
+          return isTr
+            ? `Sırt: ${formatCm(s.spineMm, "tr")} (${s.pages} sayfa · ${paper}${s.fromLayout ? " · Mizanpajdan" : ""})`
+            : `Spine: ${formatCm(s.spineMm, "en")} (${s.pages} pages · ${paper})`;
+        })()}
       />
     </AppShell>
   );

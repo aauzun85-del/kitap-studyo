@@ -8,7 +8,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "@/i18n/config";
-import type { Block } from "@/lib/layout/paginate";
+import type { Block, LayoutSettings } from "@/lib/layout/paginate";
+import { PAPERS, calcSpineWidth, formatCm, printedPageCount, type PaperId } from "@/lib/cover/spread";
 import { renderBookSvgTypst, type TypstBookInput } from "@/lib/typst";
 import { isBibliographyTitle } from "@/lib/typst/serialize";
 import {
@@ -119,6 +120,7 @@ export default function InteriorConceptPicker({
   onApply,
   onSkip,
   onClose,
+  print,
 }: {
   lang: Locale;
   genre: string | null | undefined;
@@ -135,6 +137,17 @@ export default function InteriorConceptPicker({
   onApply: (concept: InteriorConcept, adjust: ConceptSizeAdjust, details: ConceptDetails) => void;
   onSkip: () => void;
   onClose: () => void;
+  /**
+   * Baskı bilgisi (sırt): kitabın kâğıdı + her konsept için yaklaşık sayfa
+   * sayısı tahmini (hızlı sayfalama). Yoksa sırt satırları gösterilmez.
+   */
+  print?: {
+    paperId: PaperId;
+    standard: string;
+    onPaperChange: (id: PaperId) => void;
+    /** Yazı tipleri hazır olunca verilir (o zamana dek "hesaplanıyor"). */
+    estimatePages?: (patch: Partial<LayoutSettings>, keepLineBreaks: boolean) => number | null;
+  };
 }) {
   const tr = lang === "tr";
   const suggested = structureForGenre(genre);
@@ -150,6 +163,8 @@ export default function InteriorConceptPicker({
   const detailsFor = (id: string): ConceptDetails => (id === currentConceptId ? (currentDetails ?? {}) : {});
   const [details, setDetails] = useState<ConceptDetails>(() => detailsFor(selected));
   const [previews, setPreviews] = useState<Record<string, Preview>>({});
+  // Konsept başına yaklaşık iç sayfa sayısı (anahtar: id|yazı büyüklüğü).
+  const [estimates, setEstimates] = useState<Record<string, number | null>>({});
 
   // Sayfa yüksekliği (pt): önizlemede taşma payı yok.
   const pageHeightPt = (baseInput.size.height * 72) / 25.4;
@@ -328,6 +343,41 @@ export default function InteriorConceptPicker({
   }, [detailKey, detailSample, baseInput, familyOf, pageHeightPt]);
   const dpv = detailPv[detailKey];
 
+  // Sayfa sayısı tahmini: görünen konseptler için SIRAYLA (her biri ayrı bir
+  // adımda → arayüz donmaz). Sonuç baskı sayfasına (KDY künyesi + çift) ve
+  // seçili kâğıda göre sırta çevrilir.
+  const estimate = print?.estimatePages;
+  useEffect(() => {
+    if (!estimate) return;
+    const todo = structure.concepts.filter((k) => !(`${k.id}|${adjust}` in estimates));
+    if (todo.length === 0) return;
+    const k = todo[0];
+    const h = window.setTimeout(() => {
+      let n: number | null = null;
+      try {
+        n = estimate(conceptLayoutSettings(k, familyOf, adjust), k.keepLineBreaks);
+      } catch {
+        n = null;
+      }
+      setEstimates((prev) => ({ ...prev, [`${k.id}|${adjust}`]: n }));
+    }, 40);
+    return () => window.clearTimeout(h);
+  }, [estimate, structure, adjust, estimates, familyOf]);
+
+  const spineOf = (id: string): { pages: number; cm: string } | null => {
+    if (!print) return null;
+    const n = estimates[`${id}|${adjust}`];
+    if (typeof n !== "number" || n <= 0) return null;
+    const pages = printedPageCount(n, print.standard);
+    return { pages, cm: formatCm(calcSpineWidth(pages, print.paperId, "soft", null), tr ? "tr" : "en") };
+  };
+  const spineLine = (id: string): string | null => {
+    if (!print) return null;
+    const s = spineOf(id);
+    if (!s) return `${id}|${adjust}` in estimates ? null : tr ? "Sayfa sayısı hesaplanıyor…" : "Counting pages…";
+    return tr ? `≈ ${s.pages} sayfa · sırt ${s.cm}` : `≈ ${s.pages} pages · spine ${s.cm}`;
+  };
+
   return (
     <div className="fixed inset-0 z-[90] flex flex-col bg-background" role="dialog" aria-modal="true" aria-labelledby="ks-concept-title">
       {/* ── başlık ── */}
@@ -449,6 +499,12 @@ export default function InteriorConceptPicker({
                         </span>
                       ))}
                     </div>
+                    {spineLine(k.id) && (
+                      <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-muted">
+                        <SpineGlyph />
+                        {spineLine(k.id)}
+                      </p>
+                    )}
                   </div>
                 </button>
               );
@@ -589,6 +645,45 @@ export default function InteriorConceptPicker({
               </button>
             ))}
           </div>
+          {print && (
+            <>
+              <label className="ml-1 flex items-center gap-2 text-sm font-medium text-foreground">
+                {tr ? "Kâğıt" : "Paper"}
+                <select
+                  value={print.paperId}
+                  onChange={(e) => print.onPaperChange(e.target.value as PaperId)}
+                  className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground"
+                >
+                  <optgroup label={tr ? "KDY ve Türkiye matbaaları" : "KDY and Turkish printers"}>
+                    {PAPERS.filter((p) => p.group === "tr").map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label[lang]}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Amazon KDP">
+                    {PAPERS.filter((p) => p.group === "kdp").map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label[lang]}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </label>
+              {spineOf(chosen.id) && (
+                <span
+                  className="text-sm text-muted"
+                  title={
+                    tr
+                      ? "Yaklaşık değer. Kesin sırt, Mizanpaj sayfaları dizdikten sonra Kapak'ta hesaplanır."
+                      : "Approximate. The exact spine is calculated on the Cover once Layout has set the pages."
+                  }
+                >
+                  {tr ? "Sırt" : "Spine"} <b className="font-semibold text-foreground">≈ {spineOf(chosen.id)!.cm}</b>
+                </span>
+              )}
+            </>
+          )}
           <div className="flex-1" />
           <button
             type="button"
@@ -607,6 +702,16 @@ export default function InteriorConceptPicker({
         </div>
       </div>
     </div>
+  );
+}
+
+// Kitap sırtı simgesi (sayfa · sırt satırı).
+function SpineGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="shrink-0">
+      <rect x="2.5" y="2" width="11" height="12" rx="1.2" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M6 2v12" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
   );
 }
 

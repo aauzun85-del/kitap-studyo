@@ -69,6 +69,8 @@ export type CoverDraft = {
   // Kitap ayarları
   sizeId?: string;
   pageCount?: number;
+  /** true: sayfa sayısı kapakta elle girildi (Mizanpajdaki sayı kullanılmaz). */
+  pageCountManual?: boolean;
   /** Kâğıt cinsi (sırt buna göre). */
   paperId?: PaperId;
   /** ESKİ: yalnız gramaj (geri uyum; okunur, artık yazılmaz). */

@@ -14,7 +14,7 @@ import { signThumbs } from "@/lib/projects/storage";
 import { readSavedLayout } from "@/lib/layout/layoutSettings";
 import { KDY_SIZE } from "@/lib/layout/kdy";
 import { INTERIOR_SIZES } from "@/lib/layout/page";
-import { calcSpread, resolveCoverSize, resolvePaperId, defaultPaperId, type BookSize } from "@/lib/cover/spread";
+import { calcSpread, resolveCoverSize, bookSpineInfo, getPaper, formatCm, type BookSize } from "@/lib/cover/spread";
 import {
   BookMockup,
   FileCard,
@@ -68,16 +68,23 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
   // Tam kapak ölçüsü (taşma dahil): kapak taslağının kitap ayarlarından.
   const cv = data.cover ?? {};
   // Kapak tuvaliyle AYNI çözümleme ve varsayılanlar (küçük resim bu geometriyle çizildi).
+  // Sayfa sayısı + kâğıt kitap düzeyinden (Mizanpaj / konsept ekranı), kapakla aynı kural.
+  const spine = bookSpineInfo(data.meta, cv);
   const spread = hasCover
     ? calcSpread(
         resolveCoverSize(cv.sizeId ?? data.meta.sizeId),
-        Math.max(1, cv.pageCount || 200),
-        resolvePaperId(cv, defaultPaperId(data.meta.platform, data.meta.sizeId)),
+        Math.max(1, spine.pages),
+        spine.paperId,
         cv.binding ?? "soft",
         cv.spineManualOn && typeof cv.spineManualValue === "number" ? cv.spineManualValue : null,
         typeof cv.bleedMm === "number" ? cv.bleedMm : undefined,
       )
     : null;
+  const spineLine = spread
+    ? tr
+      ? `Sırt ${formatCm(spread.spine, "tr")} · ${getPaper(spine.paperId).label.tr} · ${spine.pages} sayfa`
+      : `Spine ${formatCm(spread.spine, "en")} · ${getPaper(spine.paperId).label.en} · ${spine.pages} pages`
+    : "";
 
   // Kitap maketi için kapağın kayıtlı küçük resmi (tam kapak: arka + sırt + ön).
   const { data: row } = await supabase.from("projects").select("thumb_path").eq("id", pid).single();
@@ -209,6 +216,7 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
                     : tr
                       ? "Taşma payı dahil"
                       : "Bleed included",
+                  spineLine,
                 ]}
                 primary={
                   !hasCover

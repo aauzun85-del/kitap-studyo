@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
-import { completeWizardStep } from "@/lib/projects/data";
+import { completeWizardStep, setBookPrintSpec } from "@/lib/projects/data";
 import WizardGuide from "@/components/app/WizardGuide";
 import { useEditorSession } from "@/lib/editor/session";
 import type { Locale } from "@/i18n/config";
@@ -19,8 +19,14 @@ import {
   PAPERS,
   getPaper,
   defaultPaperId,
+  resolveBookPaper,
   resolvePaperId,
+  shiftForSpine,
+  resolveBookPages,
+  layoutPrintPages,
+  SPINE_TEXT_MIN_MM,
   calcSpread,
+  formatCm,
   formatMm,
   type BindingType,
   type PaperId,
@@ -388,12 +394,25 @@ export default function CoverStudio({
   const [sizeId, setSizeId] = useState(
     initialProject?.data.meta.sizeId ?? seedCoverProfile?.defaultSizeId ?? DEFAULT_SIZE_ID,
   );
-  const [pageCount, setPageCount] = useState(200);
+  // Sayfa sayısı: Mizanpaj kitabın gerçek baskı sayfasını projeye yazar
+  // (meta.printPageCount) → kapak onu kullanır; üye isterse elle girer.
+  const layoutPages = layoutPrintPages(initialProject?.data.meta);
+  const layoutPdfPages = initialProject?.data.meta.pdfPageCount ?? null;
+  const [pageCount, setPageCount] = useState(() =>
+    initialProject ? resolveBookPages(initialProject.data.meta, initialProject.data.cover).pages : 200,
+  );
+  const [pageCountManual, setPageCountManual] = useState(false);
+  // Tuvalde kullanılan sayfa sayısı: elle girilmediyse Mizanpajınki (şablon /
+  // geri al ile gelen eski sayı onu ezmesin).
+  const effectivePages = layoutPages && !pageCountManual ? layoutPages : pageCount;
   // Kâğıt cinsi: sırt kalınlığı buna göre (Enso 60 gr ≠ 1. hamur). Seçilmemişse
   // platform/boya göre varsayılan (KDY → Enso 60 gr, KDP → beyaz).
   const [paperId, setPaperId] = useState<PaperId>(() =>
-    defaultPaperId(seedCoverPlatform, initialProject?.data.meta.sizeId ?? seedCoverProfile?.defaultSizeId ?? DEFAULT_SIZE_ID),
+    initialProject
+      ? resolveBookPaper(initialProject.data.meta, initialProject.data.cover)
+      : defaultPaperId(seedCoverPlatform, seedCoverProfile?.defaultSizeId ?? DEFAULT_SIZE_ID),
   );
+  const changePaper = (id: PaperId) => setPaperId(id);
   const [binding, setBinding] = useState<BindingType>("soft");
   const [spineManualOn, setSpineManualOn] = useState(false);
   const [spineManualValue, setSpineManualValue] = useState(11);
@@ -529,6 +548,12 @@ export default function CoverStudio({
     return () => window.clearTimeout(id);
   }, [draftRestored]);
   const hydratedRef = useRef(false); // ilk yükleme bitti mi (öncesinde kayıt yapma)
+  // Kâğıt kitap düzeyindedir (konsept ekranıyla ortak): tuvalde nereden değişirse
+  // değişsin (seçim, geri al, şablon) projeye de yazılır.
+  useEffect(() => {
+    if (!projectId || !hydratedRef.current) return;
+    setBookPrintSpec(projectId, { paperId }).catch(() => {});
+  }, [projectId, paperId]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestDraftRef = useRef<CoverDraft | null>(null); // sekme kapanınca yazmak için
 
@@ -757,13 +782,13 @@ export default function CoverStudio({
     () =>
       calcSpread(
         size,
-        Math.max(1, pageCount || 1),
+        Math.max(1, effectivePages || 1),
         paperId,
         binding,
         spineManualOn ? spineManualValue : null,
         bleedMm,
       ),
-    [size, pageCount, paperId, binding, spineManualOn, spineManualValue, bleedMm],
+    [size, effectivePages, paperId, binding, spineManualOn, spineManualValue, bleedMm],
   );
 
   // Kullanıcı nesnesini (obj-) çoğalt: tüm özellikleriyle bir kopya oluştur,
@@ -973,9 +998,13 @@ export default function CoverStudio({
   );
 
   // labels'ı sabit referansa al → seçim değişince tuval gereksiz yere yeniden çizilmesin.
+  const spineCm = formatCm(spread.spine, lang === "tr" ? "tr" : "en");
+  const backLabel = t.backCover;
+  const frontLabel = t.frontCover;
+  const spineLabel = `${t.spine} · ${spineCm}`;
   const labels = useMemo(
-    () => ({ backCover: t.backCover, spine: t.spine, frontCover: t.frontCover }),
-    [t.backCover, t.spine, t.frontCover],
+    () => ({ backCover: backLabel, spine: spineLabel, frontCover: frontLabel }),
+    [backLabel, spineLabel, frontLabel],
   );
 
   const readFile = (
@@ -1206,6 +1235,7 @@ export default function CoverStudio({
     // Kitap ayarları
     if (typeof d.sizeId === "string") setSizeId(d.sizeId);
     if (typeof d.pageCount === "number") setPageCount(d.pageCount);
+    if (typeof d.pageCountManual === "boolean") setPageCountManual(d.pageCountManual);
     if (d.paperId !== undefined || typeof d.paperGsm === "number") setPaperId((cur) => resolvePaperId(d, cur));
     if (d.binding) setBinding(d.binding);
     if (typeof d.spineManualOn === "boolean") setSpineManualOn(d.spineManualOn);
@@ -1244,12 +1274,35 @@ export default function CoverStudio({
     // (tek doğru kaynak meta). Görsel YOLLARI imzalı URL'e çözülür (render için).
     if (projectId && initialProject) {
       const env = initialProject.data;
+      // Kitap düzeyindeki sayfa/kâğıt, taslağın kaydedildiği sırttan farklıysa
+      // elle yerleştirilmiş öğeler sırt farkı kadar kaydırılır (tasarım korunur).
+      const draftSize = resolveCoverSize(env.cover.sizeId ?? env.meta.sizeId ?? seedCoverProfile?.defaultSizeId ?? DEFAULT_SIZE_ID);
+      const draftManual =
+        env.cover.spineManualOn && typeof env.cover.spineManualValue === "number" ? env.cover.spineManualValue : null;
+      const bookPages = resolveBookPages(env.meta, env.cover).pages;
+      const bookPaper = resolveBookPaper(env.meta, env.cover);
+      const oldSpread = calcSpread(
+        draftSize,
+        Math.max(1, typeof env.cover.pageCount === "number" && env.cover.pageCount > 0 ? env.cover.pageCount : 200),
+        resolvePaperId(env.cover, defaultPaperId(env.meta.platform, env.meta.sizeId)),
+        env.cover.binding ?? "soft",
+        draftManual,
+        env.cover.bleedMm,
+      );
+      const newSpread = calcSpread(draftSize, Math.max(1, bookPages), bookPaper, env.cover.binding ?? "soft", draftManual, env.cover.bleedMm);
+      const shifted = shiftForSpine(env.cover.positions, env.cover.photoRect, oldSpread, newSpread);
       const reconciled: CoverDraft = {
         ...env.cover,
         title: env.meta.title || env.cover.title || "",
         author: env.meta.author || env.cover.author || "",
         subtitle: env.meta.subtitle ?? env.cover.subtitle,
         isbn: env.meta.isbn ?? env.cover.isbn,
+        // Baskı bilgisi kitap düzeyinden: Mizanpajın sayfa sayısı (kapakta elle
+        // girilmediyse) ve kâğıt (konsept ekranı / kapak ortak).
+        pageCount: bookPages,
+        paperId: bookPaper,
+        positions: shifted.positions,
+        photoRect: shifted.photoRect,
       };
       resolveDraftImages(createBrowserSupabase(), reconciled)
         .then((d) => {
@@ -1468,7 +1521,8 @@ export default function CoverStudio({
       aiDesc,
       aiScope,
       sizeId,
-      pageCount,
+      pageCount: effectivePages,
+      pageCountManual,
       paperId,
       binding,
       spineManualOn,
@@ -1554,6 +1608,8 @@ export default function CoverStudio({
     aiScope,
     sizeId,
     pageCount,
+    effectivePages,
+    pageCountManual,
     paperId,
     binding,
     spineManualOn,
@@ -1635,7 +1691,8 @@ export default function CoverStudio({
     setAiScope("wrap");
     // Kitap ayarları
     setSizeId(DEFAULT_SIZE_ID);
-    setPageCount(200);
+    setPageCount(layoutPages ?? 200);
+    setPageCountManual(false);
     setPaperId(defaultPaperId(seedCoverPlatform, DEFAULT_SIZE_ID));
     setBinding("soft");
     setSpineManualOn(false);
@@ -1793,7 +1850,8 @@ export default function CoverStudio({
       aiDesc,
       aiScope,
       sizeId,
-      pageCount,
+      pageCount: effectivePages,
+      pageCountManual,
       paperId,
       binding,
       spineManualOn,
@@ -3678,6 +3736,23 @@ export default function CoverStudio({
                 <span className="hidden whitespace-nowrap text-sm text-muted xl:inline" title={t.totalSizeLabel}>
                   {formatMm(spread.totalWidth)} × {formatMm(spread.totalHeight)}
                 </span>
+                {/* Sırt özeti: her zaman görünür; tıklayınca kitap ayarları açılır. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivePanel("setup");
+                    setSelectedId(null);
+                    setPanelOpen(true);
+                  }}
+                  title={
+                    lang === "tr"
+                      ? `${effectivePages} sayfa · ${getPaper(paperId).label.tr}${layoutPages && !pageCountManual ? " · sayfa sayısı Mizanpajdan" : ""}`
+                      : `${effectivePages} pages · ${getPaper(paperId).label.en}`
+                  }
+                  className="whitespace-nowrap rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm text-muted transition hover:border-accent/50 hover:text-foreground"
+                >
+                  {t.spine} <b className="font-semibold text-foreground">{spineCm}</b>
+                </button>
                 <div className="flex-1" />
                 <div className="flex items-center gap-0.5 rounded-xl border border-border bg-surface px-1 py-0.5" role="group" aria-label={lang === "tr" ? "Yakınlaştırma" : "Zoom"}>
                 <button
@@ -4846,20 +4921,63 @@ export default function CoverStudio({
                         </select>
                       </Field>
 
-                      <Field label={t.pageCountLabel} hint={t.pageCountHint}>
-                        <input
-                          type="number"
-                          min={1}
-                          value={pageCount}
-                          onChange={(e) => setPageCount(parseInt(e.target.value, 10) || 0)}
-                          className={inputClass}
-                        />
+                      <Field
+                        label={t.pageCountLabel}
+                        hint={
+                          layoutPages && !pageCountManual
+                            ? lang === "tr"
+                              ? `Mizanpajdan alındı${
+                                  layoutPdfPages && layoutPages - layoutPdfPages >= 2
+                                    ? `: ${layoutPdfPages} iç sayfa + KDY'nin eklediği 2 künye sayfası${
+                                        layoutPages - layoutPdfPages > 2 ? " + çift sayıya tamamlayan 1 boş sayfa" : ""
+                                      }`
+                                    : layoutPdfPages && layoutPages > layoutPdfPages
+                                      ? `: ${layoutPdfPages} iç sayfa, çift sayıya tamamlandı`
+                                      : ""
+                                }. Mizanpajda sayfa değişirse burası da güncellenir.`
+                              : "Taken from Layout; it updates when the page count changes there."
+                            : t.pageCountHint
+                        }
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            value={effectivePages}
+                            readOnly={!!layoutPages && !pageCountManual}
+                            onChange={(e) => setPageCount(parseInt(e.target.value, 10) || 0)}
+                            className={`${inputClass} flex-1 ${layoutPages && !pageCountManual ? "bg-background text-foreground/80" : ""}`}
+                          />
+                          {layoutPages && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (pageCountManual) {
+                                  setPageCountManual(false);
+                                  setPageCount(layoutPages);
+                                } else {
+                                  setPageCount(layoutPages);
+                                  setPageCountManual(true);
+                                }
+                              }}
+                              className="shrink-0 rounded-lg border border-border px-2.5 py-2 text-xs font-semibold text-foreground/80 transition hover:border-accent/50 hover:text-foreground"
+                            >
+                              {pageCountManual
+                                ? lang === "tr"
+                                  ? `Mizanpajdakini kullan (${layoutPages})`
+                                  : `Use Layout's (${layoutPages})`
+                                : lang === "tr"
+                                  ? "Elle gir"
+                                  : "Enter manually"}
+                            </button>
+                          )}
+                        </div>
                       </Field>
 
                       <Field label={t.paperLabel}>
                         <select
                           value={paperId}
-                          onChange={(e) => setPaperId(e.target.value as PaperId)}
+                          onChange={(e) => changePaper(e.target.value as PaperId)}
                           className={selectClass}
                         >
                           <optgroup label={t.paperGroupTr}>
@@ -4879,7 +4997,7 @@ export default function CoverStudio({
                         </select>
                         <p className="mt-1.5 text-xs text-muted">
                           {getPaper(paperId).source[lang]} ·{" "}
-                          {t.paperPer100.replace("{mm}", formatMm(getPaper(paperId).mmPerPage * 100))}
+                          {t.paperPer100.replace("{mm}", formatCm(getPaper(paperId).mmPerPage * 100, lang === "tr" ? "tr" : "en"))}
                         </p>
                       </Field>
 
@@ -4917,14 +5035,26 @@ export default function CoverStudio({
 
                       <div className="rounded-xl border border-border bg-surface p-4">
                         <div className="flex items-baseline justify-between">
-                          <span className={headingClass}>{t.spineHeading}</span>
+                          <span className="text-sm font-semibold text-foreground">{t.spine}</span>
                           <span className="font-sans text-lg font-bold text-accent">
-                            {formatMm(spread.spine)}
+                            {spineCm}
+                            <span className="ml-1.5 text-xs font-medium text-muted">({formatMm(spread.spine)})</span>
                           </span>
                         </div>
                         <p className="mt-1 text-xs text-muted">
-                          {spineManualOn ? t.spineManualLabel : t.spineAuto}
+                          {spineManualOn
+                            ? t.spineManualLabel
+                            : lang === "tr"
+                              ? `${effectivePages} sayfa · ${getPaper(paperId).label.tr}${binding === "hard" ? " · sert kapak +3 mm" : ""}`
+                              : `${effectivePages} pages · ${getPaper(paperId).label.en}${binding === "hard" ? " · hardcover +3 mm" : ""}`}
                         </p>
+                        {spread.spine < SPINE_TEXT_MIN_MM && (
+                          <p className="mt-2 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+                            {lang === "tr"
+                              ? "Sırt 1 cm'den ince: sırta kitap adı yazısı basılmaz, sırt düz renk kalır."
+                              : "Spine is under 1 cm: no title text is printed on it; it stays a plain colour."}
+                          </p>
+                        )}
                         <label className="mt-3 flex items-center gap-2 text-sm text-foreground/80">
                           <input
                             type="checkbox"

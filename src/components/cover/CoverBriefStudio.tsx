@@ -47,6 +47,8 @@ type Props = {
   author: string;
   /** Kitap bilgisindeki tür (genres.ts "v") → Thema ön seçimi. */
   genre?: string;
+  /** Sırt özeti ("Sırt: 1,9 cm (320 sayfa · Enso 60 gr)") — Kapsam adımında gösterilir. */
+  spineNote?: string;
 };
 
 // Örnek görsel: varsa resim, yoksa renk kartelası (onError ile düşer).
@@ -67,7 +69,7 @@ function ExampleArt({ src, swatch, alt }: { src: string; swatch: [string, string
   return <img src={src} alt={alt} className="h-full w-full object-cover" onError={() => setFailed(true)} />;
 }
 
-export default function CoverBriefStudio({ lang, projectId, initial, title, author, genre }: Props) {
+export default function CoverBriefStudio({ lang, projectId, initial, title, author, genre, spineNote }: Props) {
   const router = useRouter();
   const tr = lang === "tr";
   const [brief, setBrief] = useState<CoverBrief>(() => {
@@ -466,6 +468,11 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
           <div>
             <h2 className={stepTitle}>{tr ? "5 · Kapsam" : "5 · Scope"}</h2>
             <p className={stepHint}>{tr ? "Tam sarmal: arka kapak açık tonlu, sırt boş üretilir." : "Full wrap: back cover is generated pale, spine left plain."}</p>
+            {spineNote && (
+              <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-accent-soft px-2.5 py-1 text-xs font-medium text-foreground/80">
+                {spineNote}
+              </p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-2">
             {(

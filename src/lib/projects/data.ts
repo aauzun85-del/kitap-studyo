@@ -153,6 +153,27 @@ export async function markPrintDownloaded(id: string): Promise<void> {
   });
 }
 
+/**
+ * Kitabın baskı bilgisini (kâğıt, sayfa sayısı) meta'ya yaz — sırt hesabı için
+ * tek kaynak. Mizanpaj sayfa sayısını, konsept ekranı / kapak kâğıdı yazar.
+ * Değişen bir şey yoksa yazmaz (Mizanpaj her derlemede çağırabilir).
+ */
+export async function setBookPrintSpec(
+  id: string,
+  spec: Partial<Pick<ProjectMeta, "paperId" | "pdfPageCount" | "printPageCount">>,
+): Promise<void> {
+  return enqueue(id, async () => {
+    const supabase = createClient();
+    const env = envCache.get(id) ?? (await fetchEnvelope(id));
+    const keys = Object.keys(spec) as (keyof typeof spec)[];
+    if (keys.every((k) => spec[k] === undefined || env.meta[k] === spec[k])) return;
+    const merged: ProjectEnvelope = { ...env, meta: { ...env.meta, ...spec } };
+    const { error } = await supabase.from("projects").update({ data: merged }).eq("id", id);
+    if (error) throw error;
+    envCache.set(id, merged);
+  });
+}
+
 export async function renameProject(id: string, title: string): Promise<void> {
   return enqueue(id, async () => {
     const supabase = createClient();
