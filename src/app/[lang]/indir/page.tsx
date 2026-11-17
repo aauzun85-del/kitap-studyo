@@ -14,7 +14,7 @@ import { signThumbs } from "@/lib/projects/storage";
 import { readSavedLayout } from "@/lib/layout/layoutSettings";
 import { KDY_SIZE } from "@/lib/layout/kdy";
 import { INTERIOR_SIZES } from "@/lib/layout/page";
-import { calcSpread, resolveCoverSize, type BookSize } from "@/lib/cover/spread";
+import { calcSpread, resolveCoverSize, resolvePaperId, defaultPaperId, type BookSize } from "@/lib/cover/spread";
 import {
   BookMockup,
   FileCard,
@@ -72,7 +72,7 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
     ? calcSpread(
         resolveCoverSize(cv.sizeId ?? data.meta.sizeId),
         Math.max(1, cv.pageCount || 200),
-        cv.paperGsm ?? 80,
+        resolvePaperId(cv, defaultPaperId(data.meta.platform, data.meta.sizeId)),
         cv.binding ?? "soft",
         cv.spineManualOn && typeof cv.spineManualValue === "number" ? cv.spineManualValue : null,
         typeof cv.bleedMm === "number" ? cv.bleedMm : undefined,

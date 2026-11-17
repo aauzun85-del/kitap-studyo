@@ -16,11 +16,14 @@ import {
   DEFAULT_SIZE_ID,
   DEFAULT_BLEED_MM,
   BLEED_OPTIONS,
-  PAPER_OPTIONS,
+  PAPERS,
+  getPaper,
+  defaultPaperId,
+  resolvePaperId,
   calcSpread,
   formatMm,
   type BindingType,
-  type PaperGsm,
+  type PaperId,
 } from "@/lib/cover/spread";
 import {
   DEFAULT_TEMPLATE_ID,
@@ -386,7 +389,11 @@ export default function CoverStudio({
     initialProject?.data.meta.sizeId ?? seedCoverProfile?.defaultSizeId ?? DEFAULT_SIZE_ID,
   );
   const [pageCount, setPageCount] = useState(200);
-  const [paperGsm, setPaperGsm] = useState<PaperGsm>(80);
+  // Kâğıt cinsi: sırt kalınlığı buna göre (Enso 60 gr ≠ 1. hamur). Seçilmemişse
+  // platform/boya göre varsayılan (KDY → Enso 60 gr, KDP → beyaz).
+  const [paperId, setPaperId] = useState<PaperId>(() =>
+    defaultPaperId(seedCoverPlatform, initialProject?.data.meta.sizeId ?? seedCoverProfile?.defaultSizeId ?? DEFAULT_SIZE_ID),
+  );
   const [binding, setBinding] = useState<BindingType>("soft");
   const [spineManualOn, setSpineManualOn] = useState(false);
   const [spineManualValue, setSpineManualValue] = useState(11);
@@ -751,12 +758,12 @@ export default function CoverStudio({
       calcSpread(
         size,
         Math.max(1, pageCount || 1),
-        paperGsm,
+        paperId,
         binding,
         spineManualOn ? spineManualValue : null,
         bleedMm,
       ),
-    [size, pageCount, paperGsm, binding, spineManualOn, spineManualValue, bleedMm],
+    [size, pageCount, paperId, binding, spineManualOn, spineManualValue, bleedMm],
   );
 
   // Kullanıcı nesnesini (obj-) çoğalt: tüm özellikleriyle bir kopya oluştur,
@@ -1199,7 +1206,7 @@ export default function CoverStudio({
     // Kitap ayarları
     if (typeof d.sizeId === "string") setSizeId(d.sizeId);
     if (typeof d.pageCount === "number") setPageCount(d.pageCount);
-    if (typeof d.paperGsm === "number") setPaperGsm(d.paperGsm);
+    if (d.paperId !== undefined || typeof d.paperGsm === "number") setPaperId((cur) => resolvePaperId(d, cur));
     if (d.binding) setBinding(d.binding);
     if (typeof d.spineManualOn === "boolean") setSpineManualOn(d.spineManualOn);
     if (typeof d.spineManualValue === "number")
@@ -1462,7 +1469,7 @@ export default function CoverStudio({
       aiScope,
       sizeId,
       pageCount,
-      paperGsm,
+      paperId,
       binding,
       spineManualOn,
       spineManualValue,
@@ -1547,7 +1554,7 @@ export default function CoverStudio({
     aiScope,
     sizeId,
     pageCount,
-    paperGsm,
+    paperId,
     binding,
     spineManualOn,
     spineManualValue,
@@ -1629,7 +1636,7 @@ export default function CoverStudio({
     // Kitap ayarları
     setSizeId(DEFAULT_SIZE_ID);
     setPageCount(200);
-    setPaperGsm(80);
+    setPaperId(defaultPaperId(seedCoverPlatform, DEFAULT_SIZE_ID));
     setBinding("soft");
     setSpineManualOn(false);
     setSpineManualValue(11);
@@ -1787,7 +1794,7 @@ export default function CoverStudio({
       aiScope,
       sizeId,
       pageCount,
-      paperGsm,
+      paperId,
       binding,
       spineManualOn,
       spineManualValue,
@@ -4851,16 +4858,29 @@ export default function CoverStudio({
 
                       <Field label={t.paperLabel}>
                         <select
-                          value={paperGsm}
-                          onChange={(e) => setPaperGsm(Number(e.target.value) as PaperGsm)}
+                          value={paperId}
+                          onChange={(e) => setPaperId(e.target.value as PaperId)}
                           className={selectClass}
                         >
-                          {PAPER_OPTIONS.map((g) => (
-                            <option key={g} value={g}>
-                              {g} {t.paperUnit}
-                            </option>
-                          ))}
+                          <optgroup label={t.paperGroupTr}>
+                            {PAPERS.filter((p) => p.group === "tr").map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.label[lang]}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label={t.paperGroupKdp}>
+                            {PAPERS.filter((p) => p.group === "kdp").map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.label[lang]}
+                              </option>
+                            ))}
+                          </optgroup>
                         </select>
+                        <p className="mt-1.5 text-xs text-muted">
+                          {getPaper(paperId).source[lang]} ·{" "}
+                          {t.paperPer100.replace("{mm}", formatMm(getPaper(paperId).mmPerPage * 100))}
+                        </p>
                       </Field>
 
                       <Field label={t.bindingLabel}>

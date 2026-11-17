@@ -299,6 +299,10 @@ type CoverStudioCopy = {
   pageCountHint: string;
   paperLabel: string;
   paperUnit: string;
+  paperGroupTr: string;
+  paperGroupKdp: string;
+  /** "{mm}" yerine 100 sayfadaki sırt yazılır. */
+  paperPer100: string;
   bindingLabel: string;
   bindingSoft: string;
   bindingHard: string;
@@ -1466,8 +1470,11 @@ const tr: Dictionary = {
     sizeGroupTr: "Türkiye boyları",
     pageCountLabel: "Sayfa sayısı",
     pageCountHint: "Sırt kalınlığı sayfa sayısına göre hesaplanır.",
-    paperLabel: "Kağıt kalınlığı",
+    paperLabel: "İç sayfa kâğıdı",
     paperUnit: "gr",
+    paperGroupTr: "KDY ve Türkiye matbaaları",
+    paperGroupKdp: "Amazon KDP",
+    paperPer100: "100 sayfada {mm} sırt",
     bindingLabel: "Cilt türü",
     bindingSoft: "Karton kapak",
     bindingHard: "Sert kapak",
@@ -2658,8 +2665,11 @@ const en: Dictionary = {
     sizeGroupTr: "Türkiye sizes",
     pageCountLabel: "Page count",
     pageCountHint: "Spine width is calculated from the page count.",
-    paperLabel: "Paper weight",
+    paperLabel: "Interior paper",
     paperUnit: "gsm",
+    paperGroupTr: "KDY and Turkish printers",
+    paperGroupKdp: "Amazon KDP",
+    paperPer100: "{mm} spine per 100 pages",
     bindingLabel: "Binding",
     bindingSoft: "Paperback",
     bindingHard: "Hardcover",

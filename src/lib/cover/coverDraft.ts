@@ -9,7 +9,7 @@
 // ile aynı veritabanını ("tipostudio" / "kv") paylaşırız.
 
 import type { CoverColors } from "./templates";
-import type { PaperGsm, BindingType } from "./spread";
+import type { PaperGsm, PaperId, BindingType } from "./spread";
 import type { CoverBrief } from "./brief";
 import type {
   PositionMap,
@@ -69,6 +69,9 @@ export type CoverDraft = {
   // Kitap ayarları
   sizeId?: string;
   pageCount?: number;
+  /** Kâğıt cinsi (sırt buna göre). */
+  paperId?: PaperId;
+  /** ESKİ: yalnız gramaj (geri uyum; okunur, artık yazılmaz). */
   paperGsm?: PaperGsm;
   binding?: BindingType;
   spineManualOn?: boolean;

@@ -4,6 +4,7 @@
 
 export type BindingType = "soft" | "hard";
 
+/** Eski kayıtlardaki kâğıt gramajı (yalnız okuma/geri uyum için). */
 export type PaperGsm = 70 | 80 | 90 | 100;
 
 export type BookSize = {
@@ -25,15 +26,86 @@ export const DEFAULT_BLEED_MM = 3.175;
 // Güvenli alan: trim'den içeri, önemli içeriğin (yazı vb.) girmemesi gereken pay.
 export const SAFE_ZONE_MM = 6;
 
-// Kağıt kalınlığına göre sayfa başına sırt artışı (mm/sayfa).
-export const GSM_PER_PAGE: Record<PaperGsm, number> = {
-  70: 0.05,
-  80: 0.055,
-  90: 0.06,
-  100: 0.065,
+// ── Kâğıt ve sırt ──────────────────────────────────────────────────────────
+// Sırt kalınlığını gramaj değil KÂĞIT CİNSİ belirler: 60 gr Enso (kabarık kitap
+// kâğıdı), 80 gr 1. hamurdan bile kalındır. Bu yüzden seçim kâğıt cinsiyle yapılır.
+// Kaynaklar:
+//  • KDY resmî sırt tablosu (kdy-sirt-olculeri, 2022, "320 sayfa baz alınarak"):
+//    Enso 60 gr 19 mm · Enso 55 gr 17 mm · 1. Hamur 70 gr 14 mm · 1. Hamur 80 gr 16 mm.
+//  • Amazon KDP formülü: beyaz kâğıt 0,002252 inç/sayfa, krem 0,0025 inç/sayfa.
+//  • 1. Hamur 90/100 gr: KDY tablosundaki 70→80 gr artışından orantılı TAHMİN.
+export type PaperId =
+  | "enso-60"
+  | "enso-55"
+  | "hamur-70"
+  | "hamur-80"
+  | "hamur-90"
+  | "hamur-100"
+  | "kdp-white"
+  | "kdp-cream";
+
+export type PaperOption = {
+  id: PaperId;
+  group: "tr" | "kdp";
+  label: { tr: string; en: string };
+  /** Sayfa başına sırt artışı (mm/sayfa; 1 yaprak = 2 sayfa). */
+  mmPerPage: number;
+  /** Değerin dayanağı — seçim kutusunun altında gösterilir. */
+  source: { tr: string; en: string };
 };
 
-export const PAPER_OPTIONS: PaperGsm[] = [70, 80, 90, 100];
+const KDY_SRC = { tr: "KDY resmî sırt tablosu", en: "KDY official spine table" };
+const KDP_SRC = { tr: "Amazon KDP sırt formülü", en: "Amazon KDP spine formula" };
+const EST_SRC = {
+  tr: "Tahmini değer; matbaanla doğrula",
+  en: "Estimate; confirm with your printer",
+};
+
+export const PAPERS: PaperOption[] = [
+  { id: "enso-60", group: "tr", label: { tr: "Enso 60 gr (kitap kâğıdı)", en: "Enso 60 gsm (book paper)" }, mmPerPage: 19 / 320, source: KDY_SRC },
+  { id: "enso-55", group: "tr", label: { tr: "Enso 55 gr (kitap kâğıdı)", en: "Enso 55 gsm (book paper)" }, mmPerPage: 17 / 320, source: KDY_SRC },
+  { id: "hamur-70", group: "tr", label: { tr: "1. Hamur 70 gr", en: "Uncoated (1. hamur) 70 gsm" }, mmPerPage: 14 / 320, source: KDY_SRC },
+  { id: "hamur-80", group: "tr", label: { tr: "1. Hamur 80 gr", en: "Uncoated (1. hamur) 80 gsm" }, mmPerPage: 16 / 320, source: KDY_SRC },
+  { id: "hamur-90", group: "tr", label: { tr: "1. Hamur 90 gr", en: "Uncoated (1. hamur) 90 gsm" }, mmPerPage: 18 / 320, source: EST_SRC },
+  { id: "hamur-100", group: "tr", label: { tr: "1. Hamur 100 gr", en: "Uncoated (1. hamur) 100 gsm" }, mmPerPage: 20 / 320, source: EST_SRC },
+  { id: "kdp-white", group: "kdp", label: { tr: "Beyaz kâğıt (KDP)", en: "White paper (KDP)" }, mmPerPage: 0.002252 * 25.4, source: KDP_SRC },
+  { id: "kdp-cream", group: "kdp", label: { tr: "Krem kâğıt (KDP)", en: "Cream paper (KDP)" }, mmPerPage: 0.0025 * 25.4, source: KDP_SRC },
+];
+
+export function getPaper(id: PaperId): PaperOption {
+  return PAPERS.find((p) => p.id === id) ?? PAPERS[0];
+}
+
+function isPaperId(x: unknown): x is PaperId {
+  return typeof x === "string" && PAPERS.some((p) => p.id === x);
+}
+
+/**
+ * Eski kayıt (yalnız gramaj) → aynı gramajlı 1. hamur. 80 gr burada YOK: eski
+ * sürümün dokunulmamış varsayılanıydı (seçilmiş mi bilinemez) → platformun
+ * varsayılanına düşer (KDY → Enso 60 gr, KDP → beyaz).
+ */
+const LEGACY_GSM: Record<number, PaperId> = { 70: "hamur-70", 90: "hamur-90", 100: "hamur-100" };
+
+/**
+ * Kâğıt seçilmemişse varsayılan: Amazon/yurt dışı platformlarda KDP beyaz,
+ * KDY ve Türkiye boylarında 60 gr Enso (KDY'nin standart kâğıdı).
+ */
+export function defaultPaperId(platform?: string | null, sizeId?: string | null): PaperId {
+  if (platform === "kdp" || platform === "ingram" || platform === "bnpress" || platform === "lulu") return "kdp-white";
+  if (platform === "kdy" || platform === "akademi" || platform === "serbest") return "enso-60";
+  return resolveCoverSize(sizeId).category === "kdp" ? "kdp-white" : "enso-60";
+}
+
+/** Kayıtlı kapak ayarından kâğıdı çöz: yeni alan → eski gramaj → varsayılan. */
+export function resolvePaperId(
+  saved: { paperId?: unknown; paperGsm?: unknown } | null | undefined,
+  fallback: PaperId,
+): PaperId {
+  if (saved && isPaperId(saved.paperId)) return saved.paperId;
+  const legacy = saved && typeof saved.paperGsm === "number" ? LEGACY_GSM[saved.paperGsm] : undefined;
+  return legacy ?? fallback;
+}
 
 // Ön tanımlı kitap boyutları: inç tabanlı (KDP/Ingram/B&N/Lulu ortak) + Türkiye
 // boyları. Etiketler markaya özel değildir; aynı inç boyları tüm bu standartlar
@@ -75,17 +147,17 @@ export const BOOK_SIZES: BookSize[] = [
 export const DEFAULT_SIZE_ID = "kdp-6x9";
 
 /**
- * Sırt kalınlığı (mm). Elle değer verilirse o kullanılır; yoksa sayfa sayısı ve
- * kağıt kalınlığından hesaplanır. Sert kapakta (hardcover) +3 mm pay eklenir.
+ * Sırt kalınlığı (mm). Elle değer verilirse o kullanılır; yoksa sayfa sayısı ×
+ * kâğıt cinsinin sayfa başına kalınlığı. Sert kapakta (hardcover) +3 mm pay eklenir.
  */
 export function calcSpineWidth(
   pageCount: number,
-  paperGsm: PaperGsm,
+  paperId: PaperId,
   binding: BindingType,
   manual: number | null,
 ): number {
   if (manual !== null && Number.isFinite(manual)) return Math.max(manual, 0);
-  const perPage = GSM_PER_PAGE[paperGsm];
+  const perPage = getPaper(paperId).mmPerPage;
   let spine = pageCount * perPage;
   if (binding === "hard") spine += 3;
   return Math.max(spine, 2);
@@ -137,12 +209,12 @@ export function resolveCoverSize(id: string | undefined | null): BookSize {
 export function calcSpread(
   size: BookSize,
   pageCount: number,
-  paperGsm: PaperGsm,
+  paperId: PaperId,
   binding: BindingType,
   spineManual: number | null,
   bleedMm: number = DEFAULT_BLEED_MM,
 ): SpreadDimensions {
-  const spine = calcSpineWidth(pageCount, paperGsm, binding, spineManual);
+  const spine = calcSpineWidth(pageCount, paperId, binding, spineManual);
   const bleed = Number.isFinite(bleedMm) && bleedMm > 0 ? bleedMm : DEFAULT_BLEED_MM;
   const safeZone = SAFE_ZONE_MM;
   const totalWidth = bleed * 2 + size.width * 2 + spine;
