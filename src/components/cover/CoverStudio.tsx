@@ -225,6 +225,9 @@ function aiModelCost(model: AiModel): number {
   );
 }
 
+// Kapağın elle sırt ayarı → kitap düzeyi değer (mm ya da null = otomatik).
+const spineMetaOf = (on: boolean, v: number) => (on && v > 0 ? v : null);
+
 export default function CoverStudio({
   lang,
   dict,
@@ -557,14 +560,19 @@ export default function CoverStudio({
     setBookPrintSpec(projectId, { paperId }).catch(() => {});
   }, [projectId, paperId]);
   // Elle sırt da kitap düzeyindedir (Mizanpaj'la ortak): kısa beklemeyle yazılır.
+  // YALNIZ üye değiştirdiğinde: açılışta yüklenen değer geri yazılmaz (eski
+  // bir sayfa önbelleği Mizanpaj'da yeni girilmiş değeri ezmesin).
+  const bookSpineRef = useRef<number | null | undefined>(undefined);
   useEffect(() => {
-    if (!projectId || !hydratedRef.current) return;
-    const mm = spineManualOn && spineManualValue > 0 ? spineManualValue : null;
+    if (!projectId || !hydratedRef.current || autoExport) return;
+    const mm = spineMetaOf(spineManualOn, spineManualValue);
+    if (mm === bookSpineRef.current) return;
     const h = window.setTimeout(() => {
+      bookSpineRef.current = mm;
       setBookPrintSpec(projectId, { spineManualMm: mm }).catch(() => {});
     }, 600);
     return () => window.clearTimeout(h);
-  }, [projectId, spineManualOn, spineManualValue]);
+  }, [projectId, autoExport, spineManualOn, spineManualValue]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestDraftRef = useRef<CoverDraft | null>(null); // sekme kapanınca yazmak için
 
@@ -1293,6 +1301,7 @@ export default function CoverStudio({
       const bookPages = resolveBookPages(env.meta, env.cover).pages;
       const bookPaper = resolveBookPaper(env.meta, env.cover);
       const bookManual = resolveBookSpineManual(env.meta, env.cover);
+      bookSpineRef.current = bookManual;
       const oldSpread = calcSpread(
         draftSize,
         Math.max(1, typeof env.cover.pageCount === "number" && env.cover.pageCount > 0 ? env.cover.pageCount : 200),
@@ -1652,9 +1661,17 @@ export default function CoverStudio({
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
       }
-      if (latestDraftRef.current) {
-        if (projectId) void saveProjectCover(projectId, latestDraftRef.current);
-        else void saveCoverDraft(latestDraftRef.current);
+      const d = latestDraftRef.current;
+      if (d) {
+        if (projectId) {
+          // Bekleyen elle sırt da (600 ms dolmadan çıkılırsa) kitaba yazılsın.
+          const mm = spineMetaOf(d.spineManualOn === true, typeof d.spineManualValue === "number" ? d.spineManualValue : 0);
+          if (mm !== bookSpineRef.current) {
+            bookSpineRef.current = mm;
+            void setBookPrintSpec(projectId, { spineManualMm: mm }).catch(() => {});
+          }
+          void saveProjectCover(projectId, d);
+        } else void saveCoverDraft(d);
       }
     };
     window.addEventListener("pagehide", flush);

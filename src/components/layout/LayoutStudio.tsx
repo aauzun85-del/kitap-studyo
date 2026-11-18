@@ -259,17 +259,29 @@ export default function LayoutStudio({
     seed ? resolveBookSpineManual(seed.meta, seed.cover) : null,
   );
   const spineSaveRef = useRef<number | undefined>(undefined);
+  // Bekleyen (henüz yazılmamış) değer: sayfadan çıkarken / kapağa geçerken hemen yazılır.
+  const pendingSpineRef = useRef<{ mm: number | null } | null>(null);
+  const flushSpine = useCallback(() => {
+    window.clearTimeout(spineSaveRef.current);
+    const p = pendingSpineRef.current;
+    pendingSpineRef.current = null;
+    return projectId && p ? setBookPrintSpec(projectId, { spineManualMm: p.mm }).catch(() => {}) : Promise.resolve();
+  }, [projectId]);
   const changeSpineManual = useCallback(
     (mm: number | null) => {
       setSpineManualMm(mm);
       if (!projectId) return;
+      pendingSpineRef.current = { mm };
       window.clearTimeout(spineSaveRef.current);
-      spineSaveRef.current = window.setTimeout(() => {
-        setBookPrintSpec(projectId, { spineManualMm: mm }).catch(() => {});
-      }, mm === null ? 0 : 600);
+      spineSaveRef.current = window.setTimeout(() => void flushSpine(), mm === null ? 0 : 600);
     },
-    [projectId],
+    [projectId, flushSpine],
   );
+  const flushSpineRef = useRef(flushSpine);
+  useEffect(() => {
+    flushSpineRef.current = flushSpine;
+  }, [flushSpine]);
+  useEffect(() => () => void flushSpineRef.current(), []);
   const [margins, setMargins] = useState<Margins>(saved?.margins ?? { ...seedProfile.defaultMargins });
   const [presetId, setPresetId] = useState<string>(saved?.presetId ?? seedPlatform);
   const [gutterAuto, setGutterAuto] = useState(saved?.gutterAuto ?? true);
@@ -1467,7 +1479,7 @@ export default function LayoutStudio({
     setWizardBusy(true);
     try {
       // Sırt için son sayfa sayısı kapağa geçmeden yazılsın.
-      await flushPrintSpecRef.current();
+      await Promise.all([flushPrintSpecRef.current(), flushSpineRef.current()]);
       await completeWizardStep(projectId, "layout");
     } catch {
       // kaydedilemese de ilerle
@@ -1701,6 +1713,7 @@ export default function LayoutStudio({
             paperId,
             standard,
             onPaperChange: changePaper,
+            binding: spineBinding,
             spineManualMm,
             onSpineManualChange: changeSpineManual,
             estimatePages: fontsReady ? estimateConceptPages : undefined,
@@ -2586,7 +2599,7 @@ export default function LayoutStudio({
                       kerning={kerning}
                       setKerning={setKerning}
                       themePicker={<ThemePicker t={t} lang={lang} themeId={themeId} onApply={applyTheme} />}
-                      tocEditor={frontMatter && chapterTitles.length > 0 ? tocEditor : null}
+                      tocEditor={frontMatter && tocStyle !== "none" && chapterTitles.length > 0 ? tocEditor : null}
                       onApplyAll={applyToWholeBook}
                       footnotePanel={
                         footnoteCount > 0 ? (

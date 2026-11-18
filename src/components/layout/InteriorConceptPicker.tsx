@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "@/i18n/config";
 import type { Block, LayoutSettings } from "@/lib/layout/paginate";
-import { calcSpineWidth, formatCm, printedPageCount, type PaperId } from "@/lib/cover/spread";
+import { calcSpineWidth, formatCm, printedPageCount, type BindingType, type PaperId } from "@/lib/cover/spread";
 import PrintSpecBox from "@/components/layout/PrintSpecBox";
 import { renderBookSvgTypst, type TypstBookInput } from "@/lib/typst";
 import { isBibliographyTitle } from "@/lib/typst/serialize";
@@ -146,6 +146,8 @@ export default function InteriorConceptPicker({
     paperId: PaperId;
     standard: string;
     onPaperChange: (id: PaperId) => void;
+    /** Cilt (sert kapakta sırta +3 mm; Kapak'taki seçim). */
+    binding: BindingType;
     /** Elle girilen sırt (mm) ya da null (otomatik). */
     spineManualMm: number | null;
     onSpineManualChange: (mm: number | null) => void;
@@ -384,7 +386,7 @@ export default function InteriorConceptPicker({
     const n = estimates[estKey(id)];
     if (typeof n !== "number" || n <= 0) return null;
     const pages = printedPageCount(n, print.standard);
-    const mm = calcSpineWidth(pages, print.paperId, "soft", print.spineManualMm);
+    const mm = calcSpineWidth(pages, print.paperId, print.binding, print.spineManualMm);
     return { pages, mm, cm: formatCm(mm, tr ? "tr" : "en") };
   };
   const spineLine = (id: string): string | null => {
@@ -545,7 +547,7 @@ export default function InteriorConceptPicker({
                 lang={lang}
                 paperId={print.paperId}
                 onPaperChange={print.onPaperChange}
-                autoSpineMm={chosenSpine ? calcSpineWidth(chosenSpine.pages, print.paperId, "soft", null) : null}
+                autoSpineMm={chosenSpine ? calcSpineWidth(chosenSpine.pages, print.paperId, print.binding, null) : null}
                 pages={chosenSpine?.pages ?? null}
                 approximate
                 spineManualMm={print.spineManualMm}
@@ -731,7 +733,9 @@ export default function InteriorConceptPicker({
           </button>
           <button
             type="button"
-            onClick={() => onApply(chosen, adjust, { ornamentKind: ornNow, tocStyle: tocNow, bibStyle: bibNow })}
+            // Kendiliğinden "Yok" yalnız gösterimdir: kaydedilmez (kitaba sonra kaynakça
+            // eklenirse konseptin düzeni uygulansın). Üye "Yok"u kendisi seçtiyse kaydedilir.
+            onClick={() => onApply(chosen, adjust, { ornamentKind: ornNow, tocStyle: tocNow, bibStyle: details.bibStyle ?? chosen.bibStyle })}
             className="rounded-xl bg-accent px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:opacity-90"
           >
             {tr ? `“${chosen.name.tr}” düzenini uygula →` : `Apply “${chosen.name.en}” →`}
