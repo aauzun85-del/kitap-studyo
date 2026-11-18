@@ -118,8 +118,10 @@ export type LayoutSettings = {
 };
 
 export type OrnamentKind = "fleuron" | "leaf" | "asterism" | "star" | "diamond-rule" | "none";
-export type TocStyle = "classic" | "plain" | "numbered" | "elegant";
-export type BibStyle = "none" | "hanging" | "numbered" | "plain";
+/** "none" = içindekiler sayfası basılmaz. */
+export type TocStyle = "classic" | "plain" | "numbered" | "elegant" | "none";
+/** "none" = kaynakça normal paragraf; "off" = kitapta kaynakça yok (düzen uygulanmaz). */
+export type BibStyle = "none" | "hanging" | "numbered" | "plain" | "off";
 /** Dipnotun yeri: sayfa altı / bölüm sonu / kitap sonu ("Notlar"). */
 export type FootnotePlacement = "page" | "chapter" | "book";
 
@@ -1059,7 +1061,7 @@ export function paginate(input: PaginateInput): Page[] {
 
   const wantFront = settings.showFrontMatter;
   const hasBio = wantFront && meta.bio.trim().length > 0;
-  const hasToc = wantFront && chapters.length >= 1;
+  const hasToc = wantFront && chapters.length >= 1 && settings.tocStyle !== "none";
 
   let tocPageCount = 0;
   if (hasToc) {

@@ -9,7 +9,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "@/i18n/config";
 import type { Block, LayoutSettings } from "@/lib/layout/paginate";
-import { PAPERS, calcSpineWidth, formatCm, printedPageCount, type PaperId } from "@/lib/cover/spread";
+import { calcSpineWidth, formatCm, printedPageCount, type PaperId } from "@/lib/cover/spread";
+import PrintSpecBox from "@/components/layout/PrintSpecBox";
 import { renderBookSvgTypst, type TypstBookInput } from "@/lib/typst";
 import { isBibliographyTitle } from "@/lib/typst/serialize";
 import {
@@ -145,6 +146,9 @@ export default function InteriorConceptPicker({
     paperId: PaperId;
     standard: string;
     onPaperChange: (id: PaperId) => void;
+    /** Elle girilen sırt (mm) ya da null (otomatik). */
+    spineManualMm: number | null;
+    onSpineManualChange: (mm: number | null) => void;
     /** Yazı tipleri hazır olunca verilir (o zamana dek "hesaplanıyor"). */
     estimatePages?: (patch: Partial<LayoutSettings>, keepLineBreaks: boolean) => number | null;
   };
@@ -254,7 +258,6 @@ export default function InteriorConceptPicker({
 
   const chosen = structure.concepts.find((c) => c.id === selected) ?? structure.concepts[0];
   const tocNow = details.tocStyle ?? chosen.tocStyle;
-  const bibNow = details.bibStyle ?? chosen.bibStyle;
   const ornNow = details.ornamentKind ?? chosen.ornamentKind;
 
   // İçindekiler + kaynakça önizlemesi (seçili konsept + ayrıntılar). Kitabın
@@ -302,8 +305,12 @@ export default function InteriorConceptPicker({
         R("Kaya, Ayşe, ve Mert Yılmaz. Kent ve Kimlik: Toplumsal Bellek Üzerine Denemeler. Ankara: Örnek Kitap, 2021."),
       ];
     }
-    return { blocks: [...chapters, ...bib], synthetic, sampleBib };
+    return { blocks: [...chapters, ...bib], chaptersOnly: chapters, synthetic, sampleBib };
   }, [blocksFor, tr]);
+  // Kitapta kaynakça bölümü yoksa varsayılan "Yok" (örnek kaynakça gösterilmez).
+  const bibNow = details.bibStyle ?? (detailSample.sampleBib ? "off" : chosen.bibStyle);
+  const tocOn = tocNow !== "none";
+  const bibShown = bibNow !== "off";
 
   const [detailPv, setDetailPv] = useState<Record<string, Preview>>({});
   const detailKey = `${chosen.id}|${adjust}|${tocNow}|${bibNow}|${ornNow}`;
@@ -319,16 +326,19 @@ export default function InteriorConceptPicker({
           showFrontMatter: true,
           chapterStartsOnRightPage: false,
         };
+        // Kitapta kaynakça yoksa ve "Yok" seçildiyse örnek kaynakça içindekilere de girmesin.
+        const blocks = !bibShown && detailSample.sampleBib ? detailSample.chaptersOnly : detailSample.blocks;
         const svg = await renderBookSvgTypst({
           ...baseInput,
           meta: { ...baseInput.meta, bio: "" },
-          blocks: detailSample.blocks,
+          blocks,
           settings,
         });
         if (cancelled) return;
         const pages = splitPages(svg, pageHeightPt, 40);
         // 1. sayfa kapak sayfası, 2. sayfa içindekiler; kaynakça son sayfa.
-        const pick = [pages[1], pages[pages.length - 1]].filter(Boolean);
+        // "Yok" seçilenin sayfası gösterilmez.
+        const pick = [tocOn ? pages[1] : "", bibShown ? pages[pages.length - 1] : ""].filter(Boolean);
         urlsRef.current.push(...pages);
         detailDoneRef.current.add(detailKey);
         setDetailPv((p) => ({ ...p, [detailKey]: { pages: pick } }));
@@ -341,42 +351,51 @@ export default function InteriorConceptPicker({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailKey, detailSample, baseInput, familyOf, pageHeightPt]);
+  const noDetailPages = !tocOn && !bibShown;
   const dpv = detailPv[detailKey];
 
   // Sayfa sayısı tahmini: görünen konseptler için SIRAYLA (her biri ayrı bir
   // adımda → arayüz donmaz). Sonuç baskı sayfasına (KDY künyesi + çift) ve
   // seçili kâğıda göre sırta çevrilir.
   const estimate = print?.estimatePages;
+  // İçindekiler "Yok" sayfa sayısını değiştirir → tahmin anahtarına girer.
+  const estKey = (id: string) => `${id}|${adjust}|${tocOn ? "t" : "n"}`;
   useEffect(() => {
     if (!estimate) return;
-    const todo = structure.concepts.filter((k) => !(`${k.id}|${adjust}` in estimates));
+    const todo = structure.concepts.filter((k) => !(estKey(k.id) in estimates));
     if (todo.length === 0) return;
     const k = todo[0];
     const h = window.setTimeout(() => {
       let n: number | null = null;
       try {
-        n = estimate(conceptLayoutSettings(k, familyOf, adjust), k.keepLineBreaks);
+        n = estimate({ ...conceptLayoutSettings(k, familyOf, adjust), tocStyle: tocNow }, k.keepLineBreaks);
       } catch {
         n = null;
       }
-      setEstimates((prev) => ({ ...prev, [`${k.id}|${adjust}`]: n }));
+      setEstimates((prev) => ({ ...prev, [estKey(k.id)]: n }));
     }, 40);
     return () => window.clearTimeout(h);
-  }, [estimate, structure, adjust, estimates, familyOf]);
+    // estKey adjust + tocOn'a bağlı.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimate, structure, adjust, estimates, familyOf, tocOn, tocNow]);
 
-  const spineOf = (id: string): { pages: number; cm: string } | null => {
+  const spineOf = (id: string): { pages: number; mm: number; cm: string } | null => {
     if (!print) return null;
-    const n = estimates[`${id}|${adjust}`];
+    const n = estimates[estKey(id)];
     if (typeof n !== "number" || n <= 0) return null;
     const pages = printedPageCount(n, print.standard);
-    return { pages, cm: formatCm(calcSpineWidth(pages, print.paperId, "soft", null), tr ? "tr" : "en") };
+    const mm = calcSpineWidth(pages, print.paperId, "soft", print.spineManualMm);
+    return { pages, mm, cm: formatCm(mm, tr ? "tr" : "en") };
   };
   const spineLine = (id: string): string | null => {
     if (!print) return null;
     const s = spineOf(id);
-    if (!s) return `${id}|${adjust}` in estimates ? null : tr ? "Sayfa sayısı hesaplanıyor…" : "Counting pages…";
+    if (!s) return estKey(id) in estimates ? null : tr ? "Sayfa sayısı hesaplanıyor…" : "Counting pages…";
+    if (print.spineManualMm !== null)
+      return tr ? `≈ ${s.pages} sayfa · sırt ${s.cm} (elle)` : `≈ ${s.pages} pages · spine ${s.cm} (manual)`;
     return tr ? `≈ ${s.pages} sayfa · sırt ${s.cm}` : `≈ ${s.pages} pages · spine ${s.cm}`;
   };
+  const chosenSpine = print ? spineOf(chosen.id) : null;
 
   return (
     <div className="fixed inset-0 z-[90] flex flex-col bg-background" role="dialog" aria-modal="true" aria-labelledby="ks-concept-title">
@@ -511,6 +530,30 @@ export default function InteriorConceptPicker({
             })}
           </div>
 
+          {/* ── Baskı: kâğıt ve sırt (görünür yerde) ── */}
+          {print && (
+            <section className="mt-6 rounded-2xl border border-border bg-surface p-4 sm:p-5" aria-labelledby="ks-print-title">
+              <h3 id="ks-print-title" className="text-lg font-bold text-foreground">
+                {tr ? "Baskı — kâğıt ve sırt" : "Print — paper and spine"}
+              </h3>
+              <p className="mb-4 mt-0.5 text-sm text-muted">
+                {tr
+                  ? `Sırt, “${chosen.name.tr}” düzeninin yaklaşık sayfa sayısıyla hesaplanır. Matbaan ölçü verdiyse elle girebilirsin.`
+                  : `The spine is estimated from the page count of “${chosen.name.en}”. If your printer gave you a width, enter it manually.`}
+              </p>
+              <PrintSpecBox
+                lang={lang}
+                paperId={print.paperId}
+                onPaperChange={print.onPaperChange}
+                autoSpineMm={chosenSpine ? calcSpineWidth(chosenSpine.pages, print.paperId, "soft", null) : null}
+                pages={chosenSpine?.pages ?? null}
+                approximate
+                spineManualMm={print.spineManualMm}
+                onSpineManualChange={print.onSpineManualChange}
+              />
+            </section>
+          )}
+
           {/* ── Ayrıntılar: süs, içindekiler, kaynakça ── */}
           <section className="mt-6 rounded-2xl border border-border bg-surface p-4 sm:p-5" aria-labelledby="ks-details-title">
             <h3 id="ks-details-title" className="text-lg font-bold text-foreground">
@@ -544,7 +587,7 @@ export default function InteriorConceptPicker({
                   </div>
                 <div>
                   <div className="mb-2 text-sm font-semibold text-foreground">{tr ? "İçindekiler" : "Contents page"}</div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label={tr ? "İçindekiler" : "Contents page"}>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5" role="group" aria-label={tr ? "İçindekiler" : "Contents page"}>
                     {TOC_OPTIONS.map((o) => (
                       <button
                         key={o.v}
@@ -563,7 +606,7 @@ export default function InteriorConceptPicker({
                 </div>
                 <div>
                   <div className="mb-2 text-sm font-semibold text-foreground">{tr ? "Kaynakça" : "Bibliography"}</div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label={tr ? "Kaynakça" : "Bibliography"}>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5" role="group" aria-label={tr ? "Kaynakça" : "Bibliography"}>
                     {BIB_OPTIONS.map((o) => (
                       <button
                         key={o.v}
@@ -580,21 +623,33 @@ export default function InteriorConceptPicker({
                     ))}
                   </div>
                   <p className="mt-2 text-xs leading-relaxed text-muted">
-                    {tr
-                      ? "Kitapta “Kaynakça”, “Kaynaklar” ya da “Bibliyografya” başlıklı bölüm varsa girişleri bu düzende dizilir; yazımlarına dokunulmaz."
-                      : "If the book has a “Bibliography” or “References” section, its entries use this layout; their wording is untouched."}
+                    {!bibShown
+                      ? detailSample.sampleBib
+                        ? tr
+                          ? "Kitapta kaynakça bölümü bulunmadı; kaynakça düzeni uygulanmaz."
+                          : "No bibliography section was found in the book; no bibliography layout is applied."
+                        : tr
+                          ? "Kitaptaki kaynakça bölümü silinmez; girişleri normal paragraf olarak dizilir."
+                          : "The book's bibliography section is kept; its entries are set as normal paragraphs."
+                      : tr
+                        ? "Kitapta “Kaynakça”, “Kaynaklar” ya da “Bibliyografya” başlıklı bölüm varsa girişleri bu düzende dizilir; yazımlarına dokunulmaz."
+                        : "If the book has a “Bibliography” or “References” section, its entries use this layout; their wording is untouched."}
                   </p>
                 </div>
               </div>
               <div>
                 <div className="flex items-center justify-center gap-2 rounded-xl bg-[#e9eaf0] p-3 dark:bg-[#20222b]">
-                  {dpv && "pages" in dpv && dpv.pages.length > 0 ? (
+                  {noDetailPages ? (
+                    <div className="flex aspect-[4/3] w-full items-center justify-center px-6 text-center text-sm text-muted">
+                      {tr ? "İçindekiler ve kaynakça sayfası basılmayacak." : "No contents or bibliography page will be printed."}
+                    </div>
+                  ) : dpv && "pages" in dpv && dpv.pages.length > 0 ? (
                     dpv.pages.map((u, i) => (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         key={u}
                         src={u}
-                        alt={i === 0 ? (tr ? "İçindekiler önizlemesi" : "Contents preview") : tr ? "Kaynakça önizlemesi" : "Bibliography preview"}
+                        alt={i === 0 && tocOn ? (tr ? "İçindekiler önizlemesi" : "Contents preview") : tr ? "Kaynakça önizlemesi" : "Bibliography preview"}
                         className="w-[calc(50%-4px)] rounded-[2px] bg-white shadow-[0_2px_10px_rgba(20,24,40,.18)]"
                       />
                     ))
@@ -604,10 +659,26 @@ export default function InteriorConceptPicker({
                     [0, 1].map((i) => <div key={i} className="aspect-[2/3] w-[calc(50%-4px)] animate-pulse rounded-[2px] bg-white/70" />)
                   )}
                 </div>
-                <p className="mt-2 text-center text-xs text-muted">
-                  {tr ? "Solda içindekiler, sağda kaynakça sayfası" : "Contents page left, bibliography right"}
-                  {detailSample.sampleBib || detailSample.synthetic ? (tr ? " (kitapta olmayanlar örnek metinle gösterildi)" : " (sample text where the book has none)") : ""}
-                </p>
+                {!noDetailPages && (
+                  <p className="mt-2 text-center text-xs text-muted">
+                    {tocOn && bibShown
+                      ? tr
+                        ? "Solda içindekiler, sağda kaynakça sayfası"
+                        : "Contents page left, bibliography right"
+                      : tocOn
+                        ? tr
+                          ? "İçindekiler sayfası"
+                          : "Contents page"
+                        : tr
+                          ? "Kaynakça sayfası"
+                          : "Bibliography page"}
+                    {(bibShown && detailSample.sampleBib) || (tocOn && detailSample.synthetic)
+                      ? tr
+                        ? " (kitapta olmayanlar örnek metinle gösterildi)"
+                        : " (sample text where the book has none)"
+                      : ""}
+                  </p>
+                )}
               </div>
             </div>
           </section>
@@ -645,44 +716,10 @@ export default function InteriorConceptPicker({
               </button>
             ))}
           </div>
-          {print && (
-            <>
-              <label className="ml-1 flex items-center gap-2 text-sm font-medium text-foreground">
-                {tr ? "Kâğıt" : "Paper"}
-                <select
-                  value={print.paperId}
-                  onChange={(e) => print.onPaperChange(e.target.value as PaperId)}
-                  className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground"
-                >
-                  <optgroup label={tr ? "KDY ve Türkiye matbaaları" : "KDY and Turkish printers"}>
-                    {PAPERS.filter((p) => p.group === "tr").map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label[lang]}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Amazon KDP">
-                    {PAPERS.filter((p) => p.group === "kdp").map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label[lang]}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-              </label>
-              {spineOf(chosen.id) && (
-                <span
-                  className="text-sm text-muted"
-                  title={
-                    tr
-                      ? "Yaklaşık değer. Kesin sırt, Mizanpaj sayfaları dizdikten sonra Kapak'ta hesaplanır."
-                      : "Approximate. The exact spine is calculated on the Cover once Layout has set the pages."
-                  }
-                >
-                  {tr ? "Sırt" : "Spine"} <b className="font-semibold text-foreground">≈ {spineOf(chosen.id)!.cm}</b>
-                </span>
-              )}
-            </>
+          {chosenSpine && (
+            <span className="text-sm text-muted">
+              {tr ? "Sırt" : "Spine"} <b className="font-semibold text-foreground">{print?.spineManualMm != null ? "" : "≈ "}{chosenSpine.cm}</b>
+            </span>
           )}
           <div className="flex-1" />
           <button
@@ -716,8 +753,9 @@ function SpineGlyph() {
 }
 
 // Küçük çizimler (seçenek kartlarında): içindekiler ve kaynakça düzeninin özeti.
-function TocMini({ kind }: { kind: "classic" | "plain" | "numbered" | "elegant" }) {
+function TocMini({ kind }: { kind: "classic" | "plain" | "numbered" | "elegant" | "none" }) {
   const bar = "h-[3px] rounded-full bg-foreground/45";
+  if (kind === "none") return <NoneMini />;
   return (
     <div className="flex h-12 flex-col justify-center gap-1.5 rounded-md bg-white px-2 dark:bg-white/90" aria-hidden="true">
       {[0, 1, 2].map((i) =>
@@ -738,8 +776,18 @@ function TocMini({ kind }: { kind: "classic" | "plain" | "numbered" | "elegant" 
   );
 }
 
-function BibMini({ kind }: { kind: "hanging" | "numbered" | "plain" | "none" }) {
+// "Yok" seçeneği: boş kart + ∅ işareti.
+function NoneMini() {
+  return (
+    <div className="flex h-12 items-center justify-center rounded-md bg-white text-lg text-black/35 dark:bg-white/90" aria-hidden="true">
+      ∅
+    </div>
+  );
+}
+
+function BibMini({ kind }: { kind: "hanging" | "numbered" | "plain" | "none" | "off" }) {
   const bar = "h-[3px] rounded-full bg-foreground/45";
+  if (kind === "off") return <NoneMini />;
   return (
     <div className="flex h-12 flex-col justify-center gap-1 rounded-md bg-white px-2 dark:bg-white/90" aria-hidden="true">
       {[0, 1].map((i) => (

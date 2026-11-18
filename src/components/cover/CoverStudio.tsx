@@ -23,6 +23,7 @@ import {
   resolvePaperId,
   shiftForSpine,
   resolveBookPages,
+  resolveBookSpineManual,
   layoutPrintPages,
   SPINE_TEXT_MIN_MM,
   calcSpread,
@@ -133,6 +134,7 @@ import {
   type UserTemplate,
 } from "@/lib/cover/userLibrary";
 import CoverEditModal from "./CoverEditModal";
+import { SpineCmInput } from "@/components/layout/PrintSpecBox";
 import CoverCanvas, {
   type CoverImages,
   type CoverCanvasHandle,
@@ -554,6 +556,15 @@ export default function CoverStudio({
     if (!projectId || !hydratedRef.current) return;
     setBookPrintSpec(projectId, { paperId }).catch(() => {});
   }, [projectId, paperId]);
+  // Elle sırt da kitap düzeyindedir (Mizanpaj'la ortak): kısa beklemeyle yazılır.
+  useEffect(() => {
+    if (!projectId || !hydratedRef.current) return;
+    const mm = spineManualOn && spineManualValue > 0 ? spineManualValue : null;
+    const h = window.setTimeout(() => {
+      setBookPrintSpec(projectId, { spineManualMm: mm }).catch(() => {});
+    }, 600);
+    return () => window.clearTimeout(h);
+  }, [projectId, spineManualOn, spineManualValue]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestDraftRef = useRef<CoverDraft | null>(null); // sekme kapanınca yazmak için
 
@@ -1281,6 +1292,7 @@ export default function CoverStudio({
         env.cover.spineManualOn && typeof env.cover.spineManualValue === "number" ? env.cover.spineManualValue : null;
       const bookPages = resolveBookPages(env.meta, env.cover).pages;
       const bookPaper = resolveBookPaper(env.meta, env.cover);
+      const bookManual = resolveBookSpineManual(env.meta, env.cover);
       const oldSpread = calcSpread(
         draftSize,
         Math.max(1, typeof env.cover.pageCount === "number" && env.cover.pageCount > 0 ? env.cover.pageCount : 200),
@@ -1289,7 +1301,7 @@ export default function CoverStudio({
         draftManual,
         env.cover.bleedMm,
       );
-      const newSpread = calcSpread(draftSize, Math.max(1, bookPages), bookPaper, env.cover.binding ?? "soft", draftManual, env.cover.bleedMm);
+      const newSpread = calcSpread(draftSize, Math.max(1, bookPages), bookPaper, env.cover.binding ?? "soft", bookManual, env.cover.bleedMm);
       const shifted = shiftForSpine(env.cover.positions, env.cover.photoRect, oldSpread, newSpread);
       const reconciled: CoverDraft = {
         ...env.cover,
@@ -1301,6 +1313,9 @@ export default function CoverStudio({
         // girilmediyse) ve kâğıt (konsept ekranı / kapak ortak).
         pageCount: bookPages,
         paperId: bookPaper,
+        // Elle sırt: kitap düzeyi (Mizanpaj'da da girilebilir).
+        spineManualOn: bookManual !== null,
+        spineManualValue: bookManual ?? env.cover.spineManualValue,
         positions: shifted.positions,
         photoRect: shifted.photoRect,
       };
@@ -5065,13 +5080,12 @@ export default function CoverStudio({
                           {t.spineManualToggle}
                         </label>
                         {spineManualOn && (
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.1}
-                            value={spineManualValue}
-                            onChange={(e) => setSpineManualValue(parseFloat(e.target.value) || 0)}
-                            className={`${inputClass} mt-3`}
+                          <SpineCmInput
+                            lang={lang}
+                            valueMm={spineManualValue}
+                            onChangeMm={setSpineManualValue}
+                            ariaLabel={t.spineManualLabel}
+                            className="mt-3"
                           />
                         )}
                       </div>

@@ -134,6 +134,8 @@ export type SpineInfo = {
   paperId: PaperId;
   spineMm: number;
   manual: boolean;
+  /** Elle girilen sırt (mm) ya da null (otomatik). */
+  manualMm: number | null;
 };
 
 type MetaLike = {
@@ -142,6 +144,7 @@ type MetaLike = {
   paperId?: unknown;
   pdfPageCount?: unknown;
   printPageCount?: unknown;
+  spineManualMm?: unknown;
 };
 type CoverLike = {
   pageCount?: unknown;
@@ -175,11 +178,24 @@ export function resolveBookPages(
   return { pages: own ?? fromLayout ?? 200, fromLayout: !own && !!fromLayout };
 }
 
+/**
+ * Elle girilmiş sırt (mm) ya da null. Kitap düzeyi (Mizanpaj / Kapak ortak)
+ * önce gelir; null orada "otomatik" demektir. Kitap düzeyinde hiç seçim
+ * yapılmamışsa (eski kitaplar) kapak taslağındaki elle sırt geçerlidir.
+ */
+export function resolveBookSpineManual(meta: MetaLike | null | undefined, cover: CoverLike | null | undefined): number | null {
+  const m = meta?.spineManualMm;
+  if (m === null) return null;
+  if (typeof m === "number" && Number.isFinite(m) && m > 0) return m;
+  return cover?.spineManualOn === true && typeof cover.spineManualValue === "number" && cover.spineManualValue > 0
+    ? cover.spineManualValue
+    : null;
+}
+
 export function bookSpineInfo(meta: MetaLike | null | undefined, cover: CoverLike | null | undefined): SpineInfo {
   const { pages, fromLayout } = resolveBookPages(meta, cover);
   const paperId = resolveBookPaper(meta, cover);
-  const manualVal =
-    cover?.spineManualOn === true && typeof cover.spineManualValue === "number" ? cover.spineManualValue : null;
+  const manualVal = resolveBookSpineManual(meta, cover);
   const binding: BindingType = cover?.binding === "hard" ? "hard" : "soft";
   const pdf = meta?.pdfPageCount;
   return {
@@ -189,6 +205,7 @@ export function bookSpineInfo(meta: MetaLike | null | undefined, cover: CoverLik
     paperId,
     spineMm: calcSpineWidth(pages, paperId, binding, manualVal),
     manual: manualVal !== null,
+    manualMm: manualVal,
   };
 }
 

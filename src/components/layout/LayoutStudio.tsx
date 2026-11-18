@@ -12,8 +12,10 @@ import {
   getPaper,
   printedPageCount,
   resolveBookPaper,
+  resolveBookSpineManual,
   type PaperId,
 } from "@/lib/cover/spread";
+import PrintSpecBox from "@/components/layout/PrintSpecBox";
 import WizardGuide from "@/components/app/WizardGuide";
 import { useEditorSession } from "@/lib/editor/session";
 import { useSaveStatus, formatSavedTime, SAVE_LABELS } from "@/lib/projects/saveStatus";
@@ -248,6 +250,23 @@ export default function LayoutStudio({
     (id: PaperId) => {
       setPaperId(id);
       if (projectId) setBookPrintSpec(projectId, { paperId: id }).catch(() => {});
+    },
+    [projectId],
+  );
+  // Elle girilen sırt (mm; null = otomatik). Kitap düzeyi, Kapak'la ortak.
+  // Yazarken her tuşta kaydetmemek için kısa bir bekleme ile projeye yazılır.
+  const [spineManualMm, setSpineManualMm] = useState<number | null>(() =>
+    seed ? resolveBookSpineManual(seed.meta, seed.cover) : null,
+  );
+  const spineSaveRef = useRef<number | undefined>(undefined);
+  const changeSpineManual = useCallback(
+    (mm: number | null) => {
+      setSpineManualMm(mm);
+      if (!projectId) return;
+      window.clearTimeout(spineSaveRef.current);
+      spineSaveRef.current = window.setTimeout(() => {
+        setBookPrintSpec(projectId, { spineManualMm: mm }).catch(() => {});
+      }, mm === null ? 0 : 600);
     },
     [projectId],
   );
@@ -1516,15 +1535,9 @@ export default function LayoutStudio({
   const printPagesNow = pdfPagesNow > 0 ? printedPageCount(pdfPagesNow, standard) : 0;
   // Kapakta elle girilmiş sırt/cilt varsa üst çubuk da onu göstersin (kapakla aynı sayı).
   const seedCover = seed?.cover;
-  const spineMmNow =
-    printPagesNow > 0
-      ? calcSpineWidth(
-          printPagesNow,
-          paperId,
-          seedCover?.binding === "hard" ? "hard" : "soft",
-          seedCover?.spineManualOn && typeof seedCover.spineManualValue === "number" ? seedCover.spineManualValue : null,
-        )
-      : 0;
+  const spineBinding = seedCover?.binding === "hard" ? "hard" : "soft";
+  const spineAutoMmNow = printPagesNow > 0 ? calcSpineWidth(printPagesNow, paperId, spineBinding, null) : null;
+  const spineMmNow = spineManualMm ?? spineAutoMmNow ?? 0;
   // Yalnız GERÇEK dizgi (Typst) sayısı kaydedilir: baskı PDF'i her zaman Typst
   // ile çıkar; hızlı (yaklaşık) önizlemenin sayısı sırtı yanıltır.
   const pendingSpecRef = useRef<{ pdfPageCount: number; printPageCount: number } | null>(null);
@@ -1684,7 +1697,14 @@ export default function LayoutStudio({
             setConceptOpen(false);
           }}
           onClose={() => setConceptOpen(false)}
-          print={{ paperId, standard, onPaperChange: changePaper, estimatePages: fontsReady ? estimateConceptPages : undefined }}
+          print={{
+            paperId,
+            standard,
+            onPaperChange: changePaper,
+            spineManualMm,
+            onSpineManualChange: changeSpineManual,
+            estimatePages: fontsReady ? estimateConceptPages : undefined,
+          }}
         />
       )}
       {autoExport && (
@@ -2072,15 +2092,23 @@ export default function LayoutStudio({
               {spineMmNow > 0 && (
                 <button
                   type="button"
-                  onClick={() => setConceptOpen(true)}
+                  onClick={() => {
+                    setPanel("page");
+                    if (!sidePanelOpen) toggleSidePanel();
+                  }}
                   title={
-                    tr
-                      ? `${getPaper(paperId).label.tr} · baskıda ${printPagesNow} sayfa${printPagesNow - pdfPagesNow >= 2 ? " (KDY'nin 2 künye sayfası dahil)" : ""}. Kâğıdı değiştirmek için tıkla.`
-                      : `${getPaper(paperId).label.en} · ${printPagesNow} printed pages. Click to change the paper.`
+                    spineManualMm !== null
+                      ? tr
+                        ? "Sırt elle girildi. Değiştirmek için tıkla."
+                        : "Spine entered manually. Click to change."
+                      : tr
+                        ? `${getPaper(paperId).label.tr} · baskıda ${printPagesNow} sayfa${printPagesNow - pdfPagesNow >= 2 ? " (KDY'nin 2 künye sayfası dahil)" : ""}. Kâğıdı ya da sırtı değiştirmek için tıkla.`
+                        : `${getPaper(paperId).label.en} · ${printPagesNow} printed pages. Click to change the paper or spine.`
                   }
                   className="whitespace-nowrap rounded-md px-1.5 py-0.5 text-sm text-muted transition hover:bg-accent-soft hover:text-foreground"
                 >
                   · {tr ? "sırt" : "spine"} {formatCm(spineMmNow, tr ? "tr" : "en")}
+                  {spineManualMm !== null && (tr ? " (elle)" : " (manual)")}
                 </button>
               )}
               {!isEmpty && (
@@ -2502,6 +2530,19 @@ export default function LayoutStudio({
                       gutterManual={gutterManual}
                       setGutterManual={setGutterManual}
                       gutter={gutter}
+                      printBox={
+                        <PrintSpecBox
+                          lang={lang}
+                          compact
+                          paperId={paperId}
+                          onPaperChange={changePaper}
+                          autoSpineMm={spineAutoMmNow}
+                          pages={printPagesNow > 0 ? printPagesNow : null}
+                          approximate={previewEngine !== "typst"}
+                          spineManualMm={spineManualMm}
+                          onSpineManualChange={changeSpineManual}
+                        />
+                      }
                     />
                   )}
                   {panel === "type" && (
@@ -3267,6 +3308,7 @@ function PagePanel({
   gutterManual,
   setGutterManual,
   gutter,
+  printBox,
 }: {
   t: T;
   standard: PrintStandard;
@@ -3282,6 +3324,8 @@ function PagePanel({
   gutterManual: number;
   setGutterManual: (v: number) => void;
   gutter: number;
+  /** Kâğıt + sırt kutusu (baskı). */
+  printBox?: React.ReactNode;
 }) {
   const presetLabels: Record<string, string> = {
     kdy: t.presetKdy,
@@ -3348,6 +3392,13 @@ function PagePanel({
           </optgroup>
         </select>
       </Field>
+
+      {printBox && (
+        <div className="rounded-xl border border-border bg-surface p-3">
+          <div className="mb-3 text-sm font-semibold text-foreground">{t.printBoxTitle}</div>
+          {printBox}
+        </div>
+      )}
 
       <Field label={t.presetLabel}>
         <div className="flex flex-wrap gap-1.5">

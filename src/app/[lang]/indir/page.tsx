@@ -76,7 +76,7 @@ export default async function IndirPage({ params, searchParams }: PageProps<"/[l
         Math.max(1, spine.pages),
         spine.paperId,
         cv.binding ?? "soft",
-        cv.spineManualOn && typeof cv.spineManualValue === "number" ? cv.spineManualValue : null,
+        spine.manualMm,
         typeof cv.bleedMm === "number" ? cv.bleedMm : undefined,
       )
     : null;

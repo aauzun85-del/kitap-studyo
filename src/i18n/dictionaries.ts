@@ -440,6 +440,7 @@ type LayoutStudioCopy = {
   // Sayfa paneli.
   pageHeading: string;
   standardLabel: string;
+  printBoxTitle: string;
   standardKdy: string;
   standardKdp: string;
   standardIngram: string;
@@ -1483,7 +1484,7 @@ const tr: Dictionary = {
     spineHeading: "Sırt (spine)",
     spineAuto: "Otomatik hesaplandı",
     spineManualToggle: "Sırtı elle gireceğim",
-    spineManualLabel: "Sırt kalınlığı (mm)",
+    spineManualLabel: "Sırt kalınlığı (cm)",
     totalSizeLabel: "Tam kapak ölçüsü",
     backCover: "Arka kapak",
     spine: "Sırt",
@@ -1615,6 +1616,7 @@ const tr: Dictionary = {
       "Yalnızca .docx desteklenir (eski .doc değil). Word'de Farklı Kaydet → .docx ile dönüştürebilirsiniz.",
     pageHeading: "Sayfa ve kenar boşlukları",
     standardLabel: "Baskı standardı",
+    printBoxTitle: "Baskı: kâğıt ve sırt",
     standardKdy: "KDY (Kitapyurdu)",
     standardKdp: "Amazon KDP",
     standardIngram: "IngramSpark",
@@ -2678,7 +2680,7 @@ const en: Dictionary = {
     spineHeading: "Spine",
     spineAuto: "Calculated automatically",
     spineManualToggle: "I'll enter the spine manually",
-    spineManualLabel: "Spine width (mm)",
+    spineManualLabel: "Spine width (cm)",
     totalSizeLabel: "Full cover size",
     backCover: "Back cover",
     spine: "Spine",
@@ -2810,6 +2812,7 @@ const en: Dictionary = {
       "Only .docx is supported (not the old .doc). In Word use Save As → .docx to convert.",
     pageHeading: "Page & margins",
     standardLabel: "Print standard",
+    printBoxTitle: "Print: paper and spine",
     standardKdy: "KDY (Kitapyurdu)",
     standardKdp: "Amazon KDP",
     standardIngram: "IngramSpark",

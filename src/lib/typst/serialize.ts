@@ -328,7 +328,9 @@ export function bookToTypst(input: TypstBookInput): string {
     // Başlıkta dipnot varsa veya "Notlar" bölümü eklenecekse klasik içindekiler
     // de liste ile çizilir (Typst outline'ı dipnotu ikinci kez basardı).
     const headFn = blocks.some((b) => b.type === "heading" && b.level === 1 && b.runs.some((r) => r.fn));
-    if (tocStyle === "classic" && !headFn && !notesChapter) out.push(`#_toc("${tocTitle}")`);
+    if (tocStyle === "none") {
+      // İçindekiler istenmedi: sayfa basılmaz.
+    } else if (tocStyle === "classic" && !headFn && !notesChapter) out.push(`#_toc("${tocTitle}")`);
     else {
       // Konsept düzeni: (etiket, numara, özgün başlık) listesi; sayfa no Typst'ten.
       const nums = chapterNumbers(blocks);
@@ -363,7 +365,7 @@ export function bookToTypst(input: TypstBookInput): string {
   // Bölüm numarası ("iri numara" biçimleri): ön söz/giriş gibi bölümler sayılmaz.
   const chapterNums = chapterNumbers(blocks);
   // Kaynakça bölümündeyiz mi (konsept kaynakça düzeni açıksa)? Giriş sayacı.
-  const bibOn = (input.settings.bibStyle ?? "none") !== "none";
+  const bibOn = !["none", "off"].includes(input.settings.bibStyle ?? "none");
   let inBib = false;
   // Kaynakçayı açan başlığın seviyesi: altındaki ara başlıklar ("Kitaplar",
   // "Makaleler") kaynakçayı bitirmez; aynı/üst seviyeden başlık bitirir.

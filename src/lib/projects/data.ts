@@ -160,7 +160,7 @@ export async function markPrintDownloaded(id: string): Promise<void> {
  */
 export async function setBookPrintSpec(
   id: string,
-  spec: Partial<Pick<ProjectMeta, "paperId" | "pdfPageCount" | "printPageCount">>,
+  spec: Partial<Pick<ProjectMeta, "paperId" | "pdfPageCount" | "printPageCount" | "spineManualMm">>,
 ): Promise<void> {
   return enqueue(id, async () => {
     const supabase = createClient();

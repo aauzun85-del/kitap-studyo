@@ -34,6 +34,9 @@ export type ProjectMeta = {
   paperId?: PaperId; // iç sayfa kâğıdı — konsept ekranında veya kapakta seçilir
   pdfPageCount?: number; // Mizanpajdaki iç sayfa PDF'inin sayfa sayısı
   printPageCount?: number; // baskıdaki sayfa (KDY'nin 2 künye sayfası dahil, çift)
+  // Elle girilen sırt (mm). null = otomatik (sayfa × kâğıt); tanımsız = eski
+  // kitaplarda kapak taslağındaki elle sırt geçerli.
+  spineManualMm?: number | null;
 };
 
 // 3 adımlı "otomatik kitap" sihirbazının durumu (proje ile saklanır).
@@ -154,7 +157,7 @@ export function migrateEnvelope(data: unknown): ProjectEnvelope {
     const cover = (d.cover as CoverDraft) ?? base.cover;
     return {
       schema: 2,
-      meta: { title: meta.title ?? "", author: meta.author ?? "", subtitle: meta.subtitle, publisher: meta.publisher, isbn: meta.isbn, bio: meta.bio, genre: meta.genre, platform: meta.platform, sizeId: meta.sizeId, paperId: meta.paperId, pdfPageCount: meta.pdfPageCount, printPageCount: meta.printPageCount },
+      meta: { title: meta.title ?? "", author: meta.author ?? "", subtitle: meta.subtitle, publisher: meta.publisher, isbn: meta.isbn, bio: meta.bio, genre: meta.genre, platform: meta.platform, sizeId: meta.sizeId, paperId: meta.paperId, pdfPageCount: meta.pdfPageCount, printPageCount: meta.printPageCount, spineManualMm: meta.spineManualMm },
       manuscript: { text: manuscript.text ?? "", updatedBy: manuscript.updatedBy, updatedAt: manuscript.updatedAt },
       modules,
       cover,

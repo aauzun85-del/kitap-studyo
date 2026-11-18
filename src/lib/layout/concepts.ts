@@ -553,6 +553,7 @@ export const TOC_OPTIONS: Opt<TocStyle>[] = [
   { v: "plain", tr: "Sade", en: "Plain" },
   { v: "numbered", tr: "Numaralı", en: "Numbered" },
   { v: "elegant", tr: "Zarif (ortalı)", en: "Elegant (centred)" },
+  { v: "none", tr: "Yok", en: "None" },
 ];
 
 export const BIB_OPTIONS: Opt<BibStyle>[] = [
@@ -560,6 +561,7 @@ export const BIB_OPTIONS: Opt<BibStyle>[] = [
   { v: "numbered", tr: "Numaralı [1]", en: "Numbered [1]" },
   { v: "plain", tr: "Sade liste", en: "Plain list" },
   { v: "none", tr: "Normal paragraf", en: "Normal paragraphs" },
+  { v: "off", tr: "Yok", en: "None" },
 ];
 
 export const CHAPTER_STYLE_OPTIONS: Opt<ChapterStyle>[] = [
