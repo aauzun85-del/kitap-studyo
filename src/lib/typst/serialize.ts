@@ -58,11 +58,12 @@ function chapterOpen(
   // Koşu başlığı kaydı: dipnotsuz düz + büyük harf hâli. Bölüm adı (sonnot grupları).
   const chrh = ` #metadata((plain: [${runsToMarkup(b.runs, { noFn: true })}], up: ${typstStr(upperTr(plainTitle, s.lang))})) <chrh> #_chs.update(${typstStr(plainTitle.trim())})`;
   const runs = b.runs;
-  // marker (blok jetonu) sayfa kırılışından SONRA, başlığın yanında → konumu bölüm
-  // sayfasını verir (kırılıştan önce olsa önceki sayfayı gösterirdi).
-  // Etiket: konsept içindekiler düzenleri sayfa numarasını buradan bulur.
-  const title = `${marker}${chup}${chrh} #heading(level: 1, outlined: true)[${runsToMarkup(runs)}] <${label}>`;
-  return `#_chapter(${kick}${numArg}ornament: "${orn}", right: ${right}, top: ${topMm}mm)[${title}]`;
+  // marker (blok jetonu) _chapter'a ayrı verilir: sayfa kırılışından SONRA, açılışın
+  // EN ÜSTÜNE konur → numara/kicker de başlığın tıklama bandına girer (başlığın
+  // yanında olsa üstü önceki paragrafa bağlanıyordu). Etiket: konsept içindekiler
+  // düzenleri sayfa numarasını buradan bulur.
+  const title = `${chup}${chrh} #heading(level: 1, outlined: true)[${runsToMarkup(runs)}] <${label}>`;
+  return `#_chapter(${kick}${numArg}ornament: "${orn}", right: ${right}, top: ${topMm}mm, mark: [${marker}])[${title}]`;
 }
 
 /** Run metinlerini kitabın diline göre büyük harfe çevirir (biçim korunur). */

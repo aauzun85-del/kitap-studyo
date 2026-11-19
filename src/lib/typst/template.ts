@@ -154,15 +154,19 @@ const HELPERS = String.raw`#set heading(numbering: none)
     _enentry(m)
   }
 }
-#let _chapter(kicker: none, ornament: "none", right: true, top: 30mm, num: none, body) = {
+// mark: tıklanabilir önizlemenin konum işareti. Bölüm açılışının EN ÜSTÜNE
+// konur (numara/kicker dahil tüm açılış başlığa ait sayılsın; aksi halde
+// numaranın üstü önceki bölümün son paragrafına bağlanıyordu).
+#let _chapter(kicker: none, ornament: "none", right: true, top: 30mm, num: none, mark: none, body) = {
   let st = _cfg.chapter
-  if _cfg.newpage { if right { pagebreak(to: "odd", weak: true) } else { pagebreak(weak: true) } } else { v(2.2em, weak: true) }
+  if _cfg.newpage { if right { pagebreak(to: "odd", weak: true) } else { pagebreak(weak: true) }; mark } else { v(2.2em, weak: true) }
   // Dipnot: bölüm sayacı (sonnotlar bölüme göre toplanır) + bölümde yeniden başlama.
   _chc.step()
   if _cfg.fnreset == "chapter" { counter(footnote).update(0); _enc.update(0) }
   v(top)
   let al = if _chleft { left } else { center }
   let head = {
+    if not _cfg.newpage { mark }
     set par(first-line-indent: 0pt, justify: false)
     set text(hyphenate: false)
     if st == "numeral-left" and num != none { align(left, text(font: _hf, size: 60pt * _cfg.scale, weight: 400, fill: luma(115), num)); v(0.05em) }
