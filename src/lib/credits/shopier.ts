@@ -19,14 +19,15 @@ export const TEST_PACKAGE: CreditPackage = {
   id: TEST_PACKAGE_ID,
   name: { tr: "Deneme (1 jeton)", en: "Test (1 credit)" },
   credits: 1,
-  priceTry: 20,
+  priceTry: 200,
 };
 
 // Paket → Shopier ürün sayfası. Pro ve Mega için henüz ürün açılmadı; onlar
 // bugünkü "bize yaz" yolunda kalır. Yeni ürün açılınca SADECE buraya eklenir.
 const SHOPIER_PRODUCTS: Record<string, ShopierProduct> = {
   eco: { productId: "53189572", url: "https://www.shopier.com/Laycoty/53189572" },
-  [TEST_PACKAGE_ID]: { productId: "53189711", url: "https://www.shopier.com/Laycoty/53189711" },
+  // Deneme ürünü: sahibinin Shopier'de açtığı 200 TL'lik FİZİKSEL ürün (20 Kas 2026).
+  [TEST_PACKAGE_ID]: { productId: "53192588", url: "https://www.shopier.com/53192588" },
 };
 
 // Bu paket kartla (Shopier) alınabiliyor mu? Alınamıyorsa null.
