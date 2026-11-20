@@ -70,9 +70,10 @@ export function creditCost(action: CreditAction): number {
 
 // ───────────────────────── SATIN ALMA / PAKETLER ─────────────────────────
 
-// Kartla ödeme açık mı? false iken üye sitede satın alamaz; paket ve jetonu
-// yönetici elle tanımlar (Yönetim → üye → "Paket / ek jeton tanımla"). Mesajlar
-// buna göre "bize yaz" der. Sanal POS bağlanınca true yapılacak.
+// BÜTÜN ürünler kartla alınabiliyor mu? false iken, Shopier'de ürünü açılmış
+// paketler (bugün yalnız Eco — bkz. shopier.ts) kartla alınır; ötekileri (Pro,
+// Mega, ek jeton) yönetici elle tanımlar (Yönetim → üye → "Paket / ek jeton
+// tanımla") ve mesajlar onlar için "bize yaz" der. Hepsi kartla açılınca true.
 export const PAYMENT_OPEN = false;
 
 // Satın alınan jetonların geçerlilik süresi (gün). Bu süre sonunda o paketin

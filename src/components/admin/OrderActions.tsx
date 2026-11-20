@@ -5,7 +5,17 @@ import { useRouter } from "next/navigation";
 import { approveOrder, rejectOrder } from "@/lib/credits/orderActions";
 
 // Bekleyen havale siparişi için Onayla / Reddet. Onaylayınca jetonlar yüklenir.
-export default function OrderActions({ orderId, tr }: { orderId: string; tr: boolean }) {
+// canApprove=false: ödemesi Shopier'de henüz görülmemiş kart siparişi → elle
+// onaylanamaz (para gelmeden jeton verilmesin); yalnız Reddet kalır.
+export default function OrderActions({
+  orderId,
+  tr,
+  canApprove = true,
+}: {
+  orderId: string;
+  tr: boolean;
+  canApprove?: boolean;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,14 +36,16 @@ export default function OrderActions({ orderId, tr }: { orderId: string; tr: boo
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => run("approve")}
-          disabled={busy}
-          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition hover:opacity-90 disabled:opacity-60"
-        >
-          {busy ? "…" : tr ? "Onayla" : "Approve"}
-        </button>
+        {canApprove && (
+          <button
+            type="button"
+            onClick={() => run("approve")}
+            disabled={busy}
+            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition hover:opacity-90 disabled:opacity-60"
+          >
+            {busy ? "…" : tr ? "Onayla" : "Approve"}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => run("reject")}

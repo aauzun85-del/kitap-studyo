@@ -122,10 +122,13 @@ export default function PackageCards({ lang }: { lang: Locale }) {
         })}
       </div>
 
-      {/* Kartla ödeme kapalıyken paketin BUGÜN nasıl alınacağını söyle. */}
+      {/* Paketin BUGÜN nasıl alınacağını söyle: yalnız Eco'nun Shopier ürünü var
+          (src/lib/credits/shopier.ts); öbür paketler hâlâ elle tanımlanır. */}
       {!PAYMENT_OPEN && (
         <p className="mx-auto mt-6 max-w-3xl text-center text-sm leading-relaxed text-muted">
-          {tr ? "Kartla ödeme henüz açık değil. Paket için " : "Card payment is not open yet. To get a package, "}
+          {tr
+            ? "Eco paketini kartla satın alabilirsin. Pro, Mega ve ek jeton için şimdilik "
+            : "You can buy the Eco package by card. For Pro, Mega and extra credits, for now "}
           <Link href={`/${lang}/iletisim`} className="font-semibold text-accent hover:underline">
             {tr ? "bize yaz" : "contact us"}
           </Link>

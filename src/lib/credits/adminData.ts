@@ -308,7 +308,10 @@ export function buildAdminData(
     monthRevenue: monthPaid.reduce((s, o) => s + o.price_try, 0),
     monthOrders: monthPaid.length,
     totalRevenue: paidMoney.reduce((s, o) => s + o.price_try, 0),
-    pending: orders.filter((o) => o.status === "pending").length,
+    // Ödenmemiş kart siparişleri (üye "Kartla öde"ye basıp bırakmış) onay beklemez → sayılmaz.
+    pending: orders.filter(
+      (o) => o.status === "pending" && !(o.payment_method === "shopier" && !o.provider_ref),
+    ).length,
     customers: users.length,
     payingCustomers: new Set(paidMoney.map((o) => o.user_id)).size,
     invoicesDue: invoicesDue.length,

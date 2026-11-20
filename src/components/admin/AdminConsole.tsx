@@ -10,6 +10,8 @@ import { VAT_RATE } from "@/lib/credits/pricing";
 import OrderActions from "./OrderActions";
 import MemberActions from "./MemberActions";
 import InvoiceActions from "./InvoiceActions";
+import ShopierAssign from "./ShopierAssign";
+import type { UnmatchedPayment } from "@/lib/credits/shopierSync";
 
 export type AdminTab = "uyeler" | "faturalar" | "siparisler" | "urunler" | "jeton";
 const STATUSES = ["approved", "pending", "failed", "rejected", "refunded"] as const;
@@ -34,7 +36,20 @@ const METHOD_TR: Record<string, string> = {
   paytr: "Kart",
   kart: "Kart",
   elden: "Elle girildi",
+  shopier: "Kart (Shopier)",
   hediye: "Hediye",
+};
+// Eşleşmeyen bir Shopier ödemesinin neden tanımlanamadığı (checkShopierOrder).
+const SHOPIER_ISSUE_TR: Record<string, string> = {
+  currency: "para birimi TL değil",
+  "line-items": "birden çok ürün var",
+  quantity: "adet 1 değil",
+  "unknown-product": "tanımadığımız ürün",
+  price: "fiyat paket fiyatıyla aynı değil",
+  discount: "indirim uygulanmış",
+  refunded: "iade edilmiş",
+  returned: "iade talebi var",
+  "no-email": "e-posta yok",
 };
 const KIND_TR: Record<string, string> = {
   spend: "Harcama",
@@ -53,6 +68,7 @@ export default function AdminConsole({
   customerId,
   memberId,
   basePath,
+  shopier,
 }: {
   lang: Locale;
   data: AdminData;
@@ -61,6 +77,8 @@ export default function AdminConsole({
   customerId: string | null;
   memberId: string | null;
   basePath: string; // örn. "/tr/admin"
+  // Kart ödemesi bağlıysa dolu gelir. unmatched = null → Shopier'e ulaşılamadı.
+  shopier?: { ready: boolean; unmatched: UnmatchedPayment[] | null };
 }) {
   const loc = lang === "tr" ? "tr-TR" : "en-US";
   const num = (n: number) => n.toLocaleString("tr-TR");
@@ -175,6 +193,10 @@ export default function AdminConsole({
     !o.billing_address ||
     (o.billing_type === "kurumsal" && (!o.billing_tax_id || !o.billing_tax_office));
 
+  // Üye "Kartla öde"ye basmış ama ödemesi Shopier'de henüz görülmemiş sipariş.
+  const awaitingCard = (o: AdminOrder) =>
+    o.status === "pending" && o.payment_method === "shopier" && !o.provider_ref;
+
   const orderRows = (list: AdminOrder[], showCustomer: boolean) => (
     <div className={table}>
       <table className="w-full text-left text-sm">
@@ -223,7 +245,7 @@ export default function AdminConsole({
                   className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${STATUS_CLASS[o.status] ?? "bg-gray-100 text-gray-600"}`}
                   title={o.failure_reason ?? undefined}
                 >
-                  {STATUS_TR[o.status] ?? o.status}
+                  {awaitingCard(o) ? "Ödeme bekleniyor" : (STATUS_TR[o.status] ?? o.status)}
                 </span>
               </td>
               <td className={`${td} whitespace-nowrap text-xs`}>
@@ -240,7 +262,7 @@ export default function AdminConsole({
                 )}
               </td>
               <td className={`${td} text-right`}>
-                {o.status === "pending" && <OrderActions orderId={o.id} tr />}
+                {o.status === "pending" && <OrderActions orderId={o.id} tr canApprove={!awaitingCard(o)} />}
               </td>
             </tr>
           ))}
@@ -569,8 +591,50 @@ export default function AdminConsole({
       {tab === "siparisler" && (
         <section className="mt-5">
           <p className="text-sm text-muted">
-            Bütün satışlar ve elle tanımlanan paketler. Kartla ödeme açılınca ödenenler kendiliğinden “Ödendi” olur.
+            Bütün satışlar ve elle tanımlanan paketler. Kartla (Shopier) ödenenler kendiliğinden “Ödendi” olur;
+            “Ödeme bekleniyor” yazanlar, üyenin “Kartla öde”ye basıp henüz ödemediği siparişlerdir.
+            Kartla ödenen her siparişte faturayı ve iki sözleşme metnini (Ön Bilgilendirme Formu, Mesafeli Satış
+            Sözleşmesi) üyeye e-postayla gönder.
           </p>
+
+          {/* Shopier'de ödenmiş ama hiçbir siparişe bağlanamamış ödemeler (üye başka
+              e-posta yazmış olabilir). Canlı okunur; doğru üyeye elle tanımlanır. */}
+          {shopier?.ready && (
+            <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+              <h2 className="font-sans text-base font-extrabold">Eşleşmeyen kart ödemeleri (Shopier)</h2>
+              {shopier.unmatched === null ? (
+                <p className="mt-1">Shopier&apos;e ulaşılamadı. Sayfayı biraz sonra yenile.</p>
+              ) : shopier.unmatched.length === 0 ? (
+                <p className="mt-1">Eşleşmeyen ödeme yok.</p>
+              ) : (
+                <>
+                  <p className="mt-1">
+                    Bu ödemeler Shopier&apos;de alındı ama hiçbir üyeye tanımlanmadı. Doğru üyenin Laycoty e-postasını
+                    yazıp “Bu üyeye tanımla”ya bas; tutar ve ürün Shopier&apos;den yeniden doğrulanır.
+                  </p>
+                  <div className="mt-3 space-y-3">
+                    {shopier.unmatched.map((p) => (
+                      <div key={p.id} className="rounded-xl border border-amber-200 bg-white p-3 text-foreground">
+                        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                          <span className="font-semibold">{p.title}</span>
+                          <span className="font-mono font-semibold">{money(p.amount)}</span>
+                          <span className="text-muted">{dateTime(p.date)}</span>
+                          <span className="font-mono text-xs text-muted">Shopier #{p.id}</span>
+                        </div>
+                        <div className="mt-1 text-xs text-muted">Ödeyenin yazdığı e-posta: {p.email || "—"}</div>
+                        {p.issue && (
+                          <div className="mt-1 text-xs font-semibold text-red-700">
+                            Bu ödeme tanımlanamaz ({SHOPIER_ISSUE_TR[p.issue] ?? p.issue}). Shopier panelinden bak.
+                          </div>
+                        )}
+                        {!p.issue && <ShopierAssign orderId={p.id} defaultEmail={p.email} />}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Link
               href={href({ tab: "siparisler", musteri: customerId })}

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminEmail } from "@/lib/admin";
 import { findProduct, PACKAGE_VALIDITY_DAYS } from "./pricing";
+import { assignPayment } from "./shopierSync";
 
 // YÖNETİCİ EYLEMLERİ — sipariş onayı, elle jeton/paket tanımlama, fatura işareti.
 // Hepsi sunucuda çalışır ve HER BİRİ çağıranın yönetici olduğunu yeniden denetler
@@ -81,6 +82,21 @@ export async function approveOrder(orderId: string): Promise<ActionResult> {
   if (!(await requireAdmin())) return { ok: false, error: "forbidden" };
   if (!UUID.test(orderId)) return { ok: false, error: "bad-id" };
   const admin = createAdminClient();
+  // KART SİPARİŞİ elle onaylanmaz: ödemesi Shopier'de doğrulanmamış satır
+  // (provider_ref boş) onaylanırsa para gelmeden jeton verilmiş olur. Bu satırlar
+  // ödeme görülünce kendiliğinden onaylanır; elle tanımlama "Eşleşmeyen ödemeler"den.
+  const { data: row } = await admin
+    .from("credit_orders")
+    .select("payment_method, provider_ref")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (row?.payment_method === "shopier" && !row.provider_ref) {
+    return {
+      ok: false,
+      error:
+        "Kart siparişi: ödeme Shopier'den doğrulanınca kendiliğinden onaylanır; elle tanımlamak için 'Eşleşmeyen ödemeler'i kullan",
+    };
+  }
   const { error } = await admin.rpc("approve_credit_order", {
     p_order_id: orderId,
     p_valid_days: PACKAGE_VALIDITY_DAYS,
@@ -95,12 +111,28 @@ export async function rejectOrder(orderId: string): Promise<ActionResult> {
   if (!(await requireAdmin())) return { ok: false, error: "forbidden" };
   if (!UUID.test(orderId)) return { ok: false, error: "bad-id" };
   const admin = createAdminClient();
-  const { error } = await admin
+  // ÖDEMESİ ALINMIŞ kart siparişi reddedilemez: Shopier numarası (provider_ref)
+  // yazılmışsa para gelmiştir, onay yalnızca yarım kalmıştır. Reddedilirse ödeme
+  // jetonsuz kalır ve "Eşleşmeyen ödemeler"de de görünmezdi.
+  const { data: row } = await admin
+    .from("credit_orders")
+    .select("payment_method, provider_ref")
+    .eq("id", orderId)
+    .maybeSingle();
+  const paidMsg = "Bu siparişin ödemesi alınmış; reddedilemez";
+  if (row?.payment_method === "shopier" && row.provider_ref) return { ok: false, error: paidMsg };
+  let q = admin
     .from("credit_orders")
     .update({ status: "rejected", decided_at: new Date().toISOString() })
     .eq("id", orderId)
     .eq("status", "pending");
+  // Okuma ile yazma arasında ödeme eşleşmiş olabilir → aynı koşul yazmada da aranır.
+  if (row?.payment_method === "shopier") q = q.is("provider_ref", null);
+  const { data: done, error } = await q.select("id");
   if (error) return { ok: false, error: error.message };
+  if (!done || done.length === 0) {
+    return { ok: false, error: row?.payment_method === "shopier" ? paidMsg : "Sipariş artık beklemede değil" };
+  }
   refresh();
   return { ok: true };
 }
@@ -209,6 +241,19 @@ export async function adminAssignProduct(input: {
   }
   refresh();
   return { ok: true };
+}
+
+// EŞLEŞMEYEN KART ÖDEMESİ: Shopier'de ödenmiş ama hiçbir siparişe bağlanmamış
+// ödemeyi, e-postası verilen üyeye tanımla. Tutar/ürün Shopier'den yeniden okunur.
+export async function adminAssignShopierPayment(
+  shopierOrderId: string,
+  memberEmail: string,
+): Promise<ActionResult> {
+  const actor = await requireAdmin();
+  if (!actor) return { ok: false, error: "forbidden" };
+  const res = await assignPayment(shopierOrderId, memberEmail, actor);
+  if (res.ok) refresh();
+  return res;
 }
 
 // Siparişin fatura bilgilerini düzelt (fatura kesmeden önce).

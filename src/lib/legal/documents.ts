@@ -69,8 +69,8 @@ export const LEGAL_DOCS: LegalDoc[] = [
         h: "4. Fiyat ve ödeme",
         p: [
           "Paketlerin adı, jeton miktarı ve satış fiyatı sipariş sırasında ve [[fiyatlar]] sayfasında gösterilir: {paketler}. Aktif paketi olan üyeler ayrıca ek jeton satın alabilir: {ekJetonlar}. Ek jeton, satın alındığı andan itibaren {gecerlilik} gün geçerlidir ve tek başına indirme hakkı vermez. Üst pakete geçmek isteyen üye yeni paketi kendi fiyatından satın alır; kalan jetonları silinmez. Fiyatlar Türk lirasıdır ve KDV dahildir.",
-          "Ödeme, banka/kredi kartıyla lisanslı ödeme kuruluşunun güvenli ödeme sayfası üzerinden yapılır. Kart bilgileri SATICI tarafından görülmez ve saklanmaz; doğrudan ödeme kuruluşu tarafından işlenir.",
-          "Sitede çevrim içi kartla ödemenin kullanılamadığı dönemlerde paketler, ALICI'nın SATICI ile iletişime geçmesi üzerine ([[iletisim]]) SATICI tarafından ALICI'nın hesabına tanımlanır. Ücretli her satış için fatura düzenlenir ve ALICI'nın e-posta adresine gönderilir.",
+          "Ödeme, banka/kredi kartıyla Shopier (Değer Teknoloji A.Ş.) ödeme sayfası üzerinden yapılır. Kart bilgileri SATICI tarafından görülmez ve saklanmaz; doğrudan Shopier tarafından işlenir. Taksit seçenekleri ve varsa taksit farkı, ödeme sırasında Shopier tarafından gösterilir.",
+          "Kartla satışa açılmamış paketler ile sitede çevrim içi kartla ödemenin kullanılamadığı dönemlerde paketler, ALICI'nın SATICI ile iletişime geçmesi üzerine ([[iletisim]]) SATICI tarafından ALICI'nın hesabına tanımlanır. Ücretli her satış için fatura düzenlenir ve ALICI'nın e-posta adresine gönderilir.",
         ],
       },
       {
@@ -149,8 +149,8 @@ export const LEGAL_DOCS: LegalDoc[] = [
       {
         h: "Ödeme ve ifa",
         p: [
-          "Ödeme banka/kredi kartıyla (lisanslı ödeme kuruluşunun güvenli ödeme sayfası üzerinden) yapılır. Paket, ödeme onaylanınca hesabına hemen tanımlanır.",
-          "Sitede çevrim içi kartla ödemenin kullanılamadığı dönemlerde paket, bizimle iletişime geçmen üzerine ([[iletisim]]) hesabına tarafımızca tanımlanır; elle tanımlanan paketler ve ek jetonlar aynı geçerlilik kurallarına tabidir. Ücretli her satış için fatura düzenlenir.",
+          "Ödeme banka/kredi kartıyla, Shopier (Değer Teknoloji A.Ş.) ödeme sayfası üzerinden yapılır; kart bilgilerini {marka} görmez ve saklamaz. Taksit seçenekleri ve varsa taksit farkı ödeme sırasında Shopier tarafından gösterilir. Paket, ödeme onaylanınca hesabına hemen tanımlanır. Ödeme sayfasında üyelik e-posta adresini yazman gerekir; başka bir adres yazılırsa paket, bize yazman üzerine elle tanımlanır.",
+          "Kartla satışa açılmamış paketlerde ve sitede çevrim içi kartla ödemenin kullanılamadığı dönemlerde paket, bizimle iletişime geçmen üzerine ([[iletisim]]) hesabına tarafımızca tanımlanır; elle tanımlanan paketler ve ek jetonlar aynı geçerlilik kurallarına tabidir. Ücretli her satış için fatura düzenlenir.",
         ],
       },
       {
@@ -181,7 +181,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
         h: "Teslimat",
         p: [
           "{marka} paketleri dijital hizmettir; kargo veya fiziksel teslimat yoktur. Ödeme onaylandığında paket üye hesabına elektronik ortamda tanımlanır ve {gecerlilik} gün boyunca kullanılabilir. Hazırladığın dosyaları hesabından indirirsin.",
-          "Sitede çevrim içi kartla ödemenin kullanılamadığı dönemlerde paketi, bizimle iletişime geçmen üzerine ([[iletisim]]) hesabına biz tanımlarız. Elle tanımladığımız paketler ve jetonlar da aynı geçerlilik kurallarına tabidir: {gecerlilik} günlük süre, tanımlandıkları anda başlar.",
+          "Kartla satışa açılmamış paketleri ve sitede çevrim içi kartla ödemenin kullanılamadığı dönemlerde paketi, bizimle iletişime geçmen üzerine ([[iletisim]]) hesabına biz tanımlarız. Elle tanımladığımız paketler ve jetonlar da aynı geçerlilik kurallarına tabidir: {gecerlilik} günlük süre, tanımlandıkları anda başlar.",
         ],
       },
       {
@@ -244,7 +244,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
         list: [
           "Hesap bilgileri: ad, e-posta adresi, şifren (yalnızca şifrelenmiş hâliyle saklanır; biz göremeyiz). Google ile girersen Google'ın paylaştığı ad ve e-posta.",
           "Çalışmaların: yüklediğin kitap metinleri, görseller ve platformda hazırladığın kapak, mizanpaj ve diğer dosyalar.",
-          "Satın alma kayıtları: aldığın paket, tutar, tarih, jeton hareketleri ve fatura bilgilerin (ad soyad veya unvan, adres; verirsen TC kimlik no ya da vergi no). Faturan, anlaşmalı e-fatura hizmet sağlayıcımız üzerinden düzenlenir. Kart bilgilerin bize hiç ulaşmaz; ödeme kuruluşu tarafından işlenir.",
+          "Satın alma kayıtları: aldığın paket, tutar, tarih, jeton hareketleri ve fatura bilgilerin (ad soyad veya unvan, adres; verirsen TC kimlik no ya da vergi no). Faturan, anlaşmalı e-fatura hizmet sağlayıcımız üzerinden düzenlenir. Kart bilgilerin bize hiç ulaşmaz; kart ödemeleri Shopier (Değer Teknoloji A.Ş.) ödeme sayfasında alınır ve kart bilgilerin Shopier tarafından işlenir.",
           "Teknik kayıtlar: IP adresi, tarayıcı bilgisi, giriş zamanları ve hata kayıtları (güvenlik ve hizmetin çalışması için).",
         ],
       },
@@ -270,7 +270,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
           "Vercel — sitenin barındırılması (teknik kayıtlar).",
           "Anthropic — yapay zekâ editör incelemeleri (yalnızca incelettiğin metin).",
           "Replicate — yapay zekâ ile kapak ve tanıtım görseli üretimi ve seslendirme (yalnızca görsel tarifi, gerekli görseller ve seslendirilecek metin).",
-          "Lisanslı ödeme kuruluşu — kartla ödeme (kart bilgileri doğrudan ona girilir).",
+          "Shopier (Değer Teknoloji A.Ş.) — kartla ödeme (kart bilgileri doğrudan Shopier'in ödeme sayfasına girilir; ödeme sırasında yazdığın ad, e-posta ve telefon da Shopier'e verilir).",
           "Google Fonts — sitedeki yazı tiplerinin yüklenmesi (IP adresi).",
         ],
       },
@@ -283,7 +283,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
       {
         h: "Güvenlik",
         p: [
-          "Site yalnızca şifreli bağlantı (HTTPS) ile çalışır. Şifreler şifrelenmiş olarak saklanır. Veritabanında her kullanıcı yalnızca kendi verisini görebilir. Kart ödemeleri lisanslı ödeme kuruluşunun güvenli sayfasında 3D Secure doğrulamasıyla alınır; kart bilgileri bize ulaşmaz ve saklanmaz.",
+          "Site yalnızca şifreli bağlantı (HTTPS) ile çalışır. Şifreler şifrelenmiş olarak saklanır. Veritabanında her kullanıcı yalnızca kendi verisini görebilir. Kart ödemeleri Shopier (Değer Teknoloji A.Ş.) ödeme sayfasında alınır; kart bilgileri bize ulaşmaz ve saklanmaz.",
         ],
       },
       {

@@ -13,10 +13,10 @@ export function requireExport(canExport: boolean, lang: string, silent = false):
   const msg = tr
     ? PAYMENT_OPEN
       ? "Dosya indirmek için aktif bir paket gerekir. Paketleri görmek ister misin?"
-      : "Dosya indirmek için aktif bir paket gerekir. Kartla ödeme henüz açılmadı; paket tanımlatmak için bize yazabilirsin. Paketleri görmek ister misin?"
+      : "Dosya indirmek için aktif bir paket gerekir. Eco paketini kartla alabilirsin; diğer paketler için bize yazabilirsin. Paketleri görmek ister misin?"
     : PAYMENT_OPEN
       ? "Downloading files requires an active package. View packages?"
-      : "Downloading files requires an active package. Card payment isn't open yet; contact us to have one added. View packages?";
+      : "Downloading files requires an active package. You can buy the Eco package by card; for other packages, contact us. View packages?";
   if (window.confirm(msg)) window.location.href = `/${lang}/fiyatlar`;
   return false;
 }
