@@ -58,7 +58,7 @@ export function mappedShopierProductIds(): string[] {
 
 // Kartla ödemenin açıldığı an. Bundan ÖNCEKİ Shopier siparişleri (deneme
 // ödemeleri) "eşleşmeyen ödemeler" listesine hiç girmez.
-export const SHOPIER_LAUNCH_AT = "2026-11-21T00:00:00+03:00";
+export const SHOPIER_LAUNCH_AT = "2026-11-20T18:45:00+03:00";
 
 // Bekleyen kart siparişi bu kadar saat ödeme bekler; sonrası kendiliğinden
 // eşleşmez (üye yeniden "Kartla öde"ye basar ya da yönetici elle tanımlar).
