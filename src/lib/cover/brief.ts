@@ -31,6 +31,9 @@ export type CoverBrief = {
   /** Yazar kendi fotoğrafını yükledi (fotoğraf IndexedDB'de bekler, bkz.
    *  briefPhoto.ts). Varsa kapağı yapay zekâ değil uygulama kurar. */
   photo?: { mono: boolean };
+  /** Yayınevi logosu (hesaba kayıtlı logo; KDY dışı kitaplarda): varsa tuvalde
+   *  ön kapağa, arka kapağa ve sırta yerleştirilir. Renk: olduğu gibi / beyaz / siyah. */
+  logo?: { use: boolean; color: "original" | "white" | "black" };
   /** Kullanıcının serbest notu ("kapakta bir fener olsun" gibi) — sahneye eklenir. */
   note?: string;
   /** Kullanıcı "kendim tasarlayacağım" dedi → otomatik üretim/yönlendirme yok. */

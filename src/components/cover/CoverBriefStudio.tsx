@@ -35,6 +35,13 @@ import {
   prepareBriefPhoto,
   saveBriefPhoto,
 } from "@/lib/cover/briefPhoto";
+import {
+  deletePublisherLogo,
+  loadPublisherLogoUrl,
+  preparePublisherLogo,
+  savePublisherLogo,
+  type LogoColor,
+} from "@/lib/cover/publisherLogo";
 
 // Kurgu kapağı iki ücretli uç çağırır: kitap asistanı + ChatGPT görseli.
 const BRIEF_COVER_COST = creditCost("cover-prompt") + creditCost("cover-openai");
@@ -49,6 +56,8 @@ type Props = {
   genre?: string;
   /** Sırt özeti ("Sırt: 1,9 cm (320 sayfa · Enso 60 gr)") — Kapsam adımında gösterilir. */
   spineNote?: string;
+  /** Baskı profili: KDY / KDY Akademi dışında "Yayınevi logosu" adımı gösterilir. */
+  platform?: string;
 };
 
 // Örnek görsel: varsa resim, yoksa renk kartelası (onError ile düşer).
@@ -69,7 +78,7 @@ function ExampleArt({ src, swatch, alt }: { src: string; swatch: [string, string
   return <img src={src} alt={alt} className="h-full w-full object-cover" onError={() => setFailed(true)} />;
 }
 
-export default function CoverBriefStudio({ lang, projectId, initial, title, author, genre, spineNote }: Props) {
+export default function CoverBriefStudio({ lang, projectId, initial, title, author, genre, spineNote, platform }: Props) {
   const router = useRouter();
   const tr = lang === "tr";
   const [brief, setBrief] = useState<CoverBrief>(() => {
@@ -97,6 +106,62 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
     };
   }, [projectId]);
 
+  // Yayınevi logosu (hesaba kayıtlı): KDY kitaplarında KDY logosu kendiliğinden
+  // geldiği için bu adım yalnız öteki profillerde (serbest, KDP…) görünür.
+  const showLogoStep = platform !== "kdy" && platform !== "akademi";
+  const [logoUrl, setLogoUrl] = useState<string | null | undefined>(undefined); // undefined = yükleniyor
+  const [logoBusy, setLogoBusy] = useState(false);
+  useEffect(() => {
+    if (!showLogoStep) return;
+    let alive = true;
+    void loadPublisherLogoUrl().then((u) => {
+      if (alive) setLogoUrl(u);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [showLogoStep]);
+  // Seçim yapılmadıysa kayıtlı logo varsayılan olarak kullanılır.
+  const logoUse = brief.logo ? brief.logo.use : true;
+  const logoColor: LogoColor = brief.logo?.color ?? "original";
+  // Logo yüklenirken / kayıtlı logo okunurken kurgu gönderilmez (seçim kaybolmasın).
+  const logoPending = showLogoStep && (logoBusy || logoUrl === undefined);
+  const onLogoFile = async (file: File | undefined) => {
+    if (!file) return;
+    setLogoBusy(true);
+    setError(null);
+    try {
+      const p = await preparePublisherLogo(file);
+      await savePublisherLogo(p.dataUrl);
+      setLogoUrl(p.dataUrl);
+      patch({ logo: { use: true, color: logoColor } });
+    } catch {
+      setError(tr ? "Logo yüklenemedi — PNG ya da JPG dosyası dene." : "Couldn't upload the logo — try a PNG or JPG file.");
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+  const removeSavedLogo = async () => {
+    if (
+      !window.confirm(
+        tr
+          ? "Kayıtlı logo hesabından silinsin mi? Daha önce kapaklara konmuş logolar yerinde kalır."
+          : "Remove the saved logo from your account? Logos already placed on covers stay.",
+      )
+    )
+      return;
+    setLogoBusy(true);
+    try {
+      await deletePublisherLogo();
+      setLogoUrl(null);
+      patch({ logo: undefined });
+    } catch {
+      setError(tr ? "Logo silinemedi — tekrar dene." : "Couldn't remove the logo — try again.");
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
   const standard = resolveStandard(brief.themaCode);
   const results = useMemo(() => searchThema(query), [query]);
   const patch = (p: Partial<CoverBrief>) => setBrief((b) => ({ ...b, ...p }));
@@ -108,7 +173,7 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
   };
 
   const submit = async (mode: "run" | "skip") => {
-    if (saving !== "none") return;
+    if (saving !== "none" || logoPending) return;
     setSaving(mode);
     setError(null);
     try {
@@ -118,6 +183,14 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
         tone,
         toneChosen: tone !== "concept",
         photo: usingPhoto ? { mono } : undefined,
+        // Logo yalnız hesapta kayıtlı logo varsa (ve KDY dışı kitapta) kaydedilir.
+        logo: !showLogoStep
+          ? undefined
+          : logoUrl
+            ? { use: logoUse, color: logoColor }
+            : logoUrl === undefined
+              ? brief.logo // yükleme durumu bilinmiyor: önceki seçim korunur
+              : undefined,
         skipped: mode === "skip" ? true : undefined,
         createdAt: new Date().toISOString(),
       };
@@ -489,6 +562,105 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
         </div>
       </section>
 
+      {/* 6 — Yayınevi logosu (KDY dışı kitaplar) */}
+      {showLogoStep && (
+        <section className="space-y-3 rounded-xl border border-foreground/10 p-4">
+          <div>
+            <h2 className={stepTitle}>{tr ? "6 · Yayınevi logosu (isteğe bağlı)" : "6 · Publisher logo (optional)"}</h2>
+            <p className={stepHint}>
+              {tr
+                ? "Logon ön kapağın altına, arka kapağın sol altına ve sırta (sırt 0,6 cm'den kalınsa) yerleşir; tuvalde taşıyıp büyütebilirsin. Logo hesabına kaydedilir, sonraki kitaplarında hazır gelir."
+                : "Your logo goes at the bottom of the front cover, bottom-left of the back cover and on the spine (if it's over 0.6 cm); you can move and resize it on the canvas. It's saved to your account for your next books."}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-start gap-4">
+            {logoUrl ? (
+              <div className="flex overflow-hidden rounded-md border border-foreground/10">
+                {(["#f4f1ea", "#1f2230"] as const).map((bg) => (
+                  <div key={bg} className="flex h-24 w-32 items-center justify-center p-3" style={{ background: bg }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={logoUrl}
+                      alt={tr ? "Yayınevi logosu" : "Publisher logo"}
+                      className="max-h-full max-w-full object-contain"
+                      style={{
+                        filter:
+                          logoColor === "white" ? "brightness(0) invert(1)" : logoColor === "black" ? "brightness(0)" : undefined,
+                        opacity: logoUse ? 1 : 0.35,
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex h-24 w-32 items-center justify-center rounded-md border border-dashed border-foreground/20 text-center text-[11px] text-muted">
+                {logoUrl === undefined ? (tr ? "Yükleniyor…" : "Loading…") : tr ? "Kayıtlı logo yok" : "No saved logo"}
+              </div>
+            )}
+            <div className="space-y-2">
+              <label className="inline-flex cursor-pointer items-center rounded-lg border border-foreground/15 px-3 py-2 text-sm font-semibold text-foreground transition hover:bg-accent-soft">
+                {logoBusy
+                  ? tr ? "Hazırlanıyor…" : "Preparing…"
+                  : logoUrl
+                    ? tr ? "Logoyu değiştir" : "Replace logo"
+                    : tr ? "Logo yükle" : "Upload logo"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  disabled={logoBusy}
+                  onChange={(e) => {
+                    void onLogoFile(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {logoUrl && (
+                <>
+                  <label className="flex items-center gap-2 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={logoUse}
+                      onChange={(e) => patch({ logo: { use: e.target.checked, color: logoColor } })}
+                      className="h-4 w-4 accent-accent"
+                    />
+                    {tr ? "Bu kitabın kapağında kullan" : "Use on this book's cover"}
+                  </label>
+                  <div className="grid grid-cols-3 gap-2" role="group" aria-label={tr ? "Logo rengi" : "Logo colour"}>
+                    {(
+                      [
+                        ["original", tr ? "Olduğu gibi" : "As is"],
+                        ["white", tr ? "Beyaz" : "White"],
+                        ["black", tr ? "Siyah" : "Black"],
+                      ] as [LogoColor, string][]
+                    ).map(([v, label]) => (
+                      <button
+                        key={v}
+                        type="button"
+                        disabled={!logoUse}
+                        onClick={() => patch({ logo: { use: true, color: v } })}
+                        aria-pressed={logoColor === v}
+                        className={`${pill(logoColor === v)} disabled:opacity-50`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <button type="button" onClick={() => void removeSavedLogo()} className="text-xs font-medium text-accent hover:underline">
+                    {tr ? "Kayıtlı logoyu hesabımdan sil" : "Remove saved logo from my account"}
+                  </button>
+                </>
+              )}
+              <p className="max-w-xs text-[11px] text-muted">
+                {tr
+                  ? "En iyisi saydam zeminli PNG. Beyaz zeminli logolarda beyaz zemin kendiliğinden silinir. Koyu kapakta Beyaz, açık kapakta Siyah seç."
+                  : "A transparent PNG works best; a white background is removed automatically. Pick White for dark covers, Black for light ones."}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Not */}
       <section className="space-y-2">
         <h2 className={stepTitle}>
@@ -522,7 +694,7 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
         <button
           type="button"
           onClick={() => void submit("run")}
-          disabled={saving !== "none"}
+          disabled={saving !== "none" || logoPending}
           className="rounded-lg bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {saving === "run" ? (tr ? "Kaydediliyor…" : "Saving…") : tr ? "Tuvale gönder ve üret" : "Send to canvas & generate"}
@@ -535,7 +707,7 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
         <button
           type="button"
           onClick={() => void submit("skip")}
-          disabled={saving !== "none"}
+          disabled={saving !== "none" || logoPending}
           className="rounded-lg border border-foreground/15 px-4 py-3 text-sm font-semibold text-foreground transition hover:bg-accent-soft disabled:opacity-60"
         >
           {tr ? "Kendim tasarlayacağım" : "I'll design it myself"}

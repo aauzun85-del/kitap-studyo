@@ -59,6 +59,7 @@ export default async function CoverPage({ params, searchParams }: PageProps<"/[l
       wizardAuto={!!wizard?.active && !exportMode}
       autoExport={exportMode}
       briefRun={briefRun}
+      fromBrief={briefParam !== undefined && !exportMode}
       canExport={canExport}
       creditBalance={creditBalance}
       user={shellUser ? { name: shellUser.name, initials: shellUser.initials } : null}

@@ -64,6 +64,7 @@ export default async function CoverBriefPage({ params, searchParams }: PageProps
         title={meta.title ?? ""}
         author={meta.author ?? ""}
         genre={meta.genre ?? undefined}
+        platform={meta.platform ?? undefined}
         spineNote={(() => {
           // Sırt özeti (kapak tuvaliyle aynı kural): sarmal görsel bu ölçüye göre üretilir.
           const s = bookSpineInfo(meta, initialProject.data.cover);

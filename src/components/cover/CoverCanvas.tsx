@@ -126,7 +126,9 @@ export type CustomObject = {
   opacity?: number; // 0..1 saydamlık — vars. 1
   cornerRadiusMm?: number; // sadece rect — köşe yuvarlaklığı (mm), vars. 0
   variant?: DividerVariant; // type === "divider" — ayraç deseni
-  role?: "blurb"; // kitap asistanının arka kapak yazısı — yeni kurguda yenisiyle değişir
+  // "blurb": kitap asistanının arka kapak yazısı — yeni kurguda yenisiyle değişir.
+  // "pubLogo": yayınevi logosu (arka kapak / sırt) — yeniden yerleştirilince yenisiyle değişir.
+  role?: "blurb" | "pubLogo";
 };
 
 // Sürüklenebilir şablon nesne kimlikleri.
@@ -883,11 +885,22 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       const barcodeUrl = generateBarcodeDataUrl(content.isbn);
       // Ön kapakta alt-logo (KDY markası vb.) varsa, altında bir bant ayır →
       // şablonun alt-hizalı yazar adı bu kadar yukarı kayar, logoyla çakışmaz.
-      // Logo yüksekliği yüklenmeden bilinmediğinden geniş marka logosu (~2,2
-      // en/boy) varsayımı + boşlukla tahmin edilir.
-      const hasBottomLogo = !!images.logo && images.logoPos === "bottom";
+      // Logo önceden yüklenir → gerçek en/boy oranıyla (kare/uzun yayınevi
+      // logoları da) yazar adı logonun üstünde kalır.
+      // Yüklenemeyen logo kapağın kalanını boş bırakmasın: yalnız logo atlanır.
+      let preLogo: Awaited<ReturnType<typeof fabric.FabricImage.fromURL>> | null = null;
+      if (images.logo) {
+        try {
+          preLogo = await fabric.FabricImage.fromURL(images.logo, imgLoadOpts(images.logo));
+        } catch {
+          preLogo = null;
+        }
+      }
+      if (disposed || !fabricCanvasRef.current) return;
+      const hasBottomLogo = !!preLogo && images.logoPos === "bottom";
+      const preLogoRatio = preLogo && (preLogo.width ?? 0) > 0 ? (preLogo.height ?? 1) / (preLogo.width ?? 1) : 1 / 2.2;
       const bottomReserveMm = hasBottomLogo
-        ? (spread.bookWidth * (images.logoSize / 100)) / 2.2 + spread.bookHeight * 0.025
+        ? spread.bookWidth * (images.logoSize / 100) * preLogoRatio + spread.bookHeight * 0.025
         : 0;
       // colors bir an için boş gelirse (canlı güncelleme sırasında) şablonun kendi paletine düş.
       const ctx = {
@@ -1156,9 +1169,8 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
       }
 
       // 4) Logo — ön kapakta konumlandır.
-      if (images.logo) {
-        const logo = await fabric.FabricImage.fromURL(images.logo, imgLoadOpts(images.logo));
-        if (disposed || !fabricCanvasRef.current) return;
+      if (images.logo && preLogo) {
+        const logo = preLogo;
         // "side" düzeni: portre sağ altta → alt logo sol sütuna alınır ve yuvanın
         // soluna sığacak kadar küçültülür (yoksa portrenin üstüne biner).
         const sideSlot =

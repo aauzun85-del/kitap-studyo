@@ -97,6 +97,7 @@ import {
 } from "@/lib/cover/brief";
 import { getConceptOf, resolveStandard } from "@/lib/cover/standards";
 import { deleteBriefPhoto, loadBriefPhoto, toMonoPhoto } from "@/lib/cover/briefPhoto";
+import { loadPublisherLogoDataUrl, loadPublisherLogoUrl, logoAspect, recolorLogo, type LogoColor } from "@/lib/cover/publisherLogo";
 import { findChromaRect, spineColorFromImage } from "@/lib/cover/palette";
 import {
   AI_HISTORY_LIMIT,
@@ -237,6 +238,7 @@ export default function CoverStudio({
   canExport,
   creditBalance = null,
   briefRun,
+  fromBrief = false,
   user = null,
   signOut,
   startPreview = false,
@@ -255,6 +257,9 @@ export default function CoverStudio({
   creditBalance?: number | null;
   /** Kurgu sayfasından "Tuvale gönder ve üret" ile gelindi → kayıtlı kurguyla üret. */
   briefRun?: boolean;
+  /** Kurgu sayfasından gelindi (üret ya da "kendim tasarlayacağım"): kurgudaki
+   *  yayınevi logosu seçimi tuvale bir kez uygulanır. */
+  fromBrief?: boolean;
   /** Üst çubuktaki hesap rozeti (tam ekran düzende uygulama menüsü yok). */
   user?: { name: string; initials: string } | null;
   signOut?: () => Promise<void>;
@@ -553,6 +558,8 @@ export default function CoverStudio({
     return () => window.clearTimeout(id);
   }, [draftRestored]);
   const hydratedRef = useRef(false); // ilk yükleme bitti mi (öncesinde kayıt yapma)
+  // Aynısı, durum olarak (ilk yüklemeyi beklemesi gereken etkiler için).
+  const [hydrated, setHydrated] = useState(false);
   // Kâğıt kitap düzeyindedir (konsept ekranıyla ortak): tuvalde nereden değişirse
   // değişsin (seçim, geri al, şablon) projeye de yazılır.
   useEffect(() => {
@@ -1336,7 +1343,10 @@ export default function CoverStudio({
           if (alive) applyDraft(reconciled);
         })
         .finally(() => {
-          if (alive) hydratedRef.current = true;
+          if (alive) {
+            hydratedRef.current = true;
+            setHydrated(true);
+          }
         });
       return () => {
         alive = false;
@@ -1361,7 +1371,10 @@ export default function CoverStudio({
     }
     if (forceReset) {
       clearCoverDraft().finally(() => {
-        if (alive) hydratedRef.current = true;
+        if (alive) {
+            hydratedRef.current = true;
+            setHydrated(true);
+          }
       });
       return () => {
         alive = false;
@@ -1394,7 +1407,10 @@ export default function CoverStudio({
         // loadCoverDraft'ın kendisi patlarsa sessizce boş tasarımla devam et.
       })
       .finally(() => {
-        if (alive) hydratedRef.current = true;
+        if (alive) {
+            hydratedRef.current = true;
+            setHydrated(true);
+          }
       });
     return () => {
       alive = false;
@@ -2433,6 +2449,15 @@ export default function CoverStudio({
   }, [aiWaiting]);
 
   // ── KDY logosu ──
+  // Arka kapak/sırt logo nesneleri (KDY seti ya da yayınevi logosu): biri
+  // konunca öteki kalkar → aynı yere iki logo binmez.
+  const isBrandLogoObj = (o: CustomObject) => o.role === "pubLogo" || (o.type === "image" && !!o.src?.includes("/kdy/"));
+  // Ön logo yeniden konunca eski elle taşıma/boyut kaydı düşer (yeni logo yerine otursun).
+  const withoutFrontLogoPos = (prev: Record<string, ObjTransform>) => {
+    const next = { ...prev };
+    delete next.logo;
+    return next;
+  };
   // Akademi profilinde Akademi logosu, diğer her durumda KDY marka logosu.
   const kdyLogoBase = initialProject?.data.meta.platform === "akademi" ? "akademi" : "wordmark";
   // KDY logo SETİNİ (ön + arka + sırt) KDY kılavuzuna göre yerleştirir. Hem
@@ -2479,12 +2504,101 @@ export default function CoverStudio({
     }
 
     // Önceki KDY logo nesnelerini temizle (renk değişince kopya birikmesin), yenile.
-    setObjects((prev) => [
-      ...prev.filter((o) => !(o.type === "image" && o.src?.includes("/kdy/"))),
-      ...newObjs,
-    ]);
-    setPositions((prev) => ({ ...prev, ...newPos }));
+    setObjects((prev) => [...prev.filter((o) => !isBrandLogoObj(o)), ...newObjs]);
+    setPositions((prev) => ({ ...withoutFrontLogoPos(prev), ...newPos }));
   };
+
+  // ── YAYINEVİ LOGOSU (hesaba kayıtlı; KDY dışı kitaplar) ──
+  // KDY logo setiyle aynı yerler: ön kapak alt-orta (logoImage yolu), arka kapak
+  // sol-alt, sırt alt-orta (sırt ≥ 6 mm). Ölçü logonun en/boyuna göre: geniş
+  // logo ~20 mm genişlik, uzun logo en çok ~15 mm yükseklik.
+  const isKdyBook = initialProject?.data.meta.platform === "kdy" || initialProject?.data.meta.platform === "akademi";
+  const [pubLogoUrl, setPubLogoUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!projectId || isKdyBook || autoExport) return;
+    let alive = true;
+    void loadPublisherLogoUrl().then((u) => {
+      if (alive) setPubLogoUrl(u);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [projectId, isKdyBook, autoExport]);
+  const [pubLogoBusy, setPubLogoBusy] = useState(false);
+  const applyPublisherLogo = async (color: LogoColor): Promise<boolean> => {
+    setPubLogoBusy(true);
+    try {
+      const raw = await loadPublisherLogoDataUrl();
+      if (!raw) return false;
+      const img = await recolorLogo(raw, color);
+      const aspect = await logoAspect(img);
+      const sizeFor = (maxW: number, maxH: number) => Math.min(maxW, maxH * aspect);
+      // 1) Ön kapak: alt-orta, alt güvenli çizgi (logoImage yolu, genişlik % kitap eni).
+      const frontW = sizeFor(20, 15);
+      setLogoImage(img);
+      setLogoSize(Math.round((frontW / spread.bookWidth) * 1000) / 10);
+      setLogoPos("bottom");
+      // 2) Arka kapak + sırt: taşınabilir görsel nesneleri (role: "pubLogo").
+      const baseWmm = Math.min(spread.bookWidth * 0.45, 60);
+      const newObjs: CustomObject[] = [];
+      const newPos: Record<string, ObjTransform> = {};
+      const place = (wMm: number, cxMm: number) => {
+        objCounter.current += 1;
+        const id = `obj-${objCounter.current}`;
+        newObjs.push({ id, type: "image", src: img, fill: colors.ink, role: "pubLogo" });
+        const scale = wMm / baseWmm;
+        newPos[id] = { leftMm: cxMm, topMm: spread.bottomSafe - wMm / aspect / 2, scaleX: scale, scaleY: scale };
+      };
+      const backW = sizeFor(20, 15);
+      place(backW, spread.backSafeLeft + backW / 2);
+      // Sırt: her yanda en az 1,6 mm pay (KDP'nin sırt payı; KDY'nin 1 mm'sini de karşılar).
+      const spineMaxW = spread.spine - 3.2;
+      if (spread.spine >= 6 && spineMaxW >= 3) place(sizeFor(Math.min(spineMaxW, 18), 25), spread.spineCenter);
+      setObjects((prev) => [...prev.filter((o) => !isBrandLogoObj(o)), ...newObjs]);
+      setPositions((prev) => ({ ...withoutFrontLogoPos(prev), ...newPos }));
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setPubLogoBusy(false);
+    }
+  };
+  // Kurgudan gelindi ve logo seçimi yapıldıysa: ilk yükleme bitince BİR KEZ uygula.
+  // "Kullan" → yerleştir; işaret kaldırıldıysa → önceki kurgunun koyduğu logoyu
+  // kaldır. Aynı kurgu ikinci kez uygulanmaz (yenileme / geri-ileri): kurgu
+  // damgası bu oturumda işaretlenir ve adresteki ?kurgu kaldırılır.
+  const pubLogoFiredRef = useRef(false);
+  useEffect(() => {
+    if (!fromBrief || !hydrated || autoExport || isKdyBook || pubLogoFiredRef.current) return;
+    if (!brief?.logo || !projectId) return;
+    pubLogoFiredRef.current = true;
+    const stamp = `ks-publogo:${projectId}:${brief.createdAt ?? ""}`;
+    try {
+      if (sessionStorage.getItem(stamp)) return;
+      sessionStorage.setItem(stamp, "1");
+    } catch {
+      // gizli pencere vb. — damgasız devam
+    }
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.delete("kurgu");
+      window.history.replaceState(null, "", u.pathname + u.search + u.hash);
+    } catch {
+      // önemli değil
+    }
+    if (!brief.logo.use) {
+      // Ön logo ile arka/sırt logoları birlikte konur → birlikte kalkar.
+      if (objects.some((o) => o.role === "pubLogo")) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setObjects((prev) => prev.filter((o) => o.role !== "pubLogo"));
+        setLogoImage(null);
+      }
+      return;
+    }
+    // Tek seferlik (pubLogoFiredRef korur); logo ağdan yüklenince yerleşir.
+    void applyPublisherLogo(brief.logo.color);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromBrief, hydrated, autoExport, isKdyBook, brief]);
 
   // KDY/KDY Akademi profilli kitaplarda, henüz logo yoksa markayı otomatik koy.
   const kdyLogoFiredRef = useRef(false);
@@ -4901,6 +5015,47 @@ export default function CoverStudio({
                           </button>
                         </div>
                       </Field>
+
+                      {/* Yayınevi logom (hesaba kayıtlı; KDY dışı kitaplar): tek tıkla ön + arka + sırt. */}
+                      {projectId && !isKdyBook && (
+                        <Field label={lang === "tr" ? "Yayınevi logom" : "My publisher logo"}>
+                          {pubLogoUrl ? (
+                            <div className="grid grid-cols-3 gap-2">
+                              {(
+                                [
+                                  ["original", lang === "tr" ? "Olduğu gibi" : "As is", "bg-white"],
+                                  ["white", lang === "tr" ? "Beyaz" : "White", "bg-neutral-800"],
+                                  ["black", lang === "tr" ? "Siyah" : "Black", "bg-white"],
+                                ] as [LogoColor, string, string][]
+                              ).map(([c, label, bg]) => (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  disabled={pubLogoBusy}
+                                  onClick={() => void applyPublisherLogo(c)}
+                                  title={lang === "tr" ? `Logoyu ${label.toLowerCase()} renkte ön, arka ve sırta koy` : `Place the logo (${label}) on front, back and spine`}
+                                  className={`flex h-11 flex-col items-center justify-center gap-0.5 rounded-lg border border-[var(--border)] ${bg} px-1 transition hover:opacity-90 disabled:opacity-50`}
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={pubLogoUrl}
+                                    alt=""
+                                    className="max-h-5 max-w-full object-contain"
+                                    style={{ filter: c === "white" ? "brightness(0) invert(1)" : c === "black" ? "brightness(0)" : undefined }}
+                                  />
+                                  <span className={`text-[10px] font-semibold ${c === "white" ? "text-white" : "text-neutral-700"}`}>{label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted">
+                              {lang === "tr"
+                                ? "Kayıtlı yayınevi logon yok. Kapak kurgusunun “Yayınevi logosu” adımından bir kez yüklersen her kitapta burada hazır olur."
+                                : "No saved publisher logo. Upload it once in the cover brief's “Publisher logo” step and it's ready here for every book."}
+                            </p>
+                          )}
+                        </Field>
+                      )}
 
                       {logoImage && (
                         <>
