@@ -310,8 +310,9 @@ export const COVER_STANDARDS: CoverStandard[] = [
         ...c("sembol", "Minimal sembol", "Minimal symbol", "Tek geometrik işaret, tek vurgu rengi, bol boşluk.", "One geometric mark, one accent color, lots of space.",
           "a single minimal geometric symbol on a full-bleed muted single-color ground (sage green, limestone, dusty blue) like softly pigmented uncoated book paper with very " +
             "subtle fine grain; the symbol in deep almost-black ink about 45–50% of the width, placed in the middle-to-lower area: one precise, visually simple emblem " +
-            "with a quiet conceptual twist (an almost complete circle with a small deliberate opening and one slender burnt-orange line passing through it — thought moving " +
-            "beyond the boundary of the known; or a comparable single geometric gesture), clean confident strokes, no arrowheads, interior the same as the ground; " +
+            "that turns THIS book's central idea into a single geometric gesture with a quiet conceptual twist and one slender burnt-orange accent (e.g. for a book " +
+            "on the limits of knowledge: an almost complete circle with a small deliberate opening and one slender burnt-orange line passing through it — design " +
+            "this book's own mark, never this example), clean confident strokes, no arrowheads, interior the same as the ground; " +
             "flat ink colors, one small warm accent; no eye, compass, clock, orbiting dots, maze, statues, faces, landscapes, photographs, borders, shadows, bevels or glow", ["#9fae8a", "#0f2a1a", "#d9682b"]),
         textLayout:
           "Deep forest-green (near-black) lettering on a disciplined CENTRAL axis with generous margins. Author at the top in small widely tracked uppercase humanist sans; " +

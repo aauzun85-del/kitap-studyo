@@ -39,6 +39,8 @@ const ART_IN_CONCEPT =
   "concept — which single object, figure, place, plant, animal or symbol from THIS book goes where the " +
   "concept has its subject (replacing the concept's own example subject). Do NOT describe medium, " +
   "style, palette, colours, lighting, background or composition — the concept already fixes them. " +
+  "If the concept is built around one symbol, emblem, mark or icon, that symbol IS the subject: describe this " +
+  "book's own simple symbol (its shape) expressing the book's central idea — never the concept's example. " +
   "If the concept is purely typographic, pattern-based or abstract with no pictorial subject, write exactly " +
   "'No scene.' followed by one short clause on the book's mood. No text, title or lettering wording.";
 
@@ -83,7 +85,7 @@ function systemPrompt(language: "tr" | "en", inConcept = false): string {
       "RULES:",
       "1) artDirection names ONLY what this particular book contributes to the concept: the one object, figure, place or symbol that should stand where the concept has its subject. If the concept gives an example subject (\"e.g. …\"), propose this book's own equivalent of the SAME kind (a figure for a figure, a plant for a plant, a place for a place, an object for an object) in the same role and scale.",
       "2) NEVER describe medium, style, palette, colours, lighting, background or composition, and never propose a different kind of picture than the concept — the concept is fixed.",
-      "3) If the concept has no pictorial subject (purely typographic, pattern-based or abstract — it says things like 'nothing else', 'no imagery', 'no objects'), write exactly 'No scene.' followed by one short clause on the book's mood, naming NO object.",
+      "3) A concept built around ONE symbol, emblem, mark, seal or icon is NOT abstract — the symbol is its subject: describe THIS book's own symbol (its simple shape and the idea it carries, e.g. for a book on patience: one long slow arc settling onto a single small point), in the concept's own visual language, and never reuse the concept's example symbol. Only if the concept has no pictorial subject at all (purely typographic, pattern-based or abstract — it says things like 'nothing else', 'no imagery', 'no objects'), write exactly 'No scene.' followed by one short clause on the book's mood, naming NO object.",
       "4) NEVER include any text, words, title, author name, letters or typography in artDirection.",
       "5) Write artDirection in ENGLISH, 1-2 short sentences, concrete and specific to this book; do not invent plot facts — if the summary is thin, derive the subject from the title and genre.",
       "6) Choose the single best matching style preset id from the allowed list.",
