@@ -70,7 +70,7 @@ export default async function PricingPage({ params }: PageProps<"/[lang]/fiyatla
           q: "Nasıl ödeyebilirim?",
           a: PAYMENT_OPEN
             ? "Kredi veya banka kartınla, güvenli ödeme ekranından ödersin; kart bilgilerin bize ulaşmaz. Ödeme onaylanınca paketin hesabına tanımlanır. Kargo yoktur."
-            : "Eco paketini sitede kredi veya banka kartınla alabilirsin: ödeme Shopier'in güvenli ödeme sayfasında yapılır, kart bilgilerin bize ulaşmaz; ödeme tamamlanınca paketin hesabına tanımlanır. Ödeme sayfasında Laycoty üyelik e-postanı yaz. Pro, Mega ve ek jeton için şimdilik bize yaz ([[iletisim]]); ödeme adımlarını sana bildiririz, paketi hesabına biz tanımlarız. Faturanı e-postayla göndeririz. Kargo yoktur.",
+            : "Sitede kartla ödeme henüz açık değil. Şimdilik paket için bize yaz ([[iletisim]]); ödeme adımlarını sana bildiririz, paketi hesabına biz tanımlarız ve faturanı e-postayla göndeririz. Kartla ödeme açılınca kredi veya banka kartınla güvenli ödeme ekranından ödersin; kart bilgilerin bize ulaşmaz. Kargo yoktur.",
         },
         {
           q: "İade alabilir miyim?",
@@ -98,7 +98,7 @@ export default async function PricingPage({ params }: PageProps<"/[lang]/fiyatla
           q: "How can I pay?",
           a: PAYMENT_OPEN
             ? "By credit or debit card on a secure payment page; your card details never reach us. Your package is added to your account once the payment is approved. There is no shipping."
-            : "You can buy the Eco package on the site by credit or debit card: you pay on Shopier's secure payment page, your card details never reach us, and the package is added to your account once the payment is complete. On the payment page, enter your Laycoty member e-mail. For Pro, Mega and extra credits, contact us for now ([[iletisim]]); we tell you how to pay and add the package to your account. We e-mail your invoice. There is no shipping.",
+            : "Card payment is not open on the site yet. For now, contact us ([[iletisim]]) to get a package; we tell you how to pay, add the package to your account and e-mail your invoice. Once card payment opens you pay by credit or debit card on a secure payment page; your card details never reach us. There is no shipping.",
         },
         {
           q: "Can I get a refund?",
@@ -120,8 +120,8 @@ export default async function PricingPage({ params }: PageProps<"/[lang]/fiyatla
             <>
               {" "}
               {tr
-                ? "Eco paketi kartla alınabilir; Pro, Mega ve ek jeton için şimdilik "
-                : "The Eco package can be bought by card; for Pro, Mega and extra credits, for now "}
+                ? "Kartla ödeme henüz açık değil; paket için "
+                : "Card payment is not open yet; to get a package, "}
               <Link href={`/${lang}/iletisim`} className="font-semibold text-accent hover:underline">
                 {tr ? "bize yaz" : "contact us"}
               </Link>

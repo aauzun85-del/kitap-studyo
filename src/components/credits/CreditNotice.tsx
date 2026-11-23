@@ -38,10 +38,10 @@ export function creditProblemText(p: CreditProblem, lang: Locale): string {
     return tr
       ? PAYMENT_OPEN
         ? "Dosya indirmek için aktif bir paket gerekir."
-        : "Dosya indirmek için aktif bir paket gerekir. Eco paketini kartla alabilirsin; diğer paketler için bize yaz."
+        : "Dosya indirmek için aktif bir paket gerekir. Kartla ödeme henüz açılmadı; paket tanımlatmak için bize yaz."
       : PAYMENT_OPEN
         ? "Downloading files requires an active package."
-        : "Downloading files requires an active package. You can buy the Eco package by card; for other packages, contact us.";
+        : "Downloading files requires an active package. Card payment isn't open yet; contact us to have one added.";
   const need =
     p.cost != null && p.balance != null
       ? tr
@@ -53,10 +53,10 @@ export function creditProblemText(p: CreditProblem, lang: Locale): string {
   const how = tr
     ? PAYMENT_OPEN
       ? "Paket ya da ek jeton alabilirsin."
-      : "Eco paketini kartla alabilirsin; ek jeton ve diğer paketler için bize yaz."
+      : "Kartla ödeme henüz açılmadı; jeton tanımlatmak için bize yaz."
     : PAYMENT_OPEN
       ? "You can buy a package or extra credits."
-      : "You can buy the Eco package by card; for extra credits and other packages, contact us.";
+      : "Card payment isn't open yet; contact us to have credits added.";
   return `${need} ${how}`;
 }
 

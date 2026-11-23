@@ -6,8 +6,6 @@ import { isAdminEmail } from "@/lib/admin";
 import { loadAdminData } from "@/lib/credits/adminData";
 import { resolvePeriod } from "@/lib/credits/period";
 import AdminConsole, { type AdminTab } from "@/components/admin/AdminConsole";
-import { shopierReady } from "@/lib/server/shopier";
-import { listUnmatchedPayments, settleAllPending, type UnmatchedPayment } from "@/lib/credits/shopierSync";
 
 export const dynamic = "force-dynamic";
 
@@ -55,30 +53,7 @@ export default async function AdminPage({ params, searchParams }: PageProps<"/[l
 
   // Jeton hareketleri için tarih aralığı (?bas=&bit=); boşsa son 30 gün.
   const period = resolvePeriod(one(sp.bas), one(sp.bit));
-
-  // KART ÖDEMELERİ (Shopier): sayfa açılırken bekleyen kart siparişlerini bir kez
-  // denetle (en çok 3 sn; bildirim kaçtıysa burada yakalanır) → yeni onaylananlar
-  // aşağıdaki veriyle aynı anda görünür. Shopier yanıt vermezse panel yine açılır.
-  let shopier: { ready: boolean; unmatched: UnmatchedPayment[] | null } | undefined;
-  if (shopierReady()) {
-    await Promise.race([
-      settleAllPending(2500).catch(() => undefined),
-      new Promise((resolve) => setTimeout(resolve, 3000)),
-    ]);
-  }
-
-  // Eşleşmeyen ödemeler yalnız Siparişler sekmesinde gösterilir; başka sekmede
-  // Shopier'e boşuna sorma. Panel verisiyle AYNI ANDA okunur ve en çok 4 sn
-  // beklenir; yetişmezse "Shopier'e ulaşılamadı" yazar, panel yine açılır.
-  const unmatchedP: Promise<{ ok: true; items: UnmatchedPayment[] } | { ok: false }> | null =
-    shopierReady() && tab === "siparisler"
-      ? Promise.race([
-          listUnmatchedPayments().catch(() => ({ ok: false as const })),
-          new Promise<{ ok: false }>((resolve) => setTimeout(() => resolve({ ok: false }), 4000)),
-        ])
-      : null;
-  const [data, unmatched] = await Promise.all([loadAdminData(period), unmatchedP]);
-  if (unmatched) shopier = { ready: true, unmatched: unmatched.ok ? unmatched.items : null };
+  const data = await loadAdminData(period);
 
   return (
     <AdminConsole
@@ -89,7 +64,6 @@ export default async function AdminPage({ params, searchParams }: PageProps<"/[l
       customerId={customerId}
       memberId={memberId}
       basePath={`/${lang}/admin`}
-      shopier={shopier}
     />
   );
 }

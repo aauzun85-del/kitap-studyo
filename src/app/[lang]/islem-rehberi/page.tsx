@@ -18,8 +18,7 @@ export default async function GuidePage({ params }: PageProps<"/[lang]/islem-reh
   const tr = lang === "tr";
   const a = "font-semibold text-accent hover:underline";
 
-  // Shopier ürünü olmayan paketlerin (Pro, Mega) BUGÜN nasıl alındığı. Eco kartla
-  // alınır (aşağıdaki `steps`); PAYMENT_OPEN bütün paketler kartla açılınca true olur.
+  // Kartla ödeme kapalıyken (PAYMENT_OPEN = false) paketin BUGÜN nasıl alındığı.
   const stepsNow = tr
     ? [
         "Ücretsiz üye ol ya da giriş yap.",
@@ -45,8 +44,8 @@ export default async function GuidePage({ params }: PageProps<"/[lang]/islem-reh
         "Sipariş özetini kontrol et: paket, içerik, KDV dahil toplam tutar.",
         "Fatura bilgilerini gir (bireysel ya da kurumsal).",
         "Ön Bilgilendirme Formu ile Mesafeli Satış Sözleşmesi'ni oku ve onay kutusunu işaretle.",
-        "“Kartla öde”ye bas; açılan Shopier ödeme sayfasında kartınla öde. E-posta alanına Laycoty üyelik adresini yaz.",
-        "Ödeme tamamlanınca Laycoty sayfasına dön; paket birkaç saniye içinde hesabına tanımlanır. Faturan e-posta adresine gönderilir.",
+        "“Kartla öde”ye bas; kart bilgilerini ödeme kuruluşunun güvenli (3D Secure) sayfasında gir.",
+        "Ödeme onaylanınca paket hesabına hemen tanımlanır; onay ve sözleşme metni e-posta adresine gönderilir.",
       ]
     : [
         "Sign up for free or log in.",
@@ -54,8 +53,8 @@ export default async function GuidePage({ params }: PageProps<"/[lang]/islem-reh
         "Review the order summary: package, contents, total including VAT.",
         "Enter your invoice details (individual or company).",
         "Read the Preliminary Information Form and the Distance Sales Agreement and tick the box.",
-        "Press “Pay by card”; pay with your card on the Shopier payment page that opens. In the e-mail field, enter your Laycoty member address.",
-        "When the payment is complete, return to the Laycoty page; the package is added to your account within a few seconds. Your invoice is e-mailed to you.",
+        "Press “Pay by card”; enter your card details on the payment provider's secure (3D Secure) page.",
+        "Once the payment is approved the package is added to your account immediately; the confirmation and agreement text are e-mailed to you.",
       ];
 
   return (
@@ -81,8 +80,8 @@ export default async function GuidePage({ params }: PageProps<"/[lang]/islem-reh
             <>
               <p className="mb-3">
                 {tr
-                  ? "Eco paketi sitede kartla alınır (adımlar aşağıda). Pro ve Mega paketleri şimdilik şöyle alınır:"
-                  : "The Eco package is bought by card on the site (steps below). For now, this is how you get the Pro and Mega packages:"}
+                  ? "Sitede kartla ödeme henüz açık değil. Şu an paket şöyle alınır:"
+                  : "Card payment is not open on the site yet. For now, this is how you get a package:"}
               </p>
               <ol className="ml-5 list-decimal space-y-1.5 marker:text-muted">
                 {stepsNow.map((s) => (
@@ -95,7 +94,7 @@ export default async function GuidePage({ params }: PageProps<"/[lang]/islem-reh
                 </Link>
               </p>
               <h3 className="mb-3 mt-6 font-sans text-base font-bold text-foreground">
-                {tr ? "Kartla ödeme adımları (Eco paketi)" : "Paying by card (Eco package)"}
+                {tr ? "Kartla ödeme açıldığında" : "Once card payment opens"}
               </h3>
             </>
           )}
@@ -107,8 +106,8 @@ export default async function GuidePage({ params }: PageProps<"/[lang]/islem-reh
           {!PAYMENT_OPEN && (
             <p className="mt-3 text-sm text-muted">
               {tr
-                ? "Kart ödemeleri Shopier'in güvenli ödeme sayfasında alınır; kart bilgilerin Laycoty'ye ulaşmaz. Pro ve Mega paketleri için kartla ödeme henüz açık değil."
-                : "Card payments are taken on Shopier's secure payment page; your card details never reach Laycoty. Card payment is not open yet for the Pro and Mega packages."}
+                ? "Kartla ödeme, ödeme kuruluşunun onayından sonra açılacak. O zamana kadar sitede karttan ödeme alınmaz."
+                : "Card payment opens after our payment provider's approval. Until then no card payment is taken on the site."}
             </p>
           )}
         </section>
@@ -143,15 +142,14 @@ export default async function GuidePage({ params }: PageProps<"/[lang]/islem-reh
             {tr
               ? " bu sitede sürekli yayındadır; dilediğin zaman okuyabilir, tarayıcından yazdırabilir ya da kaydedebilirsin. "
               : " are always available on this site; you can read, print or save them at any time. "}
-            {/* Kartla alımda onay zamanı siparişe yazılır (terms_accepted_at); elle
-                tanımlanan paketlerde kayıt, üyeyle yazışmadır. */}
+            {/* Kartla ödeme kapalıyken onay sitede kaydedilmez; kayıt, üyeyle yazışmadır. */}
             {PAYMENT_OPEN
               ? tr
                 ? "Siparişinle birlikte onayladığın metin e-posta adresine de gönderilir; sipariş kaydın ve onay zamanı tarafımızca yasal süre boyunca saklanır."
                 : "The text you accepted is also e-mailed with your order; your order record and acceptance time are kept by us for the legal period."
               : tr
-                ? "Kartla alımda sözleşmeyi onayladığın tarih ve saat, sipariş kaydınla birlikte yasal süre boyunca saklanır; iki metni faturanla birlikte e-postayla göndeririz. Bize yazarak aldığın paketlerde de bu iki metni faturanla birlikte e-postayla göndeririz; yazışman onay kaydı olarak saklanır."
-                : "When you pay by card, the date and time of your acceptance are kept with your order record for the legal period, and we e-mail you these two texts together with your invoice. For packages you get by writing to us, we also e-mail you the two texts with your invoice; your message is kept as the record of your acceptance."}
+                ? "Paketi tanımlarken bu iki metni faturanla birlikte e-postayla göndeririz; yazışman onay kaydı olarak yasal süre boyunca saklanır."
+                : "When we add the package we e-mail you these two texts together with your invoice; your message is kept as the record of your acceptance for the legal period."}
           </p>
         </section>
 
