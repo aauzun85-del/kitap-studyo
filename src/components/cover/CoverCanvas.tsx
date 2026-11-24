@@ -1,5 +1,6 @@
 "use client";
 
+import { isKdyAsset } from "@/lib/cover/publisherLogo";
 import {
   forwardRef,
   useCallback,
@@ -44,6 +45,8 @@ export type CoverImages = {
   logo: string | null; // dataURL
   logoSize: number; // ön kapak genişliğinin yüzdesi
   logoPos: "top" | "bottom";
+  /** Ön logo zemine göre beyaz/siyah boyansın mı (KDY / "Otomatik" yayınevi logosu). */
+  logoAuto?: boolean;
   // Sırt bandı rengi (hex) ya da null = yok. Sarmal görselde sırt mm'de tam
   // otursun diye uygulamanın çizdiği düz şerit; sırt yazısı üstüne gelir.
   spineBand?: string | null;
@@ -129,6 +132,15 @@ export type CustomObject = {
   // "blurb": kitap asistanının arka kapak yazısı — yeni kurguda yenisiyle değişir.
   // "pubLogo": yayınevi logosu (arka kapak / sırt) — yeniden yerleştirilince yenisiyle değişir.
   role?: "blurb" | "pubLogo";
+  // Marka logoları (KDY / yayınevi): hangi bölgede ("spine" sırt logosu sırt
+  // değişince yeniden ortalanır/boyutlanır) ve görselin en/boy oranı.
+  slot?: "spine" | "back";
+  aspect?: number;
+  // Sırt bu logo için fazla ince → çizilmez (sırt kalınlaşınca geri gelir).
+  spineHidden?: boolean;
+  // Sırt logosunun en son hangi sırt ölçüsüne göre oturtulduğu (sırt/kitap
+  // ölçüsü değişince yeniden oturtulur; yalnız elle taşıma geri alınmaz).
+  fitKey?: string;
 };
 
 // Sürüklenebilir şablon nesne kimlikleri.
@@ -1237,6 +1249,7 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
           return pts;
         };
         for (const obj of objects) {
+          if (obj.spineHidden) continue;
           if (obj.type === "text") {
             canvas.add(
               new fabric.Textbox(obj.text && obj.text.length ? obj.text : " ", {
@@ -1586,6 +1599,77 @@ const CoverCanvas = forwardRef<CoverCanvasHandle, {
         if (key !== lastLayersRef.current) {
           lastLayersRef.current = key;
           onLayersRef.current(ids);
+        }
+      }
+
+      // 4e-0) MARKA LOGOLARI — zemine göre BEYAZ ya da SİYAH (KDY kılavuzu: koyu
+      // zeminde beyaz, açık zeminde siyah). KDY logoları (kullanıcı başka renk
+      // seçmediyse) ve "Otomatik" renkli yayınevi logosu. Logo geçici gizlenip
+      // tam altındaki zemin ölçülür; logo tek renge boyanır (saydamlık korunur).
+      {
+        type LogoObj = {
+          editId?: string;
+          visible?: boolean;
+          filters?: unknown[];
+          applyFilters?: () => void;
+          cacheKey?: string;
+          removeTexture?: (key: string) => void;
+          getBoundingRect?: (a?: boolean, b?: boolean) => { left: number; top: number; width: number; height: number };
+          set: (o: Record<string, unknown>) => void;
+        };
+        const autoIds = new Set(
+          objects
+            .filter(
+              (o) =>
+                o.type === "image" &&
+                ((isKdyAsset(o.src) && o.autoColor !== false) || (o.role === "pubLogo" && o.autoColor === true)),
+            )
+            .map((o) => o.id),
+        );
+        if (images.logo && images.logoAuto) autoIds.add("logo");
+        const logos = (canvas.getObjects() as unknown as LogoObj[]).filter(
+          (o) => o.editId && autoIds.has(o.editId) && o.visible !== false && o.getBoundingRect,
+        );
+        const lower = (canvas as unknown as { lowerCanvasEl?: HTMLCanvasElement }).lowerCanvasEl;
+        const lctx = lower?.getContext("2d", { willReadFrequently: true }) ?? null;
+        if (logos.length && lower && lctx) {
+          const dpr = (canvas as unknown as { getRetinaScaling?: () => number }).getRetinaScaling?.() ?? 1;
+          logos.forEach((o) => o.set({ visible: false }));
+          canvas.renderAll();
+          const means = logos.map((o) => {
+            const r = o.getBoundingRect!(true, true);
+            const x = Math.max(0, Math.floor(r.left * dpr));
+            const y = Math.max(0, Math.floor(r.top * dpr));
+            const w = Math.min(lower.width - x, Math.ceil(r.width * dpr));
+            const h = Math.min(lower.height - y, Math.ceil(r.height * dpr));
+            if (w <= 0 || h <= 0) return null;
+            try {
+              const data = lctx.getImageData(x, y, w, h).data;
+              const step = Math.max(4, Math.floor((w * h) / 600) * 4);
+              let sum = 0;
+              let n = 0;
+              for (let i = 0; i + 3 < data.length; i += step) {
+                if (data[i + 3] === 0) continue;
+                sum += relLum(data[i], data[i + 1], data[i + 2]);
+                n++;
+              }
+              return n ? sum / n : null;
+            } catch {
+              return null; // tuval kirli vb. → logo olduğu gibi kalır
+            }
+          });
+          logos.forEach((o, i) => {
+            o.set({ visible: true });
+            const m = means[i];
+            if (m === null || !o.applyFilters) return;
+            // Beyaz mı siyah mı: zeminle KONTRAST oranı yüksek olan (WCAG; göreli
+            // parlaklık ~0,18 eşiği). Açık-orta tonlu zeminde siyah seçilir.
+            const white = 1.05 / (m + 0.05) > (m + 0.05) / 0.05;
+            o.filters = [new fabric.filters.BlendColor({ color: white ? "#ffffff" : "#000000", mode: "tint", alpha: 1 })];
+            o.applyFilters();
+            // Süzgeç sonucu çizildi → GPU dokusu bırakılır (her çizimde birikmesin).
+            if (o.cacheKey && o.removeTexture) o.removeTexture(o.cacheKey);
+          });
         }
       }
 

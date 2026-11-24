@@ -9,7 +9,14 @@
 import { createClient } from "@/lib/supabase/client";
 
 const BUCKET = "cover-images";
-export type LogoColor = "original" | "white" | "black";
+
+/** Uygulamanın kendi KDY logo dosyası mı ("/kdy/dicon-white.png" vb.)? Kullanıcının
+ *  yüklediği görselin adında "/kdy/" geçse de eşleşmez. */
+export function isKdyAsset(src?: string | null): boolean {
+  return !!src && /^(https?:\/\/[^/]+)?\/kdy\/[a-z-]+\.png(\?.*)?$/.test(src);
+}
+/** "auto": tuvalde zemine göre beyaz ya da siyah (açık zeminde siyah, koyuda beyaz). */
+export type LogoColor = "auto" | "original" | "white" | "black";
 
 async function logoPath(): Promise<string | null> {
   const { data } = await createClient().auth.getUser();
@@ -166,7 +173,7 @@ export async function preparePublisherLogo(file: File): Promise<{ dataUrl: strin
 
 /** Logoyu tek renge çevirir (saydamlık korunur): koyu kapakta beyaz, açıkta siyah. */
 export async function recolorLogo(dataUrl: string, color: LogoColor): Promise<string> {
-  if (color === "original") return dataUrl;
+  if (color === "original" || color === "auto") return dataUrl;
   const img = await loadImg(dataUrl);
   const c = document.createElement("canvas");
   c.width = img.naturalWidth;

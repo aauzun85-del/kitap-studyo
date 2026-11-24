@@ -60,6 +60,8 @@ export type CoverDraft = {
   logoImage?: string | null;
   logoSize?: number;
   logoPos?: "top" | "bottom";
+  /** Ön logo zemine göre kendiliğinden beyaz/siyah mı (KDY / "Otomatik" yayınevi logosu). */
+  logoAuto?: boolean;
   // AI ayarları (üretilen görsel geçmişi ayrı kaydedilir)
   aiStyle?: string;
   aiModel?: "flux" | "nano" | "ideogram" | "openai";

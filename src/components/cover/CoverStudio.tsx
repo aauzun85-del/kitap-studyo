@@ -97,7 +97,7 @@ import {
 } from "@/lib/cover/brief";
 import { getConceptOf, resolveStandard } from "@/lib/cover/standards";
 import { deleteBriefPhoto, loadBriefPhoto, toMonoPhoto } from "@/lib/cover/briefPhoto";
-import { loadPublisherLogoDataUrl, loadPublisherLogoUrl, logoAspect, recolorLogo, type LogoColor } from "@/lib/cover/publisherLogo";
+import { isKdyAsset, loadPublisherLogoDataUrl, loadPublisherLogoUrl, logoAspect, recolorLogo, type LogoColor } from "@/lib/cover/publisherLogo";
 import { findChromaRect, spineColorFromImage } from "@/lib/cover/palette";
 import {
   AI_HISTORY_LIMIT,
@@ -228,6 +228,18 @@ function aiModelCost(model: AiModel): number {
 
 // Kapağın elle sırt ayarı → kitap düzeyi değer (mm ya da null = otomatik).
 const spineMetaOf = (on: boolean, v: number) => (on && v > 0 ? v : null);
+// Sırt logosu genişliği (mm): KDY kılavuzundaki örneklerde D-ikon sırtın
+// yaklaşık yarısı kadar (6 mm'de ~5, 10 mm'de ~5,3, 22 mm'de ~11,7); en az 5,
+// en çok 18 mm ve sırttan her zaman dar.
+const spineLogoWidth = (spine: number) => Math.min(18, Math.max(5, spine * 0.53), spine - 1);
+// Yayınevi logosu sırtta: aynı oran; her yanda en az 1,6 mm pay (KDP), en çok
+// 25 mm yükseklik. Sırt bunu taşımıyorsa null (sırta logo konmaz).
+const spineFitKey = (s: { spine: number; spineCenter: number; bottomSafe: number }) =>
+  `${s.spine.toFixed(2)}|${s.spineCenter.toFixed(2)}|${s.bottomSafe.toFixed(2)}`;
+const pubSpineWidth = (spine: number, aspect: number): number | null => {
+  if (spine < 6 || spine - 3.2 < 3) return null;
+  return Math.min(spineLogoWidth(spine), spine - 3.2, 25 * aspect);
+};
 
 export default function CoverStudio({
   lang,
@@ -314,6 +326,9 @@ export default function CoverStudio({
   const [coverZoom, setCoverZoom] = useState(1);
   const [logoImage, setLogoImage] = useState<string | null>(null);
   const [logoSize, setLogoSize] = useState(22);
+  // Ön logo zemine göre kendiliğinden beyaz/siyah mı? (KDY logoları ve
+  // "Otomatik" renkli yayınevi logosu). Tanımsız = eski kayıt: KDY logosuysa evet.
+  const [logoAuto, setLogoAuto] = useState<boolean | undefined>(undefined);
   const [logoPos, setLogoPos] = useState<"top" | "bottom">("bottom");
 
   // AI kapak görseli üretimi
@@ -558,6 +573,9 @@ export default function CoverStudio({
     return () => window.clearTimeout(id);
   }, [draftRestored]);
   const hydratedRef = useRef(false); // ilk yükleme bitti mi (öncesinde kayıt yapma)
+  // Kayıtlı taslakta ön logo kararı var mı (logo konmuş ya da bilerek kaldırılmış)?
+  // Varsa KDY logosu kendiliğinden yeniden konmaz.
+  const kdyLogoFiredRef = useRef(false);
   // Aynısı, durum olarak (ilk yüklemeyi beklemesi gereken etkiler için).
   const [hydrated, setHydrated] = useState(false);
   // Kâğıt kitap düzeyindedir (konsept ekranıyla ortak): tuvalde nereden değişirse
@@ -825,7 +843,12 @@ export default function CoverStudio({
     if (!src) return;
     objCounter.current += 1;
     const newId = `obj-${objCounter.current}`;
-    setObjects((prev) => [...prev, { ...src, id: newId }]);
+    // Kopya serbest nesnedir: sırt logosu kopyası sırta geri çekilmesin.
+    const { slot: _slot, spineHidden: _hid, fitKey: _fit, ...rest } = src;
+    void _slot;
+    void _hid;
+    void _fit;
+    setObjects((prev) => [...prev, { ...rest, id: newId }]);
     const base = positions[id] ?? {
       leftMm: spread.frontCenter,
       topMm: spread.midY,
@@ -1015,12 +1038,13 @@ export default function CoverStudio({
       logo: logoImage,
       logoSize,
       logoPos,
+      logoAuto: logoAuto ?? isKdyAsset(logoImage),
       spineBand,
       photoLayout,
       photo: photoImage,
       photoRect,
     }),
-    [coverImage, coverDarken, coverOpacity, coverScope, coverFit, coverPanX, coverZoom, logoImage, logoSize, logoPos, spineBand, photoLayout, photoImage, photoRect],
+    [coverImage, coverDarken, coverOpacity, coverScope, coverFit, coverPanX, coverZoom, logoImage, logoSize, logoPos, logoAuto, spineBand, photoLayout, photoImage, photoRect],
   );
 
   // labels'ı sabit referansa al → seçim değişince tuval gereksiz yere yeniden çizilmesin.
@@ -1249,7 +1273,11 @@ export default function CoverStudio({
     if (typeof d.autoContrast === "boolean") setAutoContrast(d.autoContrast);
     if (typeof d.coverPanX === "number") setCoverPanX(d.coverPanX);
     if (typeof d.coverZoom === "number") setCoverZoom(d.coverZoom);
-    if (d.logoImage !== undefined) setLogoImage(d.logoImage);
+    if (d.logoImage !== undefined) {
+      setLogoImage(d.logoImage);
+      setLogoAuto(d.logoAuto);
+      kdyLogoFiredRef.current = true;
+    }
     if (typeof d.logoSize === "number") setLogoSize(d.logoSize);
     if (d.logoPos) setLogoPos(d.logoPos);
     // AI ayarları
@@ -1555,6 +1583,7 @@ export default function CoverStudio({
       logoImage,
       logoSize,
       logoPos,
+      logoAuto,
       aiStyle,
       aiModel,
       aiEmbedText,
@@ -1641,6 +1670,7 @@ export default function CoverStudio({
     logoImage,
     logoSize,
     logoPos,
+    logoAuto,
     aiStyle,
     aiModel,
     aiEmbedText,
@@ -1892,6 +1922,7 @@ export default function CoverStudio({
       logoImage,
       logoSize,
       logoPos,
+      logoAuto,
       aiStyle,
       aiModel,
       aiEmbedText,
@@ -2451,7 +2482,7 @@ export default function CoverStudio({
   // ── KDY logosu ──
   // Arka kapak/sırt logo nesneleri (KDY seti ya da yayınevi logosu): biri
   // konunca öteki kalkar → aynı yere iki logo binmez.
-  const isBrandLogoObj = (o: CustomObject) => o.role === "pubLogo" || (o.type === "image" && !!o.src?.includes("/kdy/"));
+  const isBrandLogoObj = (o: CustomObject) => o.role === "pubLogo" || (o.type === "image" && isKdyAsset(o.src));
   // Ön logo yeniden konunca eski elle taşıma/boyut kaydı düşer (yeni logo yerine otursun).
   const withoutFrontLogoPos = (prev: Record<string, ObjTransform>) => {
     const next = { ...prev };
@@ -2466,6 +2497,7 @@ export default function CoverStudio({
   const applyKdyLogo = (variant: "white" | "black") => {
     // 1) ÖN KAPAK — mevcut logoImage yolu (yatayda ortalı, alt güvenli çizgi).
     setLogoImage(`/kdy/${kdyLogoBase}-${variant}.png`);
+    setLogoAuto(true); // renk zemine göre (KDY kılavuzu: koyu zeminde beyaz, açıkta siyah)
     setLogoSize(Math.round((20 / spread.bookWidth) * 1000) / 10); // ≈20mm genişlik
     setLogoPos("bottom");
 
@@ -2477,10 +2509,10 @@ export default function CoverStudio({
     const DICON_ASPECT = 0.79; // D-İkon en/boy
     const newObjs: CustomObject[] = [];
     const newPos: Record<string, ObjTransform> = {};
-    const place = (src: string, wMm: number, aspect: number, cxMm: number) => {
+    const place = (src: string, wMm: number, aspect: number, cxMm: number, slot: "back" | "spine") => {
       objCounter.current += 1;
       const id = `obj-${objCounter.current}`;
-      newObjs.push({ id, type: "image", src, fill: colors.ink });
+      newObjs.push({ id, type: "image", src, fill: colors.ink, slot, aspect, fitKey: slot === "spine" ? spineFitKey(spread) : undefined });
       const hMm = wMm / aspect;
       const scale = wMm / baseWmm;
       newPos[id] = {
@@ -2492,15 +2524,14 @@ export default function CoverStudio({
     };
 
     // Arka kapak: KDY marka logosu, güvenli alanın SOL-ALTINA, 20mm.
-    place(`/kdy/wordmark-${variant}.png`, 20, WORDMARK_ASPECT, spread.backSafeLeft + 10);
+    place(`/kdy/wordmark-${variant}.png`, 20, WORDMARK_ASPECT, spread.backSafeLeft + 10, "back");
 
     // Sırt: <6mm → logo YOK; 6–22mm → D-İkon (5–18mm); >22mm → KDY logosu (20mm).
     // Sırtta yatayda ortalı, alt güvenli çizgide, dik (döndürülmez).
-    if (spread.spine >= 22) {
-      place(`/kdy/wordmark-${variant}.png`, 20, WORDMARK_ASPECT, spread.spineCenter);
+    if (spread.spine > 22) {
+      place(`/kdy/wordmark-${variant}.png`, 20, WORDMARK_ASPECT, spread.spineCenter, "spine");
     } else if (spread.spine >= 6) {
-      const wMm = Math.min(Math.max(spread.spine - 2, 5), 18);
-      place(`/kdy/dicon-${variant}.png`, wMm, DICON_ASPECT, spread.spineCenter);
+      place(`/kdy/dicon-${variant}.png`, spineLogoWidth(spread.spine), DICON_ASPECT, spread.spineCenter, "spine");
     }
 
     // Önceki KDY logo nesnelerini temizle (renk değişince kopya birikmesin), yenile.
@@ -2530,30 +2561,32 @@ export default function CoverStudio({
     try {
       const raw = await loadPublisherLogoDataUrl();
       if (!raw) return false;
+      const auto = color === "auto";
       const img = await recolorLogo(raw, color);
       const aspect = await logoAspect(img);
       const sizeFor = (maxW: number, maxH: number) => Math.min(maxW, maxH * aspect);
       // 1) Ön kapak: alt-orta, alt güvenli çizgi (logoImage yolu, genişlik % kitap eni).
       const frontW = sizeFor(20, 15);
       setLogoImage(img);
+      setLogoAuto(auto);
       setLogoSize(Math.round((frontW / spread.bookWidth) * 1000) / 10);
       setLogoPos("bottom");
       // 2) Arka kapak + sırt: taşınabilir görsel nesneleri (role: "pubLogo").
       const baseWmm = Math.min(spread.bookWidth * 0.45, 60);
       const newObjs: CustomObject[] = [];
       const newPos: Record<string, ObjTransform> = {};
-      const place = (wMm: number, cxMm: number) => {
+      const place = (wMm: number, cxMm: number, slot: "back" | "spine") => {
         objCounter.current += 1;
         const id = `obj-${objCounter.current}`;
-        newObjs.push({ id, type: "image", src: img, fill: colors.ink, role: "pubLogo" });
+        newObjs.push({ id, type: "image", src: img, fill: colors.ink, role: "pubLogo", slot, aspect, autoColor: auto, fitKey: slot === "spine" ? spineFitKey(spread) : undefined });
         const scale = wMm / baseWmm;
         newPos[id] = { leftMm: cxMm, topMm: spread.bottomSafe - wMm / aspect / 2, scaleX: scale, scaleY: scale };
       };
       const backW = sizeFor(20, 15);
-      place(backW, spread.backSafeLeft + backW / 2);
+      place(backW, spread.backSafeLeft + backW / 2, "back");
       // Sırt: her yanda en az 1,6 mm pay (KDP'nin sırt payı; KDY'nin 1 mm'sini de karşılar).
-      const spineMaxW = spread.spine - 3.2;
-      if (spread.spine >= 6 && spineMaxW >= 3) place(sizeFor(Math.min(spineMaxW, 18), 25), spread.spineCenter);
+      const pubSpineW = pubSpineWidth(spread.spine, aspect);
+      if (pubSpineW) place(pubSpineW, spread.spineCenter, "spine");
       setObjects((prev) => [...prev.filter((o) => !isBrandLogoObj(o)), ...newObjs]);
       setPositions((prev) => ({ ...withoutFrontLogoPos(prev), ...newPos }));
       return true;
@@ -2600,19 +2633,91 @@ export default function CoverStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromBrief, hydrated, autoExport, isKdyBook, brief]);
 
-  // KDY/KDY Akademi profilli kitaplarda, henüz logo yoksa markayı otomatik koy.
-  const kdyLogoFiredRef = useRef(false);
+  // KDY/KDY Akademi profilli kitaplarda, henüz logo kararı yoksa markayı otomatik koy.
   useEffect(() => {
     // Salt-okunur export modunda nesne/logo MUTASYONU yapma → kayıtlı tasarım
     // değişmez (bu efekt, autosave'i tetikleyip "dağılma"ya yol açan asıl sebepti).
-    if (autoExport) return;
+    // İlk yükleme bitmeden konmaz: sırt (sayfa sayısı/kâğıt) henüz kesin değildir
+    // ve kayıtlı taslakta logo zaten olabilir.
+    if (autoExport || !hydrated) return;
     const platform = initialProject?.data.meta.platform;
     if (platform !== "kdy" && platform !== "akademi") return;
-    if (kdyLogoFiredRef.current || logoImage) return;
+    if (kdyLogoFiredRef.current || logoImage || objects.some(isBrandLogoObj)) return;
     kdyLogoFiredRef.current = true;
     applyKdyLogo("white");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialProject, logoImage]);
+  }, [initialProject, logoImage, hydrated]);
+
+  // SIRT LOGOSU sırta uysun: sırt kalınlığı değişince (Mizanpaj sayfa sayısı,
+  // kâğıt, elle sırt) sırttaki KDY / yayınevi logosu yeniden ortalanır ve
+  // boyutlanır; KDY'de kılavuza göre D-ikon ↔ KDY logosu değişir (22 mm), çok
+  // ince sırtta logo kalkar. Eski kayıtlarda sırt logosu konumundan tanınır.
+  useEffect(() => {
+    if (!hydrated || autoExport) return;
+    const spine = spread.spine;
+    const baseWmm = Math.min(spread.bookWidth * 0.45, 60);
+    // Logo en son bu ölçülere göre oturtulduysa dokunulmaz → kullanıcının elle
+    // taşıdığı/boyutladığı sırt logosu geri çekilmez; sırt değişince oturtulur.
+    const fitKey = spineFitKey(spread);
+    const onSpine = (o: CustomObject) =>
+      o.slot === "spine" ||
+      (o.slot === undefined &&
+        Math.abs((positions[o.id]?.leftMm ?? -1e6) - spread.spineCenter) <= spine / 2 + 6);
+    const targets = objects.filter((o) => isBrandLogoObj(o) && onSpine(o));
+    if (!targets.length) return;
+    const targetIds = new Set(targets.map((o) => o.id));
+    const hideIds = new Set<string>();
+    const showIds = new Set<string>();
+    const srcFix = new Map<string, string>();
+    const posFix: Record<string, ObjTransform> = {};
+    for (const o of targets) {
+      if (o.slot && o.fitKey === fitKey) continue;
+      let w: number | null;
+      let aspect: number;
+      let src = o.src ?? "";
+      if (isKdyAsset(src)) {
+        const variant = src.includes("black") ? "black" : "white";
+        const next = spine > 22 ? `/kdy/wordmark-${variant}.png` : `/kdy/dicon-${variant}.png`;
+        if (!src.includes(next)) src = next;
+        aspect = spine > 22 ? 2.21 : 0.79;
+        w = spine < 6 ? null : spine > 22 ? 20 : spineLogoWidth(spine);
+      } else {
+        if (o.aspect === undefined) continue; // en/boy bilinmiyor: dokunma
+        aspect = o.aspect;
+        w = pubSpineWidth(spine, aspect);
+      }
+      if (w === null) {
+        // Sırt bu logo için fazla ince: silinmez, gizlenir (kalınlaşınca geri gelir).
+        if (!o.spineHidden) hideIds.add(o.id);
+        continue;
+      }
+      if (o.spineHidden) showIds.add(o.id);
+      if (src !== o.src) srcFix.set(o.id, src);
+      const cur = positions[o.id];
+      const want = { leftMm: spread.spineCenter, topMm: spread.bottomSafe - w / aspect / 2, scaleX: w / baseWmm, scaleY: w / baseWmm };
+      const same =
+        cur &&
+        Math.abs(cur.leftMm - want.leftMm) < 0.05 &&
+        Math.abs(cur.topMm - want.topMm) < 0.05 &&
+        Math.abs((cur.scaleX ?? 1) - want.scaleX) < 0.002 &&
+        Math.abs((cur.scaleY ?? 1) - want.scaleY) < 0.002;
+      if (!same || srcFix.has(o.id)) posFix[o.id] = { ...cur, ...want };
+    }
+    const stale = targets.some((o) => !o.slot || o.fitKey !== fitKey);
+    if (!stale && !hideIds.size && !showIds.size && !srcFix.size && !Object.keys(posFix).length) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setObjects((prev) =>
+      prev.map((o) => {
+        if (!targetIds.has(o.id)) return o;
+        const src = srcFix.get(o.id) ?? o.src;
+        const spineHidden = hideIds.has(o.id) ? true : showIds.has(o.id) ? false : o.spineHidden;
+        if (o.slot === "spine" && o.fitKey === fitKey && src === o.src && spineHidden === o.spineHidden) return o;
+        return { ...o, src, slot: "spine" as const, spineHidden, fitKey };
+      }),
+    );
+    setPositions((prev) => ({ ...prev, ...posFix }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, autoExport, spread.spine, spread.spineCenter, spread.bottomSafe, spread.bookWidth, objects, positions]);
 
   // AI ile tasarım ÖĞESİ üret (mühür/rozet/amblem…): saydam PNG döner, tuvale
   // yeni bir "görsel" nesnesi olarak eklenir ve seçilir. Öteki nesneler gibi
@@ -4971,7 +5076,12 @@ export default function CoverStudio({
                         <div className="flex gap-2">
                           <UploadButton
                             label={logoImage ? t.changeCta : t.uploadCta}
-                            onChange={(e) => readFile(e, setLogoImage)}
+                            onChange={(e) =>
+                              readFile(e, (v) => {
+                                setLogoImage(v);
+                                setLogoAuto(false); // kendi yüklediği logo: rengine dokunulmaz
+                              })
+                            }
                           />
                           {logoImage && (
                             <button type="button" onClick={() => setLogoImage(null)} className={ghostBtn}>
@@ -4981,48 +5091,41 @@ export default function CoverStudio({
                         </div>
                       </Field>
 
-                      {/* Tek tık KDY logosu: alt-ortaya, güvenli çizgiye, ~20mm. Her kitapta
-                          çalışır; kapağın altı koyuysa Beyaz, açıksa Siyah seç. */}
+                      {/* Tek tık KDY logo seti: ön alt-orta, arka sol-alt, sırt (kılavuza göre).
+                          Renk zemine göre kendiliğinden beyaz ya da siyah olur. */}
                       <Field label={t.kdyLogoLabel}>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => applyKdyLogo("white")}
-                            title={t.kdyLogoWhite}
-                            className="flex h-11 items-center justify-center rounded-lg border border-[var(--border)] bg-neutral-800 transition hover:opacity-90"
-                            style={{
-                              backgroundImage: `url(/kdy/${kdyLogoBase}-white.png)`,
-                              backgroundSize: "auto 44%",
-                              backgroundPosition: "center",
-                              backgroundRepeat: "no-repeat",
-                            }}
-                          >
-                            <span className="sr-only">{t.kdyLogoWhite}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => applyKdyLogo("black")}
-                            title={t.kdyLogoBlack}
-                            className="flex h-11 items-center justify-center rounded-lg border border-[var(--border)] bg-white transition hover:opacity-90"
-                            style={{
-                              backgroundImage: `url(/kdy/${kdyLogoBase}-black.png)`,
-                              backgroundSize: "auto 44%",
-                              backgroundPosition: "center",
-                              backgroundRepeat: "no-repeat",
-                            }}
-                          >
-                            <span className="sr-only">{t.kdyLogoBlack}</span>
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => applyKdyLogo("white")}
+                          className="flex h-11 w-full items-center justify-center gap-3 rounded-lg border border-[var(--border)] bg-gradient-to-r from-neutral-800 to-white px-3 transition hover:opacity-90"
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="h-5 w-12"
+                            style={{ backgroundImage: `url(/kdy/${kdyLogoBase}-white.png)`, backgroundSize: "contain", backgroundPosition: "center", backgroundRepeat: "no-repeat" }}
+                          />
+                          <span
+                            aria-hidden="true"
+                            className="h-5 w-12"
+                            style={{ backgroundImage: `url(/kdy/${kdyLogoBase}-black.png)`, backgroundSize: "contain", backgroundPosition: "center", backgroundRepeat: "no-repeat" }}
+                          />
+                          <span className="sr-only">{lang === "tr" ? "KDY logolarını yerleştir" : "Place the KDY logos"}</span>
+                        </button>
+                        <p className="mt-1.5 text-xs text-muted">
+                          {lang === "tr"
+                            ? "Ön, arka ve sırta KDY kılavuzuna göre konur; renk zemine göre kendiliğinden beyaz ya da siyah olur."
+                            : "Placed on front, back and spine per the KDY guide; the colour turns white or black to suit the background."}
+                        </p>
                       </Field>
 
                       {/* Yayınevi logom (hesaba kayıtlı; KDY dışı kitaplar): tek tıkla ön + arka + sırt. */}
                       {projectId && !isKdyBook && (
                         <Field label={lang === "tr" ? "Yayınevi logom" : "My publisher logo"}>
                           {pubLogoUrl ? (
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="grid grid-cols-2 gap-2">
                               {(
                                 [
+                                  ["auto", lang === "tr" ? "Otomatik" : "Auto", "bg-gradient-to-r from-white to-neutral-800"],
                                   ["original", lang === "tr" ? "Olduğu gibi" : "As is", "bg-white"],
                                   ["white", lang === "tr" ? "Beyaz" : "White", "bg-neutral-800"],
                                   ["black", lang === "tr" ? "Siyah" : "Black", "bg-white"],

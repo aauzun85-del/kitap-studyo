@@ -123,7 +123,7 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
   }, [showLogoStep]);
   // Seçim yapılmadıysa kayıtlı logo varsayılan olarak kullanılır.
   const logoUse = brief.logo ? brief.logo.use : true;
-  const logoColor: LogoColor = brief.logo?.color ?? "original";
+  const logoColor: LogoColor = brief.logo?.color ?? "auto";
   // Logo yüklenirken / kayıtlı logo okunurken kurgu gönderilmez (seçim kaybolmasın).
   const logoPending = showLogoStep && (logoBusy || logoUrl === undefined);
   const onLogoFile = async (file: File | undefined) => {
@@ -576,7 +576,7 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
           <div className="flex flex-wrap items-start gap-4">
             {logoUrl ? (
               <div className="flex overflow-hidden rounded-md border border-foreground/10">
-                {(["#f4f1ea", "#1f2230"] as const).map((bg) => (
+                {(["#f4f1ea", "#1f2230"] as const).map((bg, bi) => (
                   <div key={bg} className="flex h-24 w-32 items-center justify-center p-3" style={{ background: bg }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -585,7 +585,11 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
                       className="max-h-full max-w-full object-contain"
                       style={{
                         filter:
-                          logoColor === "white" ? "brightness(0) invert(1)" : logoColor === "black" ? "brightness(0)" : undefined,
+                          logoColor === "white" || (logoColor === "auto" && bi === 1)
+                            ? "brightness(0) invert(1)"
+                            : logoColor === "black" || (logoColor === "auto" && bi === 0)
+                              ? "brightness(0)"
+                              : undefined,
                         opacity: logoUse ? 1 : 0.35,
                       }}
                     />
@@ -626,9 +630,10 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
                     />
                     {tr ? "Bu kitabın kapağında kullan" : "Use on this book's cover"}
                   </label>
-                  <div className="grid grid-cols-3 gap-2" role="group" aria-label={tr ? "Logo rengi" : "Logo colour"}>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label={tr ? "Logo rengi" : "Logo colour"}>
                     {(
                       [
+                        ["auto", tr ? "Otomatik" : "Auto"],
                         ["original", tr ? "Olduğu gibi" : "As is"],
                         ["white", tr ? "Beyaz" : "White"],
                         ["black", tr ? "Siyah" : "Black"],
@@ -653,8 +658,8 @@ export default function CoverBriefStudio({ lang, projectId, initial, title, auth
               )}
               <p className="max-w-xs text-[11px] text-muted">
                 {tr
-                  ? "En iyisi saydam zeminli PNG. Beyaz zeminli logolarda beyaz zemin kendiliğinden silinir. Koyu kapakta Beyaz, açık kapakta Siyah seç."
-                  : "A transparent PNG works best; a white background is removed automatically. Pick White for dark covers, Black for light ones."}
+                  ? "En iyisi saydam zeminli PNG. Beyaz zeminli logolarda beyaz zemin kendiliğinden silinir. Otomatik: kapak koyuysa beyaz, açıksa siyah olur. Renkli logon için Olduğu gibi."
+                  : "A transparent PNG works best; a white background is removed automatically. Auto: white on dark covers, black on light ones. Use As is for a coloured logo."}
               </p>
             </div>
           </div>
