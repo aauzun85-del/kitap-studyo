@@ -154,19 +154,17 @@ const HELPERS = String.raw`#set heading(numbering: none)
     _enentry(m)
   }
 }
-// mark: tıklanabilir önizlemenin konum işareti. Bölüm açılışının EN ÜSTÜNE
-// konur (numara/kicker dahil tüm açılış başlığa ait sayılsın; aksi halde
-// numaranın üstü önceki bölümün son paragrafına bağlanıyordu).
-#let _chapter(kicker: none, ornament: "none", right: true, top: 30mm, num: none, mark: none, body) = {
+#let _chapter(kicker: none, ornament: "none", right: true, top: 30mm, num: none, body) = {
   let st = _cfg.chapter
-  if _cfg.newpage { if right { pagebreak(to: "odd", weak: true) } else { pagebreak(weak: true) }; mark } else { v(2.2em, weak: true) }
+  // Sağ-sayfa açılışında dolgu çift sayfa gerçek kitaptaki gibi TAM BOŞ basılır:
+  // pagebreak(to: "odd") dolguya koşu başlığı + sayfa numarası basıyordu.
+  if _cfg.newpage { pagebreak(weak: true); if right { context if calc.even(here().page()) { page(header: none, footer: none)[] } } } else { v(2.2em, weak: true) }
   // Dipnot: bölüm sayacı (sonnotlar bölüme göre toplanır) + bölümde yeniden başlama.
   _chc.step()
   if _cfg.fnreset == "chapter" { counter(footnote).update(0); _enc.update(0) }
   v(top)
   let al = if _chleft { left } else { center }
   let head = {
-    if not _cfg.newpage { mark }
     set par(first-line-indent: 0pt, justify: false)
     set text(hyphenate: false)
     if st == "numeral-left" and num != none { align(left, text(font: _hf, size: 60pt * _cfg.scale, weight: 400, fill: luma(115), num)); v(0.05em) }
@@ -226,12 +224,13 @@ const HELPERS = String.raw`#set heading(numbering: none)
     while n < words.len() and hgt(n + 1) <= limit { n = n + 1 }
     let head = words.slice(0, n).join(" ")
     let tail = if n < words.len() { words.slice(n).join(" ") } else { "" }
-    // Baş (harfin yanı) ile gövde AYNI paragraf → aralarında boşluk OLMAMALI.
-    // Paragraf-arası boşluk (par.spacing) buraya sızmasın diye blok boşluğunu
-    // sıfırla; sonraki paragrafla arası dış boşlukla korunur.
+    // Baş (harfin yanı) ile gövde AYNI paragraf → par.spacing buraya sızmasın
+    // diye blok boşluğu sıfır; dikiş above: par.leading ile gövde ritminde.
+    // Kuyruk BÖLÜNEBİLİR blok olmalı: box, sayfadan uzun ilk paragrafta
+    // kırpılıp metin KAYBEDİYORDU (açılış 2 satırda kalıyor, devam taşıyordu).
     set block(spacing: 0pt)
     grid(columns: (iw, fw), gutter: 0pt, place(top + left, capt), box(width: fw)[#set par(justify: true, first-line-indent: 0pt); #head])
-    if tail != "" { box(width: 100%)[#set par(justify: true, first-line-indent: 0pt); #tail] }
+    if tail != "" { block(width: 100%, above: par.leading, breakable: true)[#set par(justify: true, first-line-indent: 0pt); #tail] }
   }
 })
 #set outline.entry(fill: repeat(gap: 2.5pt)[.])
